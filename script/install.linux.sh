@@ -15,70 +15,91 @@ as_root() {
 	fi
 }
 
-# 설치할 도구 목록. 새 도구를 추가하려면 tools 와 default_pkg 에 한 줄씩만 추가하면 된다.
+# 설치할 도구 목록. 새 도구를 추가하려면 여기에 이름만 추가하면 되고,
+# 패키지 이름/실행파일 이름이 도구 이름과 다를 때만 아래 테이블에 예외를 등록한다.
 tools=(rg fd jq nvim)
 
-# 배포판 대부분에서 공통으로 쓰는 패키지 이름.
+# 도구의 기본 패키지 이름이 tools 의 이름과 다를 때만 등록한다. (배포판 공통)
+# 실행파일 이름은 tools 자체가 canonical bin 이름이므로 별도 기본값 테이블이 필요 없다.
 declare -A default_pkg=(
 	[rg]=ripgrep
-	[fd]=fd
-	[jq]=jq
 	[nvim]=neovim
 )
 
-# default_pkg 와 다른 이름을 쓰는 배포판만 예외로 등록한다. (apt/dnf 는 fd-find 라는 이름을 쓴다)
-declare -A pkg_name=(
+# 특정 배포판(apt/apk/dnf/pacman)만 위 기본값과 다를 때만 등록한다.
+# apt/dnf 의 fd 는 패키지 이름이 fd-find 이고, 실행파일도 fdfind 라는 이름으로 설치된다.
+declare -A pkg_override=(
 	[apt:fd]=fd-find
 	[dnf:fd]=fd-find
 )
+declare -A bin_override=(
+	[apt:fd]=fdfind
+	[dnf:fd]=fdfind
+)
+
+# $1: 배포판 식별자, $2: 도구 이름 -> 설치해야 할 패키지 이름
+resolve_pkg() { echo "${pkg_override[$1:$2]:-${default_pkg[$2]:-$2}}"; }
+# $1: 배포판 식별자, $2: 도구 이름 -> 설치되는 실행파일 이름
+resolve_bin() { echo "${bin_override[$1:$2]:-$2}"; }
 
 # $1: 배포판 식별자(apt/apk/dnf/pacman). tools 중 아직 설치되지 않은 것들의
 # 패키지 이름을 한 줄씩 출력한다.
 missing_packages() {
 	local manager="$1" tool
 	for tool in "${tools[@]}"; do
-		has "$tool" || echo "${pkg_name[$manager:$tool]:-${default_pkg[$tool]}}"
+		has "$(resolve_bin "$manager" "$tool")" || resolve_pkg "$manager" "$tool"
 	done
 }
 
-# $1: 배포판 식별자, 나머지 인자: 패키지 매니저 install 커맨드.
-# 설치할 패키지가 없으면 아무 것도 하지 않는다.
-install_missing() {
-	local manager="$1"
-	shift
-
-	local -a pkgs=()
-	while IFS= read -r pkg; do
-		pkgs+=("$pkg")
-	done < <(missing_packages "$manager")
-
-	[ "${#pkgs[@]}" -eq 0 ] && return 0
-
-	as_root "$@" "${pkgs[@]}"
+# tools 중 실행파일 이름이 도구 이름과 다르게 설치된 것을, 도구 이름으로 심볼릭 링크한다.
+# (예: fd-find 패키지는 fdfind 라는 이름으로 설치되므로 fd 로 연결)
+link_renamed_bins() {
+	local manager="$1" tool bin
+	for tool in "${tools[@]}"; do
+		bin="$(resolve_bin "$manager" "$tool")"
+		if [ "$bin" != "$tool" ] && ! has "$tool" && has "$bin"; then
+			as_root ln -sf "$(command -v "$bin")" "/usr/local/bin/$tool"
+		fi
+	done
 }
 
 # 배포판별 패키지 매니저를 순서대로 감지해서 사용한다.
 # dev container 는 Debian/Ubuntu(apt) 계열이 가장 흔하고, 경량 이미지는 Alpine(apk) 인 경우가 많아
 # 둘을 우선 확인하고, RHEL/Fedora(dnf), Arch(pacman) 를 뒤이어 지원한다.
 if has apt-get; then
-	if [ -n "$(missing_packages apt)" ]; then
-		as_root env DEBIAN_FRONTEND=noninteractive apt-get update
-	fi
-	install_missing apt env DEBIAN_FRONTEND=noninteractive apt-get install -y
+	manager=apt
 elif has apk; then
-	install_missing apk apk add --no-cache
+	manager=apk
 elif has dnf; then
-	install_missing dnf dnf install -y
+	manager=dnf
 elif has pacman; then
-	install_missing pacman pacman -Sy --noconfirm --needed
+	manager=pacman
 else
 	echo "지원하는 패키지 매니저(apt, apk, dnf, pacman)를 찾지 못했습니다." >&2
 	exit 1
 fi
 
-# fd-find 패키지는 배포판에 따라 바이너리 이름이 fdfind 인 경우가 있어 fd 로 심볼릭 링크를 만들어 준다.
-if ! has fd && has fdfind; then
-	as_root ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+mapfile -t pkgs < <(missing_packages "$manager")
+
+# 설치할 패키지가 있을 때만 매니저를 건드린다. (없으면 apt-get update 같은 네트워크 호출도 스킵)
+if [ "${#pkgs[@]}" -gt 0 ]; then
+	case "$manager" in
+	apt)
+		as_root env DEBIAN_FRONTEND=noninteractive apt-get update
+		as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}"
+		;;
+	apk)
+		as_root apk add --no-cache "${pkgs[@]}"
+		;;
+	dnf)
+		as_root dnf install -y "${pkgs[@]}"
+		;;
+	pacman)
+		as_root pacman -Sy --noconfirm --needed "${pkgs[@]}"
+		;;
+	esac
 fi
+
+link_renamed_bins "$manager"
 
 echo "Linux 기본 도구 설치 완료: ${tools[*]}"
