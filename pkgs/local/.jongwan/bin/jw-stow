@@ -8,6 +8,10 @@ set -euo pipefail
 # - 현재 OS 와 반대되는 플랫폼 전용 파일(*.darwin / *.linux)은 심링크를 만들지 않는다.
 # - <name>.skel 파일은 심링크로 두지 않는다. 대신 타깃에 <name> 파일이 아직 없을 때만
 #   한 번 복사해서 실제 파일로 만들어 둔다.
+# - <name>.darwin / <name>.linux 파일이 있으면, 항상 존재하는 안정적인 별명
+#   <name>.platform 을 만들어 둔다: 현재 OS 파일이 있으면 그걸 가리키는 심링크, 없으면
+#   빈 파일. mpv 처럼 include 대상 파일이 없으면 에러를 내는 도구를 위한 것 — 파일 존재
+#   여부로 로드 여부가 갈리는 대신, .platform 은 항상 존재하니 안전하게 include 할 수 있다.
 #
 # 사용법: jw-stow <pkg> [<pkg> ...]
 
@@ -35,8 +39,14 @@ if ! command -v stow &>/dev/null; then
 fi
 
 case "$(uname -s)" in
-Darwin) other_os=linux ;;
-Linux) other_os=darwin ;;
+Darwin)
+	current_os=darwin
+	other_os=linux
+	;;
+Linux)
+	current_os=linux
+	other_os=darwin
+	;;
 *)
 	echo "지원하지 않는 OS 입니다: $(uname -s)" >&2
 	exit 1
@@ -65,4 +75,21 @@ for pkg in "$@"; do
 			echo "생성됨: $real ($pkg/$rel 에서 복사, 로컬에서 자유롭게 수정 가능)"
 		fi
 	done < <(find "$pkg_path" -type f -name '*.skel' -print0)
+
+	while IFS= read -r -d '' os_file; do
+		rel="${os_file#"$pkg_path"}"
+		base="${rel%.darwin}"
+		base="${base%.linux}"
+
+		platform_real="$HOME/$base.platform"
+		current_src="$pkg_path$base.$current_os"
+
+		mkdir -p "$(dirname "$platform_real")"
+		if [ -f "$current_src" ]; then
+			ln -sf "$current_src" "$platform_real"
+		elif [ ! -e "$platform_real" ] || [ -L "$platform_real" ]; then
+			rm -f "$platform_real"
+			: >"$platform_real"
+		fi
+	done < <(find "$pkg_path" -type f \( -name '*.darwin' -o -name '*.linux' \) -print0)
 done
