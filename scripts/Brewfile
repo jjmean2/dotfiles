@@ -1,3 +1,4 @@
+brew "stow"
 brew "bash"
 brew "git"
 brew "jq"

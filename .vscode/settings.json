@@ -1,0 +1,8 @@
+{
+  "files.associations": {
+    ".zshenv*": "shellscript",
+    ".zprofile*": "shellscript",
+    ".zshrc*": "shellscript",
+    "source_zsh_variants": "shellscript"
+  }
+}

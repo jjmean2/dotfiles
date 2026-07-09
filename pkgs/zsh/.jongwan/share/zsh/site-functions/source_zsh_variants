@@ -1,0 +1,18 @@
+# zsh autoload 함수 (fpath 를 통해 로드되며 직접 실행되는 스크립트가 아니라서
+# shebang 이 없고 파일 전체가 함수 본문으로 취급된다. shellcheck 는 zsh 를 지원하지
+# 않으므로 관련 경고를 끈다).
+# shellcheck shell=bash disable=SC2148,SC2168
+#
+# $1 로 받은 파일의 OS 전용 파일(.darwin/.linux)과 로컬 오버라이드(.local)가
+# 있으면 순서대로 source 한다. (예: source_zsh_variants ~/.zshrc)
+local base="$1" os
+
+case "$(uname -s)" in
+Darwin) os=darwin ;;
+Linux) os=linux ;;
+esac
+
+# shellcheck source=/dev/null
+[ -n "$os" ] && [ -f "$base.$os" ] && source "$base.$os"
+# shellcheck source=/dev/null
+[ -f "$base.local" ] && source "$base.local"

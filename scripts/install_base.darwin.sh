@@ -18,7 +18,7 @@ if ! command -v brew &>/dev/null; then
 fi
 
 brew update
-brew bundle --file="$dir/../config/homebrew/Brewfile"
+brew bundle --file="$dir/Brewfile"
 
 if ! command -v mise &>/dev/null; then
 	echo "mise 명령을 찾을 수 없습니다. brew bundle 이 정상적으로 끝났는지 확인해 주세요." >&2
