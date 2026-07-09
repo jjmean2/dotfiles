@@ -1,0 +1,28 @@
+[user]
+	name = Jongwan Lee
+	email = jjmean2@gmail.com
+[alias]
+	co = checkout
+	lg = log --graph --pretty=compact
+	br = branch
+	count-line-changes = "!f() { git -C ${GIT_PREFIX:-.} log --pretty=tformat: --numstat \"$@\" | awk '{ add += $1; subs += $2; loc += $1 - $2 } END { printf \"lines added:%'\\''10d,   removed:%'\\''10d,   total:%'\\''10d\\n\", add, subs, loc }' - ; } ; f"
+	fa = fetch --all --tags -f
+	search = branch --list --format '%(refname:short)'
+	list-branch-contained-in = "!f() { if [ -z \"$1\" ] ; then echo specify descendant commit;  return 1; fi; LC_ALL=C git branch --format=\"%(refname:short)\" | xargs -I% bash -c \"git merge-base --is-ancestor % $1 && echo %\" ; } ; f"
+	check-branch-if-contained-in = "!f() { if [ -z \"$1\" ] ; then echo specify descendant commit;  return 1; fi; LC_ALL=C git branch --format=\"%(refname:short)\" | xargs -I% zsh -c \"autoload -U colors; colors; echo -n %:\\  ; git merge-base --is-ancestor % $1 && echo \\$fg[green]yes\\$reset_color || echo \\$fg[red]no\\$reset_color\" ; } ; f"
+[pretty]
+	compact = %C(auto)%h %C(green)(%ad) %C(dim white)(%aN) %C(reset)%s %C(auto)%d
+	simple = %C(auto)%h %C(green)(%ad) %C(dim white)(%aN) %C(reset)%s
+	deco = %C(bold red)%h%C(reset) : %C(bold green)(%ad)%C(reset) - %C(cyan)<%aN>%C(reset)%C(bold yellow)%d%C(reset)%n%n%w(90,1,2)%C(white)%B%C(reset)%n
+[init]
+	defaultBranch = main
+[merge]
+	conflictstyle = diff3
+[difftool "vscode"]
+	cmd = code --wait --diff $LOCAL $REMOTE
+[commit]
+	verbose = true
+[core]
+	quotepath = false
+[pull]
+	rebase = true

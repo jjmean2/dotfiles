@@ -1,0 +1,4 @@
+[include]
+	path = config.base
+	path = config.darwin
+	path = config.linux

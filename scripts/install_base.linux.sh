@@ -102,7 +102,6 @@ fi
 
 link_renamed_bins "$manager"
 
-
 has mise || curl https://mise.run | sh
 
 echo "Linux 기본 도구 설치 완료: ${tools[*]}"

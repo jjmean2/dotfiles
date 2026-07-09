@@ -3,6 +3,7 @@
     ".zshenv*": "shellscript",
     ".zprofile*": "shellscript",
     ".zshrc*": "shellscript",
-    "source_zsh_variants": "shellscript"
+    "source_zsh_variants": "shellscript",
+    "**/git/config.{base,darwin,skel,linux}": "properties"
   }
 }
