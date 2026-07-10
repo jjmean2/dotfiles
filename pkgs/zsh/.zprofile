@@ -1,3 +1,4 @@
+# setup for homebre
 if [[ -f /opt/homebrew/bin/brew ]]; then
 	eval "$(/opt/homebrew/bin/brew shellenv)"
 elif [[ -f /usr/local/bin/brew ]]; then
@@ -9,5 +10,3 @@ fi
 if command -v mise &>/dev/null && ! [[ -o interactive ]]; then
 	eval "$(mise activate zsh --shims)"
 fi
-
-source_zsh_variants ~/.zprofile
