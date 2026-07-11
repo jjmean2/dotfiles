@@ -65,7 +65,14 @@ for pkg in "$@"; do
 		exit 1
 	fi
 
-	stow --dir="$pkgs_dir" --target="$target_path" --ignore="\\.(${other_os})(\\.|\$)|\\.skel\$" --no-folding --restow "$pkg"
+	# .darwin / .linux 같은 플랫폼 토큰은 파일명 끝(config.darwin)뿐 아니라 중간
+	# (something.darwin.zsh), 구분자가 -/_ 인 경우(something-darwin, something_darwin.ext),
+	# 심지어 디렉터리 이름 자체(darwin/... 또는 트리 중간의 sub/darwin/...)로도 올 수 있다.
+	# stow --ignore 는 패키지 기준 상대 경로 전체(예: .zshrc.d/something.darwin.zsh)에 대해
+	# 앵커 없이 매칭하므로, ^/$ 는 각 경로 컴포넌트가 아니라 그 상대 경로 문자열 전체의
+	# 시작/끝이다. 트리 중간 디렉터리(sub/darwin/foo)까지 잡으려면 경로 구분자 /도 경계
+	# 문자에 포함해야 한다.
+	stow --dir="$pkgs_dir" --target="$target_path" --ignore="(^|[/._-])(${other_os})(\$|[/._-])|\\.skel\$" --no-folding --restow "$pkg"
 	echo "설치됨: $pkg -> ~ (--no-folding)"
 
 	#region: skeleton 파일(.skel) 처리

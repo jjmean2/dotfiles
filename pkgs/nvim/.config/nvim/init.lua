@@ -1,119 +1,61 @@
-require("config.lazy")
-  
--- Search down into subfolders
--- Provides tab-completion for all file-related tasks
-vim.opt.path:append('**')
+--[[
+# 섹션 분류 방식
+1. 기본 설정
+  - 전역/핵심 변수 설정
+  - 네이티브 UX 설정 (options, keymaps)
+2. 플러그인 초기화 (lazy.nvim)
+3. 플러그인 튜닝
+  - LSP / Tree-sitter / 자동 완성 설정 (IDE 인프라)
+  - UI 테마 및 사용자 편의 플러그인 튜닝
 
--- Display all matching files when we tab complete
-vim.opt.wildmenu = true
+NeoVim에서는 기본 설정을 한 후에 플러그인을 구동시키면,
+플러그인에서 기본 설정을 고려하여 동작을 결정하는 경우가 많다고 한다.
+따라서 기본 옵션 및 키맵 설정을 하고 나서 플러그인 초기화를 진행하고,
+그 이후 플러그인 추가 튜닝을 진행한다.
+--]]
 
--- NOW WE CAN
--- - Hit tab to :find by partial match
--- - Use * to make it fuzzy
+local os_name = (vim.uv or vim.loop).os_uname().sysname
 
-if not vim.g.vscode then
-  -- vim.cmd.colorscheme("tokyonight")
-  -- vim.cmd.colorscheme("jellybeans-nvim")
-  vim.cmd.colorscheme("tokyonight")
-end
-
-
-vim.opt.backspace:append({ "indent", "eol", "start" })
-vim.opt.number = true
-
--- vim.opt.autoindent = true
--- vim.opt.cindent = true
-vim.opt.smartindent = true
-
-
-
-vim.opt.tabstop = 2
-vim.opt.softtabstop = 2
-vim.opt.shiftwidth = 2
-
-vim.opt.expandtab = true
-
-vim.opt.showmatch = true
-vim.opt.matchtime = 2
-
-vim.opt.hlsearch = true
-vim.opt.incsearch = true
-
-vim.opt.ignorecase = true
-
-vim.opt.laststatus = 2
-
-vim.opt.ruler = true
-vim.opt.rulerformat = '%15(%c%V %p%%%)'
-
-vim.opt.visualbell = true
-
-vim.opt.fileencodings:remove("latin1")
--- vim.opt.fileencodings:append({"korea", "latin1"})
-vim.opt.fileencodings:append({"cp949", "latin1"})
-
+-- ==================================================
+-- 🛠️ 전역/핵심 변수 설정
+-- ==================================================
 vim.g.mapleader = " "
+vim.g.maplocalleader = " "
 
--- nvim-tree
-vim.keymap.set('n', '<leader>e', ':NvimTreeToggle<CR>', { silent = true })
-vim.keymap.set('n', '<leader>f', ':NvimTreeFindFile<CR>', { silent = true })
 
--- 일단 vscode에서만 시범적으로 매핑
-if vim.g.vscode then
-  -- 숫자 없이 j, k 입력 시 gj, gk로 작동, vs code에서는 gj가 커스텀 키매핑으로 지정되어 있으므로 remap = true 지정 필요
-  vim.keymap.set('n', 'k', "v:count == 0 ? 'gk' : 'k'", { expr = true, silent = true, remap = true })
-  vim.keymap.set('n', 'j', "v:count == 0 ? 'gj' : 'j'", { expr = true, silent = true, remap = true })
-else
-  vim.keymap.set('n', 'k', 'gk')
-  vim.keymap.set('n', 'j', 'gj')
+-- ==================================================
+-- 🛠️ 에디터 options & keymaps
+-- ==================================================
+require("config.core.options")
 
-  vim.opt.listchars = {
-      tab = '▸ ',
-      lead = '·',
-      trail = '·',
-      extends ='»',
-      precedes = '«',
-      nbsp = '␣',
-      eol = '↲'
-  }
-  vim.opt.list = true
+if os_name == "Darwin" then
+  pcall(require, "config.core.darwin.options")
+elseif os_name == "Linux" then
+  pcall(require, "config.overrides.linux")
 end
 
-vim.diagnostic.config {
-  virtual_text = true,
-  signs = true
-}
+-- 파일이 있으면 알아서 열고, 없으면 조용히 패스합니다.
+pcall(require, "config.overrides.local")
 
-vim.api.nvim_create_autocmd('LspAttach', {
-  callback = function(args)
-    local opts = { buffer = args.buf }
-    -- gd를 누르면 정의 이동 함수 호출
-    vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
-    -- K를 누르면 호버(문서 팝업) 함수 호출
-    vim.keymap.set('n', 'K', vim.lsp.buf.hover, opts)
-    -- <leader>rn을 누르면 심볼 이름 변경
-    vim.keymap.set('n', '<leader>rn', vim.lsp.buf.rename, opts)
-  end,
-})
+-- ==================================================
+-- 🔌 플러그인 매니저 초기화
+-- ==================================================
+-- 위에서 준비된 완벽한 도화지(Options, Leader)를 바탕으로 플러그인 판을 짭니다.
+-- (기존 require("config.lazy") 또는 아래 기본 lazy.nvim 구동부 배치)
+require("config.lazy")
 
-
-vim.lsp.enable('tsserver')
-
--- === OS 전용 설정과 로컬 오버라이드 로드 ===
--- init.darwin.lua / init.linux.lua (OS 에 맞는 것 하나) 와 init.local.lua 가 있으면 순서대로 불러온다.
-local function source_if_exists(name)
-  local path = vim.fn.stdpath("config") .. "/" .. name
-  if vim.fn.filereadable(path) == 1 then
-    dofile(path)
-  end
-end
+-- ==================================================
+-- ✨ 플러그인 options & keymaps
+-- ==================================================
+require("config.plugin.options")
 
 local os_name = (vim.uv or vim.loop).os_uname().sysname
 if os_name == "Darwin" then
-  source_if_exists("init.darwin.lua")
+  pcall(require, "plugin.overrides.darwin")
 elseif os_name == "Linux" then
-  source_if_exists("init.linux.lua")
+  pcall(require, "plugin.overrides.linux")
 end
 
-source_if_exists("init.local.lua")
+-- 파일이 있으면 알아서 열고, 없으면 조용히 패스합니다.
+pcall(require, "plugin.overrides.local")
 
