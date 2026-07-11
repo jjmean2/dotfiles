@@ -4,6 +4,7 @@
 
 # path 변수에 중복 경로가 들어가지 않도록
 typeset -U path
+export PATH
 
 # zsh에서는 변수 확장시 공백에서 word splitting 이 일어나지 않으므로 큰 따옴표로 감싸지 않아도 된다.
 # 배열 변수의 경우에는 배열 요소를 경계로 요소가 나뉜다.
@@ -14,26 +15,6 @@ path=($HOME/.jongwan/bin $path)
 # ==================================================
 # 🛠️ ZSH 설정
 # ==================================================
-
-# region: zsh 자동완성 (completion)
-autoload -Uz compinit && compinit
-
-# 파일이나 디렉터리 이름을 입력할 때 대소문자를 무시하고 찾아서 자동완성해주는 설정. 예를 들어 downloads라고 소문자로만 쳐도 대문자로 시작하는 Downloads/ 폴더를 찾아준다.
-# 뒤에 복잡하게 똑같은 패턴이 반복되는 부분은 Zsh 자동완성 시스템이 1단계 매칭 실패 시 2단계, 3단계로 넘어가며 '부분 일치'나 '오타 교정'까지 시도하도록 규칙을 겹겹이 쌓아두는 부분
-zstyle ':completion:*' matcher-list 'm:{[:lower:][:upper:]}={[:upper:][:lower:]}' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*'
-
-# 접두사(prefix)나 접미사(suffix)를 확장하여 부분적인 입력만으로도 영리하게 추천 후보를 띄우려는 설정
-zstyle ':completion:*' list-suffixes
-zstyle ':completion:*' expand prefix suffix
-
-# ls 명령어를 치고 탭을 눌렀을 때도 방향키로 이동하며 파일을 선택할 수 있는 메뉴를 띄워줌
-zstyle ':completion:ls:*' menu select
-
-# 탭을 눌러 자동 완성 후보 메뉴가 떴을 때, 항목의 종류에 따라 글자 색상을 다르게 표현해 주는 설정
-# di=34(디렉터리는 파란색), ex=31(실행 파일은 빨간색)처럼 일반적인 리눅스/macOS 터미널의 LS_COLORS 규격을 따름
-zstyle ':completion:*:default' list-colors \
-	"di=34:ln=35:so=32:pi=33:ex=31:bd=34;46:cd=34;43:su=30;41:sg=30;46:tw=30;42:ow=30;43"
-# endregion
 
 # region: 유용한 함수 autoload
 # 색상별 escape sequence를 색상 이름 변수에 저장해주는 함수. 아래 프롬프트(PROMPT) 설정에서 색상을 적용할 때 사용한다.
@@ -75,6 +56,7 @@ setopt auto_cd
 # "https://zsh.sourceforge.io/Guide/zshguide04.html#:~:text=Suppose%20you've%20already,the%20function%20zed"
 bindkey '\eq' push-line-or-edit
 bindkey '\eQ' push-line-or-edit
+bindkey '\eOP' where-is
 
 autoload -Uz edit-command-line
 zle -N edit-command-line
@@ -88,7 +70,11 @@ alias cp='cp -i'
 alias mv='mv -i'
 
 alias egit='LC_ALL=C git'
-alias yarn-sdks='yarn dlx @yarnpkg/sdks vscode'
+alias grep='grep --color=auto'
+
+if ((${+commands[yarn]})); then
+	alias yarn-sdks='yarn dlx @yarnpkg/sdks vscode'
+fi
 
 if [[ -f /Applications/MacVim.app/Contents/MacOS/Vim ]]; then
 	alias mvim='/Applications/MacVim.app/Contents/MacOS/Vim -g'
@@ -100,13 +86,19 @@ fi
 
 # help 명령어
 unalias run-help
-autoload run-help
+autoload -Uz run-help
 HELPDIR="/usr/share/zsh/$ZSH_VERSION/help"
 alias help=run-help
 
 # ==================================================
 # 🛠️ 도구 환경 설정
 # ==================================================
+
+# The following lines have been added by Docker Desktop to enable Docker CLI completions.
+if [[ -d $HOME/.docker/completions ]]; then
+	fpath=($HOME/.docker/completions $fpath)
+fi
+
 # homebrew로 설치한 zsh-completions의 completion 함수들을 fpath에 추가
 if command -v brew &>/dev/null; then
 	fpath+=($(brew --prefix)/share/zsh-completions)
@@ -130,9 +122,12 @@ if command -v mise &>/dev/null; then
 fi
 
 if command -v nvim &>/dev/null; then
-	# 참고: VISUAL은 화면 전체를 사용하는 에디터를 의미하고, EDITOR는 한 줄씩 편집하던 옛날 방식(ed 등)과의 호환성을 위한 것인데, 현대에는 보통 둘 다 똑같이 설정합니다.
+	# 참고:
+	# VISUAL은 화면 전체를 사용하는 에디터를 의미하고,
+	# EDITOR는 한 줄씩 편집하던 옛날 방식(ed 등)과의 호환성을 위한 것인데,
+	# 현대에는 보통 둘 다 똑같이 설정합니다.
 	# EDITOR만 설정해도 되는데, VISUAL, EDITOR 둘다 설정한 경우, edit-command-line 기능은 VISUAL 값을 따름
-	export VISUAL='nvim'
+	# export VISUAL='nvim'
 	export EDITOR='nvim'
 
 	bindkey -e
@@ -196,3 +191,23 @@ if [[ -d $HOME/zshrc.d ]]; then
 	done
 fi
 unset config_file
+
+# region: zsh 자동완성 (completion)
+autoload -Uz compinit && compinit
+
+# 파일이나 디렉터리 이름을 입력할 때 대소문자를 무시하고 찾아서 자동완성해주는 설정. 예를 들어 downloads라고 소문자로만 쳐도 대문자로 시작하는 Downloads/ 폴더를 찾아준다.
+# 뒤에 복잡하게 똑같은 패턴이 반복되는 부분은 Zsh 자동완성 시스템이 1단계 매칭 실패 시 2단계, 3단계로 넘어가며 '부분 일치'나 '오타 교정'까지 시도하도록 규칙을 겹겹이 쌓아두는 부분
+zstyle ':completion:*' matcher-list 'm:{[:lower:][:upper:]}={[:upper:][:lower:]}' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*'
+
+# 접두사(prefix)나 접미사(suffix)를 확장하여 부분적인 입력만으로도 영리하게 추천 후보를 띄우려는 설정
+zstyle ':completion:*' list-suffixes
+zstyle ':completion:*' expand prefix suffix
+
+# ls 명령어를 치고 탭을 눌렀을 때도 방향키로 이동하며 파일을 선택할 수 있는 메뉴를 띄워줌
+zstyle ':completion:ls:*' menu select
+
+# 탭을 눌러 자동 완성 후보 메뉴가 떴을 때, 항목의 종류에 따라 글자 색상을 다르게 표현해 주는 설정
+# di=34(디렉터리는 파란색), ex=31(실행 파일은 빨간색)처럼 일반적인 리눅스/macOS 터미널의 LS_COLORS 규격을 따름
+zstyle ':completion:*:default' list-colors \
+	"di=34:ln=35:so=32:pi=33:ex=31:bd=34;46:cd=34;43:su=30;41:sg=30;46:tw=30;42:ow=30;43"
+# endregion

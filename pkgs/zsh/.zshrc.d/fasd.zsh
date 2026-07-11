@@ -12,10 +12,12 @@
 
 # "Fast init with cache" configration
 fasd_cache="$HOME/.fasd-init-zsh"
-if [ "$(command -v fasd)" -nt "$fasd_cache" -o ! -s "$fasd_cache" ]; then
+if [[ ${commands[fasd]} -nt $fasd_cache || ! -s $fasd_cache ]]; then
 	# `>` means it will overwrite even if "$fasd_cache" file exists
 	# https://unix.stackexchange.com/questions/45201/bash-what-does-do
-	fasd --init auto >|"$fasd_cache"
+	# fasd --init auto >|"$fasd_cache"
+	fasd --init posix-alias zsh-hook zsh-ccomp zsh-ccomp-install >|"$fasd_cache"
+
 fi
 source "$fasd_cache"
 unset fasd_cache
