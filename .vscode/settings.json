@@ -4,6 +4,17 @@
     ".zprofile*": "shellscript",
     ".zshrc*": "shellscript",
     "source_zsh_variants": "shellscript",
-    "**/git/config.{base,darwin,skel,linux}": "properties"
+    "**/git/config.{base,darwin,skel,linux}": "properties",
+    "mpv.conf": "ini"
+  },
+  // Lua LSP 설정
+  "Lua.runtime.version": "LuaJIT",
+  "Lua.diagnostics.globals": ["vim"],
+  "Lua.workspace.userThirdParty": ["nvim"],
+  "Lua.workspace.library": ["/opt/homebrew/share/nvim/runtime/lua"],
+  "Lua.workspace.checkThirdParty": false,
+  // .luarc.json 파일의 JSON schema 로드를 위해
+  "json.schemaDownload.trustedDomains": {
+    "https://raw.githubusercontent.com/LuaLS": true
   }
 }

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "codeLens": {
+    "enable": true
+  },
+  "diagnostics": {
+    "globals": ["vim"]
+  },
+  "hint": {
+    "enable": true,
+    "semicolon": "Disable"
+  }
+}

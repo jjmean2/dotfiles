@@ -14,7 +14,16 @@ NeoVim에서는 기본 설정을 한 후에 플러그인을 구동시키면,
 그 이후 플러그인 추가 튜닝을 진행한다.
 --]]
 
-local os_name = (vim.uv or vim.loop).os_uname().sysname
+local sysname = (vim.uv or vim.loop).os_uname().sysname
+local os_name = sysname and string.lower(sysname)
+
+local function require_config_with_variants(config_module)
+    pcall(require, config_module)
+    if os_name then
+        pcall(require, config_module .. "_" .. os_name)
+    end
+    pcall(require, config_module .. "_local")
+end
 
 -- ==================================================
 -- 🛠️ 전역/핵심 변수 설정
@@ -22,40 +31,19 @@ local os_name = (vim.uv or vim.loop).os_uname().sysname
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
 
+require('config.core.options')
 
 -- ==================================================
 -- 🛠️ 에디터 options & keymaps
 -- ==================================================
-require("config.core.options")
-
-if os_name == "Darwin" then
-  pcall(require, "config.core.darwin.options")
-elseif os_name == "Linux" then
-  pcall(require, "config.overrides.linux")
-end
-
--- 파일이 있으면 알아서 열고, 없으면 조용히 패스합니다.
-pcall(require, "config.overrides.local")
+require_config_with_variants("config.core.options")
 
 -- ==================================================
 -- 🔌 플러그인 매니저 초기화
 -- ==================================================
--- 위에서 준비된 완벽한 도화지(Options, Leader)를 바탕으로 플러그인 판을 짭니다.
--- (기존 require("config.lazy") 또는 아래 기본 lazy.nvim 구동부 배치)
 require("config.lazy")
 
 -- ==================================================
 -- ✨ 플러그인 options & keymaps
 -- ==================================================
-require("config.plugin.options")
-
-local os_name = (vim.uv or vim.loop).os_uname().sysname
-if os_name == "Darwin" then
-  pcall(require, "plugin.overrides.darwin")
-elseif os_name == "Linux" then
-  pcall(require, "plugin.overrides.linux")
-end
-
--- 파일이 있으면 알아서 열고, 없으면 조용히 패스합니다.
-pcall(require, "plugin.overrides.local")
-
+require_config_with_variants("config.plugin.options")
