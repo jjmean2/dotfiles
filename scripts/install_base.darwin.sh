@@ -17,8 +17,10 @@ if ! command -v brew &>/dev/null; then
 	fi
 fi
 
+# 메타데이터 최신화. formula 설치 스크립트가 바뀔 수도 있으므로 brew bundle 전에 명시적으로 한번 수행한다.
 brew update
-brew bundle --file="$dir/Brewfile"
+# 설치 안 되어 있는 것만 설치하고, 이미 설치된 formula의 버전 업그레이드는 하지 않는다.
+HOMEBREW_NO_AUTO_UPDATE=1 brew bundle --file="$dir/Brewfile" --no-upgrade
 
 if ! command -v mise &>/dev/null; then
 	echo "mise 명령을 찾을 수 없습니다. brew bundle 이 정상적으로 끝났는지 확인해 주세요." >&2

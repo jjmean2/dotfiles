@@ -17,12 +17,13 @@ NeoVim에서는 기본 설정을 한 후에 플러그인을 구동시키면,
 local sysname = (vim.uv or vim.loop).os_uname().sysname
 local os_name = sysname and string.lower(sysname)
 
+---@param config_module string @module
 local function require_config_with_variants(config_module)
-    pcall(require, config_module)
-    if os_name then
-        pcall(require, config_module .. "_" .. os_name)
-    end
-    pcall(require, config_module .. "_local")
+  pcall(require, config_module)
+  if os_name then
+    pcall(require, config_module .. "_" .. os_name)
+  end
+  pcall(require, config_module .. "_local")
 end
 
 -- ==================================================
@@ -30,8 +31,6 @@ end
 -- ==================================================
 vim.g.mapleader = " "
 vim.g.maplocalleader = " "
-
-require('config.core.options')
 
 -- ==================================================
 -- 🛠️ 에디터 options & keymaps

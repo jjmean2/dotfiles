@@ -6,15 +6,15 @@ end
 
 return {
     -- 1. Neovim 설정용 'vim' 객체 타입 힌트 (최신 스펙)
-    -- {
-    --     "folke/lazydev.nvim",
-    --     ft = "lua",
-    --     opts = {
-    --         library = {
-    --             { path = "${3rd}/luv/library", words = { "vim%.uv" } },
-    --         },
-    --     },
-    -- },
+    {
+        "folke/lazydev.nvim",
+        ft = "lua",
+        opts = {
+            library = {
+                { path = "${3rd}/luv/library", words = { "vim%.uv" } },
+            },
+        },
+    },
     -- 2. 최신 내장 LSP + Mason 설정
     -- nvim-lspconfig 는 Neovim 내장 LSP를 위한 설정 프리셋을 제공
     -- $runtimepath/lsp/<language-server>.lua 파일들을 제공
@@ -29,16 +29,15 @@ return {
     {
         "neovim/nvim-lspconfig",
         dependencies = {
-            "williamboman/mason.nvim",
-            "williamboman/mason-lspconfig.nvim",
+            "mason-org/mason.nvim",
+            "mason-org/mason-lspconfig.nvim",
         },
         config = function()
-            print("Log: nvim-lspconfig config loaded ✨🕹️")
             -- 1. Mason 초기화
             require("mason").setup()
 
             -- 2. Mason-Lspconfig 초기화 (원하는 서버 목록 자동 설치)
-            local servers = { "lua_ls" }
+            local servers = { "lua_ls", "vtsls" }
             require("mason-lspconfig").setup({
                 ensure_installed = servers,
                 automatic_installation = true,
@@ -55,9 +54,12 @@ return {
                     local opts = { buffer = ev.buf, silent = true }
 
                     -- 내장 LSP 단축키 바인딩
+                    -- gd를 누르면 정의 이동 함수 호출
                     vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
+                    -- K를 누르면 호버(문서 팝업) 함수 호출
                     vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
                     vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, opts)
+                    -- <leader>rn을 누르면 심볼 이름 변경
                     vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
                 end,
             })

@@ -39,7 +39,7 @@ vim.opt.ignorecase = true
 -- 인코딩 및 다국어 지원
 vim.opt.fileencodings:remove("latin1")
 -- vim.opt.fileencodings:append({"korea", "latin1"})
-vim.opt.fileencodings:append({"cp949", "latin1"})
+vim.opt.fileencodings:append({ "cp949", "latin1" })
 
 -- ==================================================
 -- 🛠️ 에디터 환경별 options & keymaps
@@ -52,22 +52,18 @@ if vim.g.vscode then
   -- 숫자 없이 j, k 입력 시 gj, gk로 작동, vs code에서는 gj가 커스텀 키매핑으로 지정되어 있으므로 remap = true 지정 필요
   vim.keymap.set('n', 'k', "v:count == 0 ? 'gk' : 'k'", { expr = true, silent = true, remap = true })
   vim.keymap.set('n', 'j', "v:count == 0 ? 'gj' : 'j'", { expr = true, silent = true, remap = true })
-
 else
   -- [일반 터미널] 전용 설정
 
-  -- vim.cmd.colorscheme("tokyonight")
-  -- vim.cmd.colorscheme("jellybeans-nvim")
-  vim.cmd.colorscheme("tokyonight")
 
   vim.opt.listchars = {
-      tab = '▸ ',
-      lead = '·',
-      trail = '·',
-      extends ='»',
-      precedes = '«',
-      nbsp = '␣',
-      eol = '↲'
+    tab = '▸ ',
+    lead = '·',
+    trail = '·',
+    extends = '»',
+    precedes = '«',
+    nbsp = '␣',
+    eol = '↲'
   }
   vim.opt.list = true
 
