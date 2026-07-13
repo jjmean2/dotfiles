@@ -49,7 +49,7 @@ return {
 
             -- 4. [핵심] 단축키 바인딩은 이제 전역 Autocmd (LspAttach)로 처리하는 것이 모범 사례입니다.
             vim.api.nvim_create_autocmd("LspAttach", {
-                group = vim.api.nvim_create_augroup("UserLspConfig", {}),
+                group = JwVim.augroup("UserLspConfig"),
                 callback = function(ev)
                     local opts = { buffer = ev.buf, silent = true }
 

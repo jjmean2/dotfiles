@@ -41,6 +41,36 @@ vim.opt.fileencodings:remove("latin1")
 -- vim.opt.fileencodings:append({"korea", "latin1"})
 vim.opt.fileencodings:append({ "cp949", "latin1" })
 
+-- -- Visual 모드에서 * 키로 선택 영역 아래 방향 검색
+-- vim.keymap.set("v", "*", [[y/\V<C-R>=escape(@", '/\')<CR><CR>]], { noremap = true, silent = true })
+--
+-- -- Visual 모드에서 # 키로 선택 영역 위 방향 검색
+-- vim.keymap.set("v", "#", [[y?\V<C-R>=escape(@", '?\')<CR><CR>]], { noremap = true, silent = true })
+
+-- 선택 영역을 검색어로 변환하는 핵심 로직 함수
+local function visual_search(direction)
+  -- 1. 현재 visual 영역의 텍스트를 무명 레지스터(")에 복사
+  vim.cmd('normal! "vy')
+
+  -- 2. 레지스터에 담긴 내용을 가져옴
+  local text = vim.fn.getreg('v')
+
+  -- 3. 검색 시 문제가 될 수 있는 특수문자(/, \, ?, 등)를 이스케이프 처리
+  -- direction이 '/'이면 '/'를, '?'이면 '?'를 이스케이프합니다.
+  local escaped_text = vim.fn.escape(text, direction .. [[\]])
+
+  -- 4. 최종 검색 명령어 실행
+  -- \V (Very Magic Off)를 사용하여 정규표현식 해석을 최소화합니다.
+  -- <CR>을 두 번 보내서 검색 모드 진입 후 바로 실행까지 완료합니다.
+  vim.cmd(direction .. [[\V]] .. escaped_text)
+end
+
+-- Visual 모드 키 매핑
+vim.keymap.set("v", "*", function() visual_search('/') end, { desc = "선택 영역 아래로 검색" })
+vim.keymap.set("v", "#", function() visual_search('?') end, { desc = "선택 영역 위로 검색" })
+
+
+
 -- ==================================================
 -- 🛠️ 에디터 환경별 options & keymaps
 -- ==================================================
@@ -54,8 +84,6 @@ if vim.g.vscode then
   vim.keymap.set('n', 'j', "v:count == 0 ? 'gj' : 'j'", { expr = true, silent = true, remap = true })
 else
   -- [일반 터미널] 전용 설정
-
-
   vim.opt.listchars = {
     tab = '▸ ',
     lead = '·',
