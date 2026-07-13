@@ -1,5 +1,3 @@
-base="$1" os
-
 case "$(uname -s)" in
 Darwin) os=darwin ;;
 Linux) os=linux ;;
