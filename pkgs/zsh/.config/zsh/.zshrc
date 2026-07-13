@@ -198,12 +198,6 @@ if [[ -f /usr/libexec/PlistBuddy ]]; then
 	alias PlistBuddy='/usr/libexec/PlistBuddy'
 fi
 
-# help 명령어
-unalias run-help
-autoload -Uz run-help
-HELPDIR="/usr/share/zsh/$ZSH_VERSION/help"
-alias help=run-help
-
 # ==================================================
 # 🕹️ Bindkey (키 바인딩) 설정
 # ==================================================

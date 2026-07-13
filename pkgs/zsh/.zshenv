@@ -5,10 +5,10 @@ esac
 
 # ZDOTDIR이 세팅되지 않은 경우에 기본 경로 지정
 # 빈 값이라도 세팅되어 있다면 스킵
-if [[ $base != darwin ]] || ((!$+ZDOTDIR)); then
-
+if [[ $os != darwin ]] || ((!$+ZDOTDIR)); then
 	export ZDOTDIR="$HOME/.config/zsh"
 fi
+unset os
 
 # 파라미터 확장시 Prompt Expansion을 사용하도록 설정 (% 플래그)
 # %x는 현재 스크립트 파일의 경로를 의미한다.
