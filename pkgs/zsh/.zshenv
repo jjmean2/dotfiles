@@ -1,11 +1,14 @@
-# if [[ -z $ZDOTDIR ]]; then
-# 	export ZDOTDIR="$HOME/.config/zsh"
-# 	[[ -f $ZDOTDIR/.zshenv ]] && source $ZDOTDIR/.zshenv
-# fi
+base="$1" os
+
+case "$(uname -s)" in
+Darwin) os=darwin ;;
+Linux) os=linux ;;
+esac
 
 # ZDOTDIR이 세팅되지 않은 경우에 기본 경로 지정
 # 빈 값이라도 세팅되어 있다면 스킵
-if ((!$+ZDOTDIR)); then
+if [[ $base != darwin ]] || ((!$+ZDOTDIR)); then
+
 	export ZDOTDIR="$HOME/.config/zsh"
 fi
 
