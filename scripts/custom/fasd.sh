@@ -9,7 +9,7 @@ set -euo pipefail
 
 prefix="$1"
 
-if command -v fasd &>/dev/null; then
+if [[ -e $prefix/fasd ]]; then
 	exit 0
 fi
 

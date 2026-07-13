@@ -11,7 +11,7 @@
 #   - .zshrc.d/* 로드
 
 # ==================================================
-# 🛠️ PATH, FPATH 및 시스템 기본 도구 환경 설정
+# 🛠️ PATH, FPATH 및 도구별 환경 설정
 # ==================================================
 
 # path 변수에 중복 경로가 들어가지 않도록
@@ -22,15 +22,6 @@ export PATH
 # 배열 변수의 경우에는 배열 요소를 경계로 요소가 나뉜다.
 path=(/usr/local/bin $path)
 path=($HOME/.local/bin $path)
-
-# Java 기본 버전 설정
-if [[ -f /usr/libexec/java_home ]]; then
-	export JAVA_HOME="$(/usr/libexec/java_home -v 11)"
-fi
-
-# ==================================================
-# 🛠️ 추가 설치 도구 초기화 및 환경 설정
-# ==================================================
 
 # The following lines have been added by Docker Desktop to enable Docker CLI completions.
 if [[ -d $HOME/.docker/completions ]]; then
@@ -107,27 +98,22 @@ if [[ -d "$HOME/Library/Application Support/JetBrains/Toolbox/scripts" ]]; then
 	path=("$HOME/Library/Application Support/JetBrains/Toolbox/scripts" $path)
 fi
 
-# ==================================================
 # 🛠️ 📦 zshrc.d/tools 디렉터리 설정 파일 로드
-# ==================================================
-if [[ -d $HOME/zshrc.d/tools ]]; then
+if [[ -d $HOME/.zshrc.d/tools ]]; then
 	# .zsh로 끝나는 파일만 로드 (알파벳/숫자 순서)
 	# (D)는 숨김 파일을 포함, (N)은 매칭 결과가 없어도 에러를 내지 않음
-	for config_file in "$HOME"/zshrc.d/tools/*.zsh(DN); do
+	for config_file in "$HOME"/.zshrc.d/tools/*.zsh(DN); do
 		source "$config_file"
 	done
 fi
 unset config_file
-
-# ==================================================
-# 🛠️ 우선순위가 높은 도구 PATH 설정
-# ==================================================
 
 # mise shell activation
 if command -v mise &>/dev/null; then
 	eval "$(mise activate zsh)"
 fi
 
+# 개인 도구 경로, 우선순위 가장 높게 설정
 path=($HOME/.jongwan/bin $path)
 
 # ==================================================
