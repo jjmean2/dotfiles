@@ -17,7 +17,7 @@ as_root() {
 
 # 설치할 도구 목록. 새 도구를 추가하려면 여기에 이름만 추가하면 되고,
 # 패키지 이름/실행파일 이름이 도구 이름과 다를 때만 아래 테이블에 예외를 등록한다.
-tools=(rg fd jq nvim stow)
+tools=(rg fd jq nvim stow tree-sitter-cli)
 
 # 도구의 기본 패키지 이름이 tools 의 이름과 다를 때만 등록한다. (배포판 공통)
 # 실행파일 이름은 tools 자체가 canonical bin 이름이므로 별도 기본값 테이블이 필요 없다.

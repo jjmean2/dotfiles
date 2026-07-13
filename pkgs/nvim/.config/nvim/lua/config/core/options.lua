@@ -1,7 +1,6 @@
 -- ==================================================
 -- 🛠️ 에디터 options & keymaps
 -- ==================================================
-
 -- 파일 검색 및 탭 완성 (Built-in Fuzzy Search)
 -- Search down into subfolders
 -- Provides tab-completion for all file-related tasks
