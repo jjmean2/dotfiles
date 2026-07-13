@@ -99,10 +99,10 @@ if [[ -d "$HOME/Library/Application Support/JetBrains/Toolbox/scripts" ]]; then
 fi
 
 # 🛠️ 📦 zshrc.d/tools 디렉터리 설정 파일 로드
-if [[ -d $HOME/.zshrc.d/tools ]]; then
+if [[ -d $ZDOTDIR/zshrc.d/tools ]]; then
 	# .zsh로 끝나는 파일만 로드 (알파벳/숫자 순서)
 	# (D)는 숨김 파일을 포함, (N)은 매칭 결과가 없어도 에러를 내지 않음
-	for config_file in "$HOME"/.zshrc.d/tools/*.zsh(DN); do
+	for config_file in $ZDOTDIR/zshrc.d/tools/*.zsh(DN); do
 		source "$config_file"
 	done
 fi
@@ -223,10 +223,10 @@ bindkey "^X^E" edit-command-line
 # ==================================================
 # 🕹️ 📦 zshrc.d 디렉터리 설정 파일 로드
 # ==================================================
-if [[ -d $HOME/zshrc.d ]]; then
+if [[ -d $ZDOTDIR/zshrc.d ]]; then
 	# .zsh로 끝나는 파일만 로드 (알파벳/숫자 순서)
 	# (D)는 숨김 파일을 포함, (N)은 매칭 결과가 없어도 에러를 내지 않음
-	for config_file in "$HOME"/zshrc.d/*.zsh(DN); do
+	for config_file in $ZDOTDIR/zshrc.d/*.zsh(DN); do
 		source "$config_file"
 	done
 fi
