@@ -3,7 +3,7 @@ set -euo pipefail
 
 # OS 를 감지해서 darwin/linux 전용 설치 스크립트로 위임한다.
 
-dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 case "$(uname -s)" in
 Darwin)
@@ -23,4 +23,4 @@ esac
 mkdir -p "$HOME/.jongwan"
 
 # 패키지 매니저로 설치할 수 없는 도구들은 scripts/custom/ 밑에 도구별 설치 스크립트로 분리해 둔다.
-"$dir/custom/fasd.sh" "$HOME/.jongwan"
+"$dir/installer/fasd.sh"

@@ -7,7 +7,7 @@ set -euo pipefail
 #
 # 사용법: fasd.sh <prefix>  (예: fasd.sh "$(brew --prefix)", fasd.sh /usr/local)
 
-prefix="$1"
+prefix="$HOME/.jongwan"
 
 if [[ -e $prefix/fasd ]]; then
 	exit 0
