@@ -20,4 +20,9 @@ esac
 
 # 공통 스크립트 설치
 # 패키지 매니저로 설치할 수 없는 도구들은 scripts/custom/ 밑에 도구별 설치 스크립트로 분리해 둔다.
+
+echo "공통 스크립트 설치 시작"
+
 "$dir/installer/fasd.sh"
+
+echo "기본 도구 설치 완료"
