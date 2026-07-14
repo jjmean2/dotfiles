@@ -32,4 +32,7 @@ eval "$(mise activate bash)"
 # mise use --global 은 지정한 버전이 없으면 설치하고, 이미 설치/설정되어 있으면 그대로 둔다.
 mise use --global node@lts go@latest python@latest deno@latest
 
+dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+"$dir/installer/fasd.sh"
+
 echo "macOS 기본 도구 설치 완료"

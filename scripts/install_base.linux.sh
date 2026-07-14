@@ -105,7 +105,7 @@ link_renamed_bins "$manager"
 dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 "$dir/installer/nvim-linux.sh"
+"$dir/installer/fasd.sh"
 
-has mise || curl https://mise.run | sh
 
 echo "Linux 기본 도구 설치 완료: ${tools[*]}"
