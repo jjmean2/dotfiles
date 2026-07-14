@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+TARGET_OPT_DIR="$HOME/.local/opt"
+TARGET_BIN_DIR="$HOME/.local/bin"
+
+if [[ -f $TARGET_BIN_DIR/nvim ]]; then
+	echo "Neovim is already installed at $TARGET_BIN_DIR/nvim. Skipping installation."
+	exit 0
+fi
+
 ARCH=$(uname -m)
 echo "Detected architecture: $ARCH"
 
@@ -25,8 +33,6 @@ chmod u+x nvim.appimage
 
 ./nvim.appimage --appimage-extract
 
-TARGET_OPT_DIR="$HOME/.local/opt"
-TARGET_BIN_DIR="$HOME/.local/bin"
 mkdir -p "$TARGET_OPT_DIR" "$TARGET_BIN_DIR"
 
 rm -rf "$TARGET_OPT_DIR/neovim"

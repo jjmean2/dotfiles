@@ -9,9 +9,13 @@ set -euo pipefail
 
 prefix="$HOME/.jongwan"
 
-if [[ -e $prefix/fasd ]]; then
+if [[ -f $prefix/fasd ]]; then
 	exit 0
 fi
+
+echo "Installing fasd to $prefix..."
+
+mkdir -p "$prefix"
 
 src="$(mktemp -d)"
 trap 'rm -rf "$src"' EXIT
