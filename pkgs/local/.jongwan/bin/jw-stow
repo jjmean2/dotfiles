@@ -65,14 +65,12 @@ for pkg in "$@"; do
 		exit 1
 	fi
 
-	# .darwin / .linux 같은 플랫폼 토큰은 파일명 끝(config.darwin)뿐 아니라 중간
-	# (something.darwin.zsh), 구분자가 -/_ 인 경우(something-darwin, something_darwin.ext),
-	# 심지어 디렉터리 이름 자체(darwin/... 또는 트리 중간의 sub/darwin/...)로도 올 수 있다.
-	# stow --ignore 는 패키지 기준 상대 경로 전체(예: .zshrc.d/something.darwin.zsh)에 대해
-	# 앵커 없이 매칭하므로, ^/$ 는 각 경로 컴포넌트가 아니라 그 상대 경로 문자열 전체의
-	# 시작/끝이다. 트리 중간 디렉터리(sub/darwin/foo)까지 잡으려면 경로 구분자 /도 경계
-	# 문자에 포함해야 한다.
-	stow --dir="$pkgs_dir" --target="$target_path" --ignore="(^|[/._-])(${other_os})(\$|[/._-])|\\.skel\$" --no-folding --restow "$pkg"
+	# darwin, linux 같은 플랫폼 토큰이 파일명에 붙은 경우, 다른 플랫폼 전용 파일은 심링크하지 않는다.
+	# 플랫폼 토큰이 다른 단어와 ._- 으로 구분되거나 경로 구분자로 나뉘어 있으면, stow --ignore 옵션으로 제외한다.
+	# --ignore REGEX 옵션은 지정한 REGEX로 끝나는 파일을 무시하는 것으로 REGEX 값을 (?^:REGEX\z) 형태로 감싼다.
+	# (?^:)는 non-capturing group이면서 ^ 플래그를 적용한 것으로 이 그룹 안에서 모든 플래그를 기본값으로 초기화한다는 의미다.
+	# \z는 문자열의 끝을 의미한다.
+	stow -v --dir="$pkgs_dir" --target="$target_path" --ignore="(?:^|[/._-])${other_os}(?:[/._-].*)?|\\.skel" --no-folding --restow "$pkg"
 	echo "설치됨: $pkg -> ~ (--no-folding)"
 
 	#region: skeleton 파일(.skel) 처리
