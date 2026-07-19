@@ -1,22 +1,28 @@
 # 섹션 분류 방식
 # 크게 다음과 같은 멘탈 모델로 진행한다.
-# 1. 도구 환경 설정
-#   - 기본 도구 환경 설정 (FPATH, PATH 및 환경 변수 설정, 다른 도구가 참조하는 함수 autoload)
-#   - 추가 설치 도구 환경 설정
-#   - .zshrc.d/tools/* 로드
-#   - 우선순위가 높은 도구 PATH 설정
+# 1. PATH, FPATH 등 환경변수 세팅 및 도구별 초기화
+#   - zshrc.d/tools/*.zsh 로드
 # 2. 자동 완성 설정 (compinit)
 # 3. 대화형 UX 설정
 #   - 터미널 UX용 환경변수 설정, autoload, bindkey, alias
-#   - .zshrc.d/* 로드
+#   - zshrc.d/* 로드
 
 # ==================================================
 # 🛠️ PATH, FPATH 및 도구별 환경 설정
 # ==================================================
 
-# path 변수에 중복 경로가 들어가지 않도록
+# fastlane 명령시 에러나지 않도록?
+# https://docs.fastlane.tools/getting-started/ios/setup/#set-up-environment-variables
+#export LANG=en_US.UTF-8
+#export LANGUAGE=en_US.UTF-8
+#export LC_ALL=en_US.UTF-8
+
+# path, fpath 변수에 중복 경로가 들어가지 않도록
 typeset -U path
 export PATH
+
+typeset -U fpath
+export FPATH
 
 # zsh에서는 변수 확장시 공백에서 word splitting 이 일어나지 않으므로 큰 따옴표로 감싸지 않아도 된다.
 # 배열 변수의 경우에는 배열 요소를 경계로 요소가 나뉜다.
@@ -49,11 +55,6 @@ fi
 # https://github.com/nodejs/corepack/blob/main/README.md#environment-variables
 export COREPACK_ENABLE_AUTO_PIN=0
 
-# bun completions
-if [[ -s $HOME/.bun/_bun ]]; then
-	source "$HOME/.bun/_bun"
-fi
-
 # SDKMAN
 #THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
 if [[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]]; then
@@ -84,6 +85,39 @@ fi
 # Toolbox App
 if [[ -d "$HOME/Library/Application Support/JetBrains/Toolbox/scripts" ]]; then
 	path=("$HOME/Library/Application Support/JetBrains/Toolbox/scripts" $path)
+fi
+
+if [[ -d $HOME/.pixi/bin ]]; then
+	path=($HOME/.pixi/bin $path)
+fi
+
+if [[ -d /opt/homebrew/share/git-core/contrib/diff-highlight ]]; then
+	path=(/opt/homebrew/share/git-core/contrib/diff-highlight $path)
+fi
+
+# LM Studio CLI (lms)
+if [[ -d $HOME/.lmstudio/bin ]]; then
+	path=($HOME/.lmstudio/bin $path)
+fi
+
+# mozjpeg KEG-only
+if [[ -d /opt/homebrew/opt/mozjpeg/bin ]]; then
+	path=(/opt/homebrew/opt/mozjpeg/bin $path)
+fi
+
+if [[ -d $HOME/vcpkg ]]; then
+	export VCPKG_ROOT="$HOME/vcpkg"
+fi
+
+if [[ -d $HOME/.bun ]]; then
+	# bun global install
+	export BUN_INSTALL="$HOME/.bun"
+	path=("$BUN_INSTALL/bin" $path)
+
+	# bun completions
+	if [[ -s $HOME/.bun/_bun ]]; then
+		source "$HOME/.bun/_bun"
+	fi
 fi
 
 # 🛠️ 📦 zshrc.d/tools 디렉터리 설정 파일 로드
@@ -166,15 +200,23 @@ fi
 # 🕹️ 함수 autoload
 # ==================================================
 
-# region: 유용한 함수 autoload
 # 색상별 escape sequence를 색상 이름 변수에 저장해주는 함수
 # e.g. `echo "$fg[red]Red Text$reset_color"` 같은 식으로 색상을 쓸 수 있게 해준다.
 autoload -Uz colors && colors
 
+#region: option-backspace 삭제 범위 설정
+# Meta(Option)-Backspace 로 slash까지만 지우도록 설정
+# https://unix.stackexchange.com/questions/258656/how-can-i-have-two-keystrokes-to-delete-to-either-a-slash-or-a-word-in-zsh/258661#answer-666457
+# bindkey '^[^?' vi-backward-kill-word
+
 # bash 스타일로 word 구분, /도 word의 경계가 되도록 함
 autoload -Uz select-word-style
 select-word-style bash
-# endregion
+#endregion
+
+# https://zsh.sourceforge.io/Doc/Release/User-Contributions.html#Recent-Directories
+# autoload -Uz chpwd_recent_dirs cdr add-zsh-hook
+# add-zsh-hook chpwd chpwd_recent_dirs
 
 # ==================================================
 # 🕹️ alias 설정
@@ -197,6 +239,10 @@ fi
 if [[ -f /usr/libexec/PlistBuddy ]]; then
 	alias PlistBuddy='/usr/libexec/PlistBuddy'
 fi
+
+# Shell Title
+# alias title='printf "\033]0;%s\007"'
+#printf "\033]0;`date "+%a %d %b %Y %I:%M %p"`\007"
 
 # ==================================================
 # 🕹️ Bindkey (키 바인딩) 설정

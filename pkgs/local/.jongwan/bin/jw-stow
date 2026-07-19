@@ -7,104 +7,197 @@ set -euo pipefail
 # 패키지는 다음과 같은 종류의 파일들로 구성된다.
 # - 저장소와 동기화되는 파일 (심링크로 설치)
 #   - 모든 플랫폼에서 공통으로 쓰이는 파일
-#   - 특정 플랫폼에서만 쓰이는 파일 (파일명에 .darwin, .linux 같은 토큰을 붙임)
+#   - 특정 플랫폼에서만 쓰이는 파일 (파일 경로에 .darwin, .linux 같은 토큰을 포함)
 # - 저장소와 동기화되지 않는 파일 (복사로 설치, .skel 로 끝나는 파일, 초기 설정 제공용)
 #
-# ✅ 패키지 아래에 있는 파일들을 HOME 폴더에 동일한 파일 구조로 심링크한다.
-# ✅ 플랫폼 전용 파일은 .darwin, .linux 같은 토큰을 파일명에 붙이는데,
-# 다른 플랫폼 전용 파일은 심링크하지 않는다.
-# (예: macOS에서 jw-stow mpv 를 실행하면 mpv.conf.darwin.zsh 는 심링크되지만
-# mpv.conf.linux.zsh 는 심링크되지 않는다.)
-# ✅ 스켈레톤 파일(.skel)은 심링크하지 않고, 타깃에 해당 파일이 없을 때만 복사해서 실제 파일로 만든다.
-# 저장소 안의 내용과 동기화하지 않으면서 초기 설정을 제공하는 용도다.
-#
-# 심링크는 stow를 사용하여 수행한다. --no-folding 옵션으로 중간 디렉토리들을 실제로 만들고,
-# 개별 파일들마다 심링크한다.
-if [ "$#" -eq 0 ]; then
-	echo "사용법: jw-stow <pkg> [<pkg> ...]" >&2
-	exit 1
-fi
+# stow 명령으로 저장소와 동기화될 파일을 symlink로 설치하고,
+# .skel 파일은 타겟 디렉토리에 없을 때만 복사하여 초기값으로 사용한다.
+# -d 옵션은 stow로 설치한 symlink만 제거한다.
 
-# 이 스크립트 자신은 pkgs/local/.jongwan/bin/jw-stow 가 ~/.jongwan/bin/jw-stow 로 심링크되어
-# 실행되므로, 심링크를 직접 풀어서 저장소 안의 실제 위치를 알아내야 pkgs_dir 을 찾을 수 있다.
-self="${BASH_SOURCE[0]}"
-while [ -L "$self" ]; do
-	link="$(readlink "$self")"
-	case "$link" in
-	/*) self="$link" ;;
-	*) self="$(cd -P "$(dirname "$self")" &>/dev/null && pwd)/$link" ;;
+OTHER_OS=""
+DELETE_MODE=0
+PKGS_DIR=""
+TARGET_DIR=""
+PKGS=()
+CREATED_FILES=()
+
+parse_args() {
+	local opt
+	local OPTIND=1
+
+	while getopts ":d" opt; do
+		case "$opt" in
+		d) DELETE_MODE=1 ;;
+		*)
+			echo "사용법: jw-stow [-d] <pkg> [<pkg> ...]" >&2
+			return 1
+			;;
+		esac
+	done
+	shift $((OPTIND - 1))
+
+	PKGS=("$@")
+
+	if [[ ${#PKGS[@]} -eq 0 ]]; then
+		echo "사용법: jw-stow [-d] <pkg> [<pkg> ...]" >&2
+		return 1
+	fi
+}
+
+_init_env_other_os() {
+	case "$(uname -s)" in
+	Darwin) OTHER_OS=linux ;;
+	Linux) OTHER_OS=darwin ;;
+	*)
+		echo "지원하지 않는 OS 입니다: $(uname -s)" >&2
+		return 1
+		;;
 	esac
-done
+}
 
-pkgs_dir="$(cd -P "$(dirname "$self")/../../.." &>/dev/null && pwd)"
+_init_env_directories() {
+	local self link
+	# 이 스크립트 자신은 pkgs/local/.jongwan/bin/jw-stow 가 ~/.jongwan/bin/jw-stow 로 심링크되어
+	# 실행되므로, 심링크를 직접 풀어서 저장소 안의 실제 위치를 알아내야 PKGS_DIR 을 찾을 수 있다.
+	self="${BASH_SOURCE[0]}"
+	while [ -L "$self" ]; do
+		link="$(readlink "$self")"
+		case "$link" in
+		/*) self="$link" ;;
+		*) self="$(cd -P "$(dirname "$self")" &>/dev/null && pwd)/$link" ;;
+		esac
+	done
 
-if ! command -v stow &>/dev/null; then
-	echo "stow 명령을 찾을 수 없습니다. 먼저 설치해 주세요 (예: brew install stow)." >&2
-	exit 1
-fi
+	PKGS_DIR="$(cd -P "$(dirname "$self")/../../.." &>/dev/null && pwd)"
+	TARGET_DIR="$HOME"
+}
 
-case "$(uname -s)" in
-Darwin)
-	other_os=linux
-	;;
-Linux)
-	other_os=darwin
-	;;
-*)
-	echo "지원하지 않는 OS 입니다: $(uname -s)" >&2
-	exit 1
-	;;
-esac
-
-for pkg in "$@"; do
-	pkg_path="$pkgs_dir/$pkg/"
-	target_path="$HOME"
-
-	if [ ! -d "$pkg_path" ]; then
-		echo "존재하지 않는 패키지입니다: $pkg ($pkg_path)" >&2
-		exit 1
+init_env() {
+	if ! command -v stow &>/dev/null; then
+		echo "stow 명령을 찾을 수 없습니다. 먼저 설치해 주세요 (예: brew install stow)." >&2
+		return 1
 	fi
 
-	# darwin, linux 같은 플랫폼 토큰이 파일명에 붙은 경우, 다른 플랫폼 전용 파일은 심링크하지 않는다.
-	# 플랫폼 토큰이 다른 단어와 ._- 으로 구분되거나 경로 구분자로 나뉘어 있으면, stow --ignore 옵션으로 제외한다.
-	# --ignore REGEX 옵션은 지정한 REGEX로 끝나는 파일을 무시하는 것으로 REGEX 값을 (?^:REGEX\z) 형태로 감싼다.
-	# (?^:)는 non-capturing group이면서 ^ 플래그를 적용한 것으로 이 그룹 안에서 모든 플래그를 기본값으로 초기화한다는 의미다.
-	# \z는 문자열의 끝을 의미한다.
-	stow -v --dir="$pkgs_dir" --target="$target_path" --ignore="(?:^|[/._-])${other_os}(?:[/._-].*)?|\\.skel" --no-folding --restow "$pkg"
-	echo "설치됨: $pkg -> ~ (--no-folding)"
+	_init_env_other_os || return 1
+	_init_env_directories || return 1
 
-	#region: skeleton 파일(.skel) 처리
+}
+
+stow_with_opts() {
+	local opts=(
+		-v
+		--dir="$PKGS_DIR"
+		--target="$TARGET_DIR"
+		--no-folding
+		--ignore='\.skel'
+		--ignore='(?:.*[._-])?'"${OTHER_OS}"'(?:[._-].*)?'
+	)
+	stow "${opts[@]}" "$@"
+}
+
+copy_skel_files() {
+	local skel target
+
 	# -d '' 는 \0(null) 문자를 구분자(delimiter)로 쓰겠다는 의미.
 	# find의 -print0 과 조합하여 파일 이름에 공백이 있어도 안전하게 처리 가능.
 	while IFS= read -r -d '' skel; do
-		# pkg_path 뒤의 상대 경로 추출
-		rel="${skel#"$pkg_path"}"
-		# .skel 확장자를 제거하고 target_path 아래의 실제 경로 계산
-		real="$target_path/${rel%.skel}"
+		# 패키지 디렉토리로부터의 상대 경로 추출
+		target="${skel#"$PKGS_DIR"/*/}"
+		# .skel 확장자 제거 후, 타겟 디렉토리 아래의 경로 계산
+		target="$TARGET_DIR/${target%.skel}"
 
-		if [ ! -e "$real" ]; then
-			mkdir -p "$(dirname "$real")"
-			cp "$skel" "$real"
-			echo "생성됨: $real ($pkg/$rel 에서 복사, 로컬에서 자유롭게 수정 가능)"
+		if [[ -e "$target" ]]; then
+			echo "스켈레톤 파일 건너뜀: $target (이미 존재함)" >&2
+			continue
 		fi
-	done < <(find "$pkg_path" -type f -name '*.skel' -print0)
-	#endregion
 
-	#region: package 별 예외 처리
-	# mpv 의 include 는 대상 파일이 없으면 에러를 낸다(git/tmux 의 -q 와 다름).
-	# 따라서 mpv.conf 파일에서 include하는 모든 파일이 존재해야 한다.
-	# local 파일은 skel 파일로 처리했고, platform 별 파일은 symlink가 걸리지 않은 파일의 경우,
-	# 여기서 빈 파일을 생성해준다.
-	if [ "$pkg" = "mpv" ]; then
-		mpv_dir="$HOME/.config/mpv"
-		mkdir -p "$mpv_dir"
+		mkdir -p "$(dirname "$target")" || return 1
+		cp "$skel" "$target" || return 1
 
-		# touch는 기본적으로 access time과 modification time을 현재 시간으로 갱신하고,
-		# 파일이 없으면 새로 생성한다.
-		# -a 옵션을 쓰면, access time만 갱신하고 modification time은 그대로 둔다.
-		for platform in darwin linux; do
-			touch -a "$mpv_dir/mpv.$platform.conf"
-		done
+		CREATED_FILES+=("$target")
+		echo "생성됨: $target ($skel 에서 복사, 로컬에서 자유롭게 수정 가능)"
+	done < <(find "${PKGS[@]/#/$PKGS_DIR/}" -type f -name '*.skel' -print0)
+}
+
+rollback() {
+	# 1. 롤백할 파일이 없으면 즉시 종료
+	if [[ ${#CREATED_FILES[@]} -eq 0 ]]; then
+		return
 	fi
-	#endregion
-done
+
+	printf -- "\n%s\n\n" "에러 발생! 다음 파일들을 삭제하고 원상 복구할 수 있습니다:"
+	printf -- "  - %s\n" "${CREATED_FILES[@]}"
+	printf -- "\n"
+
+	if [[ -t 0 ]]; then
+		local answer
+		read -r -p "위 파일들을 삭제하고 원상 복구하시겠습니까? (y/N): " answer </dev/tty
+
+		if [[ ! $answer =~ ^[yY]$ ]]; then
+			echo "⚠️ 롤백을 취소했습니다."
+			return 1
+		fi
+	fi
+
+	echo "🧹 원상 복구를 진행합니다..."
+	for file in "${CREATED_FILES[@]}"; do
+		if [[ -f "$file" ]]; then
+			rm -f "$file"
+			echo "삭제됨: $file"
+		fi
+	done
+
+	echo "롤백 완료"
+	return
+}
+
+run_pkg_post_install_script() {
+	local pkg
+	for pkg in "${PKGS[@]}"; do
+
+		case "$pkg" in
+		mpv)
+			# mpv 설정 디렉토리 생성
+			local mpv_dir="$HOME/.config/mpv"
+			if ! mkdir -p "$mpv_dir"; then
+				echo "mpv 설정 디렉토리 생성 실패: $mpv_dir" >&2
+				return 1
+			fi
+
+			# touch는 기본적으로 access time과 modification time을 현재 시간으로 갱신하고,
+			# 파일이 없으면 새로 생성한다.
+			# -a 옵션을 쓰면, access time만 갱신하고 modification time은 그대로 둔다.
+			local platform
+			for platform in darwin linux; do
+				if ! touch -a "$mpv_dir/mpv.$platform.conf"; then
+					echo "mpv 설정 파일 생성 실패: $mpv_dir/mpv.$platform.conf" >&2
+					return 1
+				fi
+			done
+			;;
+
+		*)
+			;;
+		esac
+	done
+}
+
+main() {
+	parse_args "$@" || return 1
+	init_env || return 1
+
+	if [[ $DELETE_MODE -eq 1 ]]; then
+		stow_with_opts --delete "${PKGS[@]}"
+		return
+	fi
+
+	stow_with_opts --restow "${PKGS[@]}"
+	if ! copy_skel_files; then
+		rollback
+		return 1
+	fi
+
+	run_pkg_post_install_script
+}
+
+main "$@"

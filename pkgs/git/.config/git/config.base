@@ -18,8 +18,6 @@
 	defaultBranch = main
 [merge]
 	conflictstyle = diff3
-[difftool "vscode"]
-	cmd = code --wait --diff $LOCAL $REMOTE
 [commit]
 	verbose = true
 [core]
