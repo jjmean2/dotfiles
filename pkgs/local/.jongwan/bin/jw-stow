@@ -74,6 +74,19 @@ _init_env_directories() {
 
 init_env() {
 	if ! command -v stow &>/dev/null; then
+		# macOS(Homebrew)는 /opt/homebrew(Apple Silicon), /usr/local(Intel) 같은 비표준
+		# prefix를 쓰기 때문에, PATH에 brew shellenv 가 아직 반영되지 않은 셸에서는 stow가
+		# 설치돼 있어도 못 찾을 수 있다. canonical 경로를 직접 확인해 재시도한다.
+		# 리눅스는 apt/apk/dnf/pacman이 표준 PATH(/usr/bin 등)에 설치하므로 해당 없고,
+		# 아래 -x 체크가 그냥 실패하고 넘어간다.
+		if [ -x /opt/homebrew/bin/brew ]; then
+			eval "$(/opt/homebrew/bin/brew shellenv)"
+		elif [ -x /usr/local/bin/brew ]; then
+			eval "$(/usr/local/bin/brew shellenv)"
+		fi
+	fi
+
+	if ! command -v stow &>/dev/null; then
 		echo "stow 명령을 찾을 수 없습니다. 먼저 설치해 주세요 (예: brew install stow)." >&2
 		return 1
 	fi

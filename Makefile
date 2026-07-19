@@ -1,4 +1,4 @@
-.PHONY: all install link
+.PHONY: all install link unlink
 
 all: install link
 
@@ -9,3 +9,7 @@ install:
 # pkgs 를 stow 로 링크 (scripts/install_pkgs.sh)
 link:
 	scripts/install_pkgs.sh
+
+# pkgs 를 stow 로 unlink (scripts/uninstall_pkgs.sh)
+unlink:
+	scripts/uninstall_pkgs.sh

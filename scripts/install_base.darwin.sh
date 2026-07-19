@@ -7,14 +7,26 @@ set -euo pipefail
 
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
-if ! command -v brew &>/dev/null; then
-	NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-	if [ -x /opt/homebrew/bin/brew ]; then
+# brew 명령의 canonical 경로는 Apple Silicon과 Intel Mac에서 다르므로, PATH가
+# 아직 안 잡혀 있어 command -v로 못 찾는 경우까지 대비해 두 경로를 직접 확인한다.
+ensure_brew() {
+	if command -v brew &>/dev/null; then
+		return 0
+	elif [ -x /opt/homebrew/bin/brew ]; then
 		eval "$(/opt/homebrew/bin/brew shellenv)"
 	elif [ -x /usr/local/bin/brew ]; then
 		eval "$(/usr/local/bin/brew shellenv)"
+	else
+		return 1
 	fi
+}
+
+if ! ensure_brew; then
+	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	ensure_brew || {
+		echo "brew 설치에 실패했습니다." >&2
+		exit 1
+	}
 fi
 
 # 메타데이터 최신화. formula 설치 스크립트가 바뀔 수도 있으므로 brew bundle 전에 명시적으로 한번 수행한다.
