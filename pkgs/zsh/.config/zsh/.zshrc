@@ -1,44 +1,13 @@
-# 섹션 분류 방식
-# 크게 다음과 같은 멘탈 모델로 진행한다.
-# 1. PATH, FPATH 등 환경변수 세팅 및 도구별 초기화
-#   - zshrc.d/tools/*.zsh 로드
-# 2. 자동 완성 설정 (compinit)
-# 3. 대화형 UX 설정
-#   - 터미널 UX용 환경변수 설정, autoload, bindkey, alias
-#   - zshrc.d/* 로드
+# 주로 대화형 세션에서 유용한 설정들을 진행한다.
+# GUI 앱 관련 설정은 스크립트로 실행할 일이 거의 없으므로 여기서 처리한다.
+
+# - 환경 변수 및 도구별 환경 설정 (대화형 세션에서 유용한 편의 설정)
+# - 자동 완성 (compinit)
+# - 대화형 UX 설정 (프롬프트, bindkey, alias 등)
 
 # ==================================================
 # 🛠️ PATH, FPATH 및 도구별 환경 설정
 # ==================================================
-
-# fastlane 명령시 에러나지 않도록?
-# https://docs.fastlane.tools/getting-started/ios/setup/#set-up-environment-variables
-#export LANG=en_US.UTF-8
-#export LANGUAGE=en_US.UTF-8
-#export LC_ALL=en_US.UTF-8
-
-# path, fpath 변수에 중복 경로가 들어가지 않도록
-typeset -U path
-export PATH
-
-typeset -U fpath
-export FPATH
-
-# zsh에서는 변수 확장시 공백에서 word splitting 이 일어나지 않으므로 큰 따옴표로 감싸지 않아도 된다.
-# 배열 변수의 경우에는 배열 요소를 경계로 요소가 나뉜다.
-path=(/usr/local/bin $path)
-path=($HOME/.local/bin $path)
-
-# The following lines have been added by Docker Desktop to enable Docker CLI completions.
-if [[ -d $HOME/.docker/completions ]]; then
-	fpath=($HOME/.docker/completions $fpath)
-fi
-
-# homebrew로 설치한 zsh-completions의 completion 함수들을 fpath에 추가
-if command -v brew &>/dev/null; then
-	fpath+=($(brew --prefix)/share/zsh-completions)
-fi
-
 # iTerm2 shell integration
 if [[ -e $HOME/.iterm2_shell_integration.zsh ]]; then
 	source "$HOME/.iterm2_shell_integration.zsh"
@@ -50,74 +19,9 @@ if [[ -e $HOME/.iterm2_shell_integration.zsh ]]; then
 	}
 fi
 
-# corepack 설정
-# Disable automatic package.json#packageManager field setting when using corepack
-# https://github.com/nodejs/corepack/blob/main/README.md#environment-variables
-export COREPACK_ENABLE_AUTO_PIN=0
-
-# SDKMAN
-#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
-if [[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]]; then
-	export SDKMAN_DIR="$HOME/.sdkman"
-	source "$HOME/.sdkman/bin/sdkman-init.sh"
-fi
-
-# Antigravity
-if [[ -d $HOME/.antigravity/antigravity/bin ]]; then
-	path=($HOME/.antigravity/antigravity/bin $path)
-fi
-
-# swiftly
-if [[ -f $HOME/.swiftly/env.sh ]]; then
-	source "$HOME/.swiftly/env.sh"
-fi
-
 # iPhone ShellFish 앱
 if [[ -e $HOME/.shellfishrc ]]; then
 	source "$HOME/.shellfishrc"
-fi
-
-# cargo
-if [[ -f $HOME/.cargo/env ]]; then
-	source "$HOME/.cargo/env"
-fi
-
-# Toolbox App
-if [[ -d "$HOME/Library/Application Support/JetBrains/Toolbox/scripts" ]]; then
-	path=("$HOME/Library/Application Support/JetBrains/Toolbox/scripts" $path)
-fi
-
-if [[ -d $HOME/.pixi/bin ]]; then
-	path=($HOME/.pixi/bin $path)
-fi
-
-if [[ -d /opt/homebrew/share/git-core/contrib/diff-highlight ]]; then
-	path=(/opt/homebrew/share/git-core/contrib/diff-highlight $path)
-fi
-
-# LM Studio CLI (lms)
-if [[ -d $HOME/.lmstudio/bin ]]; then
-	path=($HOME/.lmstudio/bin $path)
-fi
-
-# mozjpeg KEG-only
-if [[ -d /opt/homebrew/opt/mozjpeg/bin ]]; then
-	path=(/opt/homebrew/opt/mozjpeg/bin $path)
-fi
-
-if [[ -d $HOME/vcpkg ]]; then
-	export VCPKG_ROOT="$HOME/vcpkg"
-fi
-
-if [[ -d $HOME/.bun ]]; then
-	# bun global install
-	export BUN_INSTALL="$HOME/.bun"
-	path=("$BUN_INSTALL/bin" $path)
-
-	# bun completions
-	if [[ -s $HOME/.bun/_bun ]]; then
-		source "$HOME/.bun/_bun"
-	fi
 fi
 
 # 🛠️ 📦 zshrc.d/tools 디렉터리 설정 파일 로드
@@ -130,6 +34,9 @@ if [[ -d $ZDOTDIR/zshrc.d/tools ]]; then
 fi
 unset config_file
 
+# cd를 할 때마다 PATH를 변경하는 hook을 등록한다.
+# 이 방식은 대화형 세션에서만 사용하고,
+# 비대화형 세션에서는 shims 방식을 쓰도록 .zshenv에서 설정함
 # mise shell activation
 if command -v mise &>/dev/null; then
 	eval "$(mise activate zsh)"
