@@ -1,0 +1,21 @@
+# 대소문자 무시 자동완성 (zstyle matcher-list 대응)
+set completion-ignore-case on
+
+# 대소문자 및 하이픈/언더바 구분 없이 유연하게 일치 시도
+set completion-map-case on
+
+# 자동완성 메뉴에 색상 적용 (Zsh의 list-colors 활성화 대응)
+set colored-stats on
+
+# 파일/디렉터리 구분 기호(/) 표시
+set visible-stats on
+
+# 탭을 1번만 눌러도 완성 후보 목록 출력 (기본은 2번)
+set show-all-if-ambiguous on
+
+# 단어 경계 구분 설정 (select-word-style bash 대응)
+# 슬래시(/)를 단어 구분자로 인식하도록 설정
+; set word-orientations space-and-slashes
+
+# Alt-Backspace로 / 기준 전단어 삭제
+"\e\C-?": backward-kill-word

@@ -1,7 +1,9 @@
-echo .bash_profile
+# shellcheck shell=bash disable=SC1091
 
-#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
-export SDKMAN_DIR="$HOME/.sdkman"
-[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
+if [[ -r $HOME/.config/shell/profile.sh ]]; then
+	source "$HOME/.config/shell/profile.sh"
+fi
 
-. "$HOME/.local/bin/env"
+if [[ $- = *i* ]]; then
+	source "$HOME/.bashrc"
+fi

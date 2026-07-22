@@ -3,6 +3,8 @@
     ".zshenv*": "shellscript",
     ".zprofile*": "shellscript",
     ".zshrc*": "shellscript",
+    ".bash_profile*": "shellscript",
+    ".bashrc*": "shellscript",
     "source_zsh_variants": "shellscript",
     "**/git/config.{base,darwin,skel,linux}": "properties",
     "mpv.conf": "ini"
@@ -10,10 +12,16 @@
   // Lua LSP 설정
   "Lua.runtime.version": "LuaJIT",
   // 전역 변수로 vim 을 쓸 수 있도록 추가
-  "Lua.diagnostics.globals": ["vim"],
-  "Lua.workspace.userThirdParty": ["nvim"],
+  "Lua.diagnostics.globals": [
+    "vim"
+  ],
+  "Lua.workspace.userThirdParty": [
+    "nvim"
+  ],
   // vim과 같은 NeoVim 전용 내장 Lua 모듈들과 전역 변수의 타입을 인식하도록 설정
-  "Lua.workspace.library": ["/opt/homebrew/share/nvim/runtime/lua"],
+  "Lua.workspace.library": [
+    "/opt/homebrew/share/nvim/runtime/lua"
+  ],
   "Lua.workspace.checkThirdParty": false,
   "Lua.runtime.special": {
     // require_config_with_variants는 변형 버전이 포함된 설정 파일을 로드하기 위한 커스텀 함수 이름을 지정할 수 있게 해주는 특수 키입니다. 기본값은 "require"이지만, 다른 함수 이름으로 변경할 수 있습니다. 환경이나 다른 요소에 따라 다양한 변형을 처리하는 커스텀 함수가 있을 때 유용합니다.

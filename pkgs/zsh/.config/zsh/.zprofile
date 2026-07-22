@@ -7,6 +7,34 @@
 # ==================================================
 # 🛠️ PATH, FPATH 및 도구별 환경 설정
 # ==================================================
+# path, fpath 변수에 중복 경로가 들어가지 않도록
+typeset -U path
+export PATH
+
+typeset -U fpath
+export FPATH
+
+# Homebrew로 설치된 도구들을 찾을 수 있게 한다.
+# setup for homebrew
+if [[ -f /opt/homebrew/bin/brew ]]; then
+	eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [[ -f /usr/local/bin/brew ]]; then
+	eval "$(/usr/local/bin/brew shellenv)"
+fi
+
+# mise로 설치한 도구들을 찾을 수 있게 한다. interactive session이라면 여기 대신
+# .zshrc에서 디렉토리 변경 hook 에서 동적으로 PATH를 처리하도록 한다.
+# setup for non-interactive sessions of mise
+# https://mise.en.dev/dev-tools/shims.html#how-to-add-mise-shims-to-path
+if command -v mise &>/dev/null && ! [[ -o interactive ]]; then
+	eval "$(mise activate zsh --shims)"
+fi
+
+# 내가 직접 작성한 autoload 함수를 찾을 수 있도록 fpath에 추가한다.
+# 사실 개인 autoload 함수는 대부분 대화형 세션에서 쓸 용도라서
+# 굳이 여기에 넣을 필요가 있을까 싶기도 한다.
+fpath=(~/.jongwan/share/zsh/site-functions $fpath)
+
 # fastlane 명령시 에러나지 않도록?
 # https://docs.fastlane.tools/getting-started/ios/setup/#set-up-environment-variables
 #export LANG=en_US.UTF-8
