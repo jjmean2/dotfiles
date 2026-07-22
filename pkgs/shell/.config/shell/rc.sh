@@ -73,7 +73,7 @@ fi
 # ==================================================
 
 # iTerm2 shell integration
-if [ "$TERM_PROGRAM" = "iTerm.app" ]; then
+if [ "$TERM_PROGRAM" = "iTerm.app" ] || [ "$LC_TERMINAL" = "iTerm2" ]; then
 	if [ -n "$ZSH_VERSION" ]; then
 		if [ -e "$HOME/.config/shell/iterm2/iterm2_shell_integration.zsh" ]; then
 			. "$HOME/.config/shell/iterm2/iterm2_shell_integration.zsh"
