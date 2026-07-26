@@ -10,7 +10,8 @@ if [[ -f $HOME/.config/shell/colors.bash ]]; then
 fi
 
 # region: 프롬프트(Prompt) 설정
-# Prompt에서 사용할 git 상태 관련 변수 함수 정의
+# 프롬프트에서 사용하기 위한 git 상태를 저장하는 변수를 정의하는 함수
+# _ps_branch, _ps_unstaged_icon, _ps_staged_icon
 if [[ -f $HOME/.config/shell/_ps_set_git_status.bash ]]; then
 	source "$HOME/.config/shell/_ps_set_git_status.bash"
 
@@ -19,11 +20,18 @@ if [[ -f $HOME/.config/shell/_ps_set_git_status.bash ]]; then
 	PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}_ps_set_git_status"
 fi
 
+# 경로를 줄일 때 하위 4개 요소는 유지한다. Bash가 지원하는 기본 기능이다.
+PROMPT_DIRTRIM=4
+
+# 🅑 로 Bash임을 표시
+# "🅑 ~/dev/jwlee/dotfiles (main ✗) $ " 형태
 # shellcheck disable=SC2154
-PS1='$(XIT=$?; [[ $XIT != 0 ]] && printf "%s" "\[\e[31;1m\]"; printf "🅑") \[\e[36;4m\]\w\[\e[0m\]${_ps_branch:+ \[\e[36;1m\](\[\e[33m\]$_ps_branch${_ps_unstaged_icon:+ \[\e[31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[32m\]$_ps_staged_icon}\[\e[36m\])\[\e[0m\]} $ '
+PS1='\[\e[1m\]$(XIT=$?; [[ $XIT != 0 ]] && printf "%s" "\[\e[31m\]"; printf "🅑")\[\e[0m\] \[\e[36;4m\]\w\[\e[0m\]${_ps_branch:+ \[\e[36;1m\](\[\e[33m\]$_ps_branch${_ps_unstaged_icon:+ \[\e[31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[32m\]$_ps_staged_icon}\[\e[36m\])\[\e[0m\]} $ '
 
 if [[ -n $SSH_CLIENT || -n $SSH_TTY ]]; then
-	PS1='\[\e[32m\]\u\[\e[35m\]@\h\[\e[0m\]$(XIT=$?; [[ $XIT != 0 ]] && printf "%s" "\[\e[31;1m\]"; printf "🅑") \[\e[36;4m\]\w\[\e[0m\]${_ps_branch:+ \[\e[36;1m\](\[\e[33m\]$_ps_branch${_ps_unstaged_icon:+ \[\e[31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[32m\]$_ps_staged_icon}\[\e[36m\])\[\e[0m\]} $ '
+	# 원격 접속 시에는 <user>@<host>를 추가로 표시
+	# "ljw@jwlee-macbook-air🅑 ~/dev/jwlee/dotfiles (main ✗) $ " 형태
+	PS1='\[\e[32m\]\u\[\e[35m\]@\h\[\e[0m\]\[\e[1m\]$(XIT=$?; [[ $XIT != 0 ]] && printf "%s" "\[\e[31m\]"; printf "🅑")\[\e[0m\] \[\e[36;4m\]\w\[\e[0m\]${_ps_branch:+ \[\e[36;1m\](\[\e[33m\]$_ps_branch${_ps_unstaged_icon:+ \[\e[31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[32m\]$_ps_staged_icon}\[\e[36m\])\[\e[0m\]} $ '
 fi
 
 # Zsh의 %F{cyan}%U%~%u%f $ 대응 (안시 이스케이프 색상 사용)
