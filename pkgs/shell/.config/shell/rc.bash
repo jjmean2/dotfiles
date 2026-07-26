@@ -10,25 +10,30 @@ if [[ -f $HOME/.config/shell/colors.bash ]]; then
 fi
 
 # region: 프롬프트(Prompt) 설정
+# Prompt에서 사용할 git 상태 관련 변수 함수 정의
+if [[ -f $HOME/.config/shell/_ps_set_git_status.bash ]]; then
+	source "$HOME/.config/shell/_ps_set_git_status.bash"
+
+	# PROMPT_COMMAND은 PS1이 출력되기 직전에 실행되는 명령어를 지정하는 변수다.
+	# _ps_set_git_status를 PS1 출력 직전에 실행되도록 하여 PS1에서 사용할 상태 변수를 갱신한다.
+	PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND$'\n'}_ps_set_git_status"
+fi
+
+# shellcheck disable=SC2154
+PS1='$(XIT=$?; [[ $XIT != 0 ]] && printf "%s" "\[\e[31;1m\]"; printf "🅑") \[\e[36;4m\]\w\[\e[0m\]${_ps_branch:+ \[\e[36;1m\](\[\e[33m\]$_ps_branch${_ps_unstaged_icon:+ \[\e[31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[32m\]$_ps_staged_icon}\[\e[36m\])\[\e[0m\]} $ '
+
+if [[ -n $SSH_CLIENT || -n $SSH_TTY ]]; then
+	PS1='\[\e[32m\]\u\[\e[35m\]@\h\[\e[0m\]$(XIT=$?; [[ $XIT != 0 ]] && printf "%s" "\[\e[31;1m\]"; printf "🅑") \[\e[36;4m\]\w\[\e[0m\]${_ps_branch:+ \[\e[36;1m\](\[\e[33m\]$_ps_branch${_ps_unstaged_icon:+ \[\e[31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[32m\]$_ps_staged_icon}\[\e[36m\])\[\e[0m\]} $ '
+fi
+
 # Zsh의 %F{cyan}%U%~%u%f $ 대응 (안시 이스케이프 색상 사용)
 # \e[4m = 밑줄 시작, \e[24m = 밑줄 끝, \e[36m = 청록색
 # PS1="\[\e[36;4m\]\w\[\e[24;0m\] $ "
 
-# shellcheck disable=SC2154
-PS1='$(printf "\[\e[%sm\]" "36;4")\w$(printf "\[\e[%sm\]" "0") $ '
-
-if [[ -n $SSH_CLIENT || -n $SSH_TTY ]]; then
-	# shellcheck disable=SC2154
-	PS1="\
-\[${fg_bold[yellow]}\]\u\[$reset_color$\]\
-\[${fg_bold[green]}\]@\h\[$reset_color\] \
-\[$(colors magenta,bold,underline)\]\w\[$reset_color\] $ \
-"
-fi
-
 # green coloring 버전 대응 (주석 해제 후 사용)
 # PS1="\[\e[36;4m\]\w\[\e[24;0m\] $ \[\e[32;1m\]"
 # trap 'echo -ne "\e[0m"' DEBUG
+
 # endregion
 
 # cd 명령어 없이 디렉터리 이름만 입력해도 이동 (Bash 4.0 이상)
