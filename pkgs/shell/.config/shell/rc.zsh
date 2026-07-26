@@ -2,14 +2,24 @@
 # 🕹️ 터미널 UX 설정 (환경 변수, 옵션 등)
 # ==================================================
 
-# region: 프롬프트(Prompt) 설정
+# 색상별 escape sequence를 색상 이름 변수에 저장해주는 함수
+# e.g. `echo "$fg[red]Red Text$reset_color"` 같은 식으로 색상을 쓸 수 있게 해준다.
+autoload -Uz colors && colors
+setopt PROMPT_SUBST
+
+# # region: 프롬프트(Prompt) 설정
 # Without green coloring
-PROMPT="%F{yellow}%n%f@%F{green}%m%f %F{cyan}%U%~%u%f $ "
+PROMPT="%F{cyan}%U%~%u%f $ "
+
+if [[ -n $SSH_CLIENT || -n $SSH_TTY ]]; then
+	# 원격 접속일 때 (예: 프롬프트에 빨간색 [REMOTE] 표시)
+	PROMPT="%F{yellow}%n%f%F{green}@%m%f %F{cyan}%U%~%u%f $ "
+fi
 
 # green coloring을 추가하려면 위 대신 아래 설정 사용
 # https://mybyways.com/blog/macos-zsh-configuration
 # PROMPT="%F{cyan}%U%~%u%f $ %F{green}%B"
-# preexec () { print -Pn "%b%f" }
+# preexec() { print -Pn "%b%f"; }
 # RPROMPT="%(?..%F{red}%?🚫%f)"
 # endregion
 
@@ -19,10 +29,6 @@ setopt auto_cd
 # ==================================================
 # 🕹️ 함수 autoload
 # ==================================================
-
-# 색상별 escape sequence를 색상 이름 변수에 저장해주는 함수
-# e.g. `echo "$fg[red]Red Text$reset_color"` 같은 식으로 색상을 쓸 수 있게 해준다.
-autoload -Uz colors && colors
 
 #region: option-backspace 삭제 범위 설정
 # Meta(Option)-Backspace 로 slash까지만 지우도록 설정
@@ -65,6 +71,19 @@ autoload -Uz edit-command-line
 zle -N edit-command-line
 bindkey "^X^E" edit-command-line
 
+# ==================================================
+# 🪄 iTerm2 shell integration
+# ==================================================
+# iTerm2 shell integration
+if [ "$TERM_PROGRAM" = "iTerm.app" ] || [ "$LC_TERMINAL" = "iTerm2" ]; then
+	if [ -e "$HOME/.config/shell/iterm2/iterm2_shell_integration.zsh" ]; then
+		. "$HOME/.config/shell/iterm2/iterm2_shell_integration.zsh"
+	fi
+
+	iterm2_print_user_vars() {
+		iterm2_set_user_var gitBranch "$( (git branch 2>/dev/null) | grep '\*' | cut -c3-)"
+	}
+fi
 # ==================================================
 # 🪄 Zsh 자동 완성 시스템 초기화 (compinit)
 # ==================================================

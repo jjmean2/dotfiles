@@ -72,22 +72,6 @@ fi
 # 🕹️ 도구 초기화
 # ==================================================
 
-# iTerm2 shell integration
-if [ "$TERM_PROGRAM" = "iTerm.app" ] || [ "$LC_TERMINAL" = "iTerm2" ]; then
-	if [ -n "$ZSH_VERSION" ]; then
-		if [ -e "$HOME/.config/shell/iterm2/iterm2_shell_integration.zsh" ]; then
-			. "$HOME/.config/shell/iterm2/iterm2_shell_integration.zsh"
-		fi
-	elif [ -n "$BASH_VERSION" ]; then
-		if [ -e "$HOME/.config/shell/iterm2/iterm2_shell_integration.bash" ]; then
-			. "$HOME/.config/shell/iterm2/iterm2_shell_integration.bash"
-		fi
-	fi
-	iterm2_print_user_vars() {
-		iterm2_set_user_var gitBranch "$( (git branch 2>/dev/null) | grep '\*' | cut -c3-)"
-	}
-fi
-
 # fasd 초기화
 if command -v fasd >/dev/null 2>&1; then
 	# https://github.com/clvv/fasd

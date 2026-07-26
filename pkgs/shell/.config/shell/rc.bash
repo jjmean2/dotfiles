@@ -2,13 +2,29 @@
 # ==================================================
 # 🕹️ 터미널 UX 설정 (환경 변수, 옵션 등)
 # ==================================================
+# Zsh의 colors 대응: ANSI 이스케이프 코드 변수 정의
+# 아래 PS1(프롬프트) 설정에서 사용됨
+if [[ -f $HOME/.config/shell/colors.bash ]]; then
+	source "$HOME/.config/shell/colors.bash"
+	define_colors
+fi
 
 # region: 프롬프트(Prompt) 설정
 # Zsh의 %F{cyan}%U%~%u%f $ 대응 (안시 이스케이프 색상 사용)
 # \e[4m = 밑줄 시작, \e[24m = 밑줄 끝, \e[36m = 청록색
 # PS1="\[\e[36;4m\]\w\[\e[24;0m\] $ "
 
-PS1="\[\033[01;32m\]\u@\h\[\033[00m\] \[\033[01;34m\]\W\[\033[00m\]$ "
+# shellcheck disable=SC2154
+PS1='$(printf "\[\e[%sm\]" "36;4")\w$(printf "\[\e[%sm\]" "0") $ '
+
+if [[ -n $SSH_CLIENT || -n $SSH_TTY ]]; then
+	# shellcheck disable=SC2154
+	PS1="\
+\[${fg_bold[yellow]}\]\u\[$reset_color$\]\
+\[${fg_bold[green]}\]@\h\[$reset_color\] \
+\[$(colors magenta,bold,underline)\]\w\[$reset_color\] $ \
+"
+fi
 
 # green coloring 버전 대응 (주석 해제 후 사용)
 # PS1="\[\e[36;4m\]\w\[\e[24;0m\] $ \[\e[32;1m\]"
@@ -22,19 +38,25 @@ shopt -s autocd
 # 🕹️ 함수 / 색상 변수 설정
 # ==================================================
 
-# Zsh의 colors 대응: ANSI 이스케이프 코드 변수 정의
-RED='\[\e[31m\]'
-GREEN='\[\e[32m\]'
-YELLOW='\[\e[33m\]'
-BLUE='\[\e[34m\]'
-CYAN='\[\e[36m\]'
-RESET='\[\e[0m\]'
-
 # ==================================================
 # 🕹️ Bindkey (키 바인딩) 및 단축키 설정
 # ==================================================
 if [ -r "$HOME/.config/shell/inputrc" ]; then
 	bind -f "$HOME/.config/shell/inputrc"
+fi
+
+# ==================================================
+# 🪄 iTerm2 shell integration
+# ==================================================
+# iTerm2 shell integration
+if [ "$TERM_PROGRAM" = "iTerm.app" ] || [ "$LC_TERMINAL" = "iTerm2" ]; then
+	if [ -e "$HOME/.config/shell/iterm2/iterm2_shell_integration.bash" ]; then
+		. "$HOME/.config/shell/iterm2/iterm2_shell_integration.bash"
+	fi
+
+	iterm2_print_user_vars() {
+		iterm2_set_user_var gitBranch "$( (git branch 2>/dev/null) | grep '\*' | cut -c3-)"
+	}
 fi
 
 # ==================================================

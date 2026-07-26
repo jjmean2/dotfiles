@@ -15,7 +15,7 @@ set show-all-if-ambiguous on
 
 # 단어 경계 구분 설정 (select-word-style bash 대응)
 # 슬래시(/)를 단어 구분자로 인식하도록 설정
-; set word-orientations space-and-slashes
+# set word-orientations space-and-slashes
 
 # Alt-Backspace로 / 기준 전단어 삭제
 "\e\C-?": backward-kill-word
