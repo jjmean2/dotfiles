@@ -1,4 +1,7 @@
 [tools]
-go = "latest"
 node = "lts"
 python = "latest"
+go = "latest"
+
+[settings]
+go.set_gobin = false
