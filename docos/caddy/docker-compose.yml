@@ -1,0 +1,22 @@
+services:
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./certs:/etc/caddy/certs
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - proxy_net
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  proxy_net:
+    name: jongwan-proxy-net # 🌟 중요: 프로젝트 이름을 무시하고 이 이름으로 네트워크를 생성/확인합니다.

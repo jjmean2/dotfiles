@@ -1,0 +1,10 @@
+# http://kroki.local 로 접속하면
+kroki.internal {
+    tls /etc/caddy/certs/kroki.internal.pem /etc/caddy/certs/kroki.internal-key.pem
+    reverse_proxy kroki:8000
+}
+
+# 또 다른 툴이 있다면 아래에 계속 추가 가능
+# drawio.local {
+#     reverse_proxy host.docker.internal:8190
+# }

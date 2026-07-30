@@ -1,0 +1,21 @@
+services:
+  kroki:
+    image: yuzutech/kroki
+    environment:
+      - KROKI_MERMAID_HOST=mermaid
+    networks:
+      - proxy_net
+    depends_on:
+      - mermaid
+
+  mermaid:
+    image: yuzutech/kroki-mermaid
+    expose:
+      - "8002"
+    networks:
+      - proxy_net
+
+networks:
+  proxy_net:
+    name: jongwan-proxy-net
+

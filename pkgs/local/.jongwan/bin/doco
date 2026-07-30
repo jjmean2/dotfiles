@@ -1,0 +1,315 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# 전역 상수
+
+readonly CONFIG_CANDIDATES=(
+	"${JONGWAN_HOME:-$HOME/.jongwan}/etc/doco/doco.conf"
+	"${XDG_CONFIG_HOME:-$HOME/.config}/doco/doco.conf"
+	"$HOME/.doco.conf"
+)
+
+readonly SCRIPT_PATH="$0"
+readonly -a ARGS=("$@")
+
+install_homebrew() {
+	local mode="${1:-print}" # run | print
+
+	if [[ "$mode" == "print" ]]; then
+		# shellcheck disable=SC2016
+		printf '%s\n' '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+		return 0
+	fi
+	# https://brew.sh/
+	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+}
+
+install_docker() {
+	local mode="${1:-print}" # run | print
+
+	if [[ "$mode" == "print" ]]; then
+		printf '%s\n' 'brew install --cask docker'
+		return 0
+	fi
+	brew install --cask docker
+}
+
+install_git() {
+	local mode="${1:-print}" # run | print
+
+	if [[ "$mode" == "print" ]]; then
+		printf '%s\n' 'brew install git'
+		return 0
+	fi
+	brew install git
+}
+
+install_envsubst() {
+	local mode="${1:-print}" # run | print
+
+	if [[ "$mode" == "print" ]]; then
+		printf '%s\n' 'brew install gettext'
+		return 0
+	fi
+	brew install gettext
+}
+
+install_latest_bash() {
+	local mode="${1:-print}" # run | print
+
+	if [[ "$mode" == "print" ]]; then
+		printf '%s\n' 'brew install bash'
+		return 0
+	fi
+	brew install bash
+}
+
+# 함수 정의
+is_interactive() {
+	[[ -t 0 ]]
+}
+
+prompt_yes_no() {
+	local question="$1"
+	local answer
+
+	if ! is_interactive; then
+		return 1
+	fi
+
+	printf '%s [y/N]: ' "$question" >&2
+	IFS= read -r answer || return 1
+
+	case "$answer" in
+	[yY][eE][sS] | [yY]) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+install_or_exit() {
+	local name="$1"
+	local installer_fn="$2"
+
+	if prompt_yes_no "$name not found. Install now?"; then
+		printf '%s\n' "Installing $name..." >&2
+
+		if ! declare -F "$installer_fn" >/dev/null; then
+			printf '%s\n' "Internal error: installer function not found: $installer_fn" >&2
+			exit 1
+		fi
+
+		"$installer_fn" run
+	else
+		cat >&2 <<-EOF
+			Error: '$name' is required.
+			Install:
+			  $("$installer_fn" print)
+		EOF
+		exit 1
+	fi
+}
+
+require_command() {
+	local cmd="$1"
+	command -v "$cmd" >/dev/null 2>&1
+}
+
+ensure_command() {
+	local name="$1"
+	local installer_fn="$2"
+
+	if ! require_command "$name"; then
+		install_or_exit "$name" "$installer_fn"
+	fi
+}
+
+reexec_with_new_bash() {
+	local new_bash="$1"
+
+	if ((${#ARGS[@]} > 0)); then
+		exec "$new_bash" "$SCRIPT_PATH" "${ARGS[@]}"
+	else
+		exec "$new_bash" "$SCRIPT_PATH"
+	fi
+}
+
+ensure_bash4_or_exit() {
+	if ((BASH_VERSINFO[0] >= 4)); then
+		return 0
+	fi
+
+	install_or_exit "Bash 4+" install_latest_bash
+
+	# 설치 후 현재 프로세스는 여전히 구버전 bash이므로 재실행 권장
+	if [[ -x /opt/homebrew/bin/bash ]]; then
+		reexec_with_new_bash /opt/homebrew/bin/bash
+	elif [[ -x /usr/local/bin/bash ]]; then
+		reexec_with_new_bash /usr/local/bin/bash
+	else
+		printf '%s\n' "Installed bash, but could not find new bash path. Please rerun manually." >&2
+		exit 1
+	fi
+
+}
+
+run_prerequisites() {
+	ensure_command brew install_homebrew
+	ensure_command docker install_docker
+	ensure_command git install_git
+	ensure_bash4_or_exit
+	ensure_command envsubst install_envsubst
+}
+
+find_repo_root() {
+	# 1. 이 스크립트가 실행될 때 사용된 경로
+	local script_file="${BASH_SOURCE[0]}"
+
+	# 스크립트 파일이 symbolic link인 경우, 원본 경로로 치환
+	while [ -L "$script_file" ]; do
+
+		local link_target
+		link_target="$(readlink "$script_file")"
+
+		if [[ $link_target != /* ]]; then
+			# 원본 주소가 상대 경로라면
+			# 부모 디렉토리의 절대 경로를 구한 후
+			local parent_dir
+			parent_dir="$(cd -P "$(dirname "$script_file")" && pwd)"
+			# 상대 경로 앞에 붙여준다.
+			script_file="$parent_dir/$link_target"
+		else
+			# 원본 주소가 절대 경로라면, 그대로 붙여준다.
+			script_file="$link_target"
+		fi
+	done
+
+	local script_dir
+	script_dir="$(cd -P "$(dirname "$script_file")" && pwd)"
+	local repo_root
+	repo_root="$(cd "$script_dir" && git rev-parse --show-toplevel 2>/dev/null)"
+
+	if [[ -z "$repo_root" ]]; then
+		repo_root="$(cd -P "$script_dir/../.." && pwd)"
+	fi
+
+	printf '%s\n' "$repo_root"
+}
+
+filter_and_substitute_config() {
+	# shellcheck disable=SC2016
+	sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' "$1" | envsubst '$HOME $JONGWAN_HOME $XDG_CONFIG_HOME $USER'
+}
+
+find_config_file() {
+	local candidate
+	for candidate in "${CONFIG_CANDIDATES[@]}"; do
+		if [[ -f "$candidate" ]]; then
+			printf '%s\n' "$candidate"
+			break
+		fi
+	done
+
+}
+
+main() {
+	run_prerequisites
+
+	local config_file
+	config_file=$(find_config_file)
+	readonly config_file
+
+	declare -A presets
+	declare -a root_dirs
+
+	if [[ -n "${config_file:-}" ]]; then
+		while IFS='=' read -r key value || [[ -n "$key" ]]; do
+			# 주석(#) 및 빈 줄 건너 뛰기
+			[[ "$key" =~ ^#.*$ ]] && continue
+			[[ -z "$key" ]] && continue
+
+			# 앞뒤 공백 제거 (xargs 활용)
+			clean_key=$(printf '%s\n' "$key" | xargs)
+			clean_value=$(printf '%s\n' "$value" | xargs)
+
+			if [[ "$clean_key" == "@root" ]]; then
+				root_dirs+=("$clean_value")
+			else
+				presets["$clean_key"]="$clean_value"
+			fi
+
+		done < <(filter_and_substitute_config "$config_file")
+	fi
+
+	# 기본 root: 이 스크립트가 속한 저장소의 tools/docker-compose 디렉토리
+	root_dirs+=("$(find_repo_root)/docos")
+
+	readonly presets
+	readonly root_dirs
+
+	if [[ $# -lt 2 ]]; then
+		printf '%s\n' "Usage:" >&2
+		printf '%s\n' "  doco [tool_name] {up|down|ps}" >&2
+		printf '%s\n' "  doco [tool_name] -- [any-docker-compose-args]" >&2
+		printf '%s\n' "Loaded Config: $config_file" >&2
+		exit 1
+	fi
+
+	readonly toolname="$1"
+	shift
+
+	local compose_file
+	# 우선순위 1: 명시적 매핑 매치 확인
+	if [[ -n "${presets[$toolname]:-}" ]]; then
+		compose_file="${presets[$toolname]}"
+	else
+		# 우선순위 2: @root 폴더들을 돌며 ./<toolname>/docker-compose.yml 자동 스캔
+		for root_dir in "${root_dirs[@]}"; do
+			candidate_path="$root_dir/$toolname/docker-compose.yml"
+			if [[ -f "$candidate_path" ]]; then
+				compose_file="$candidate_path"
+				break
+			fi
+		done
+	fi
+
+	# 파일을 찾지 못했을 때 예외 처리
+	if [[ -z "${compose_file:-}" ]]; then
+		printf '%s\n' "Error: Cannot find docker-compose.yml for '$toolname'" >&2
+
+		if [[ -z ${config_file:-} ]]; then
+			printf '%s\n' "Error: Configuration file (doco.conf) not found." >&2
+			printf '%s\n' "Please create a config file at one of the following locations:" >&2
+
+			local candidate
+			for candidate in "${CONFIG_CANDIDATES[@]}"; do
+				printf '  - %s\n' "$candidate" >&2
+			done
+			exit 1
+		fi
+		printf '%s\n' "Checked explicit presets and all @root directories listed in $config_file" >&2
+		exit 1
+	fi
+
+	readonly compose_file
+
+	case "$1" in
+	up | start) docker compose -f "$compose_file" up -d ;;
+	down | stop) docker compose -f "$compose_file" down ;;
+	ps | status) docker compose -f "$compose_file" ps ;;
+	--)
+		shift
+		if [[ $# -eq 0 ]]; then
+			printf '%s\n' "Error: No arguments after '--'" >&2
+			exit 1
+		fi
+		docker compose -f "$compose_file" "$@"
+		;;
+	*)
+		printf '%s\n' "Invalid command: '$1'. Use up, down, ps, or '--'" >&2
+		exit 1
+		;;
+	esac
+}
+
+main "$@"
