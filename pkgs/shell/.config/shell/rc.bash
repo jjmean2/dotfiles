@@ -23,16 +23,37 @@ fi
 # 경로를 줄일 때 하위 4개 요소는 유지한다. Bash가 지원하는 기본 기능이다.
 PROMPT_DIRTRIM=4
 
-# 🅑 로 Bash임을 표시
-# "🅑 ~/dev/jwlee/dotfiles (main ✗) $ " 형태
-# shellcheck disable=SC2154
-PS1='\[\e[1m\]$(XIT=$?; [[ $XIT != 0 ]] && printf "%s" "\[\e[31m\]"; printf "🅑")\[\e[0m\] \[\e[36;4m\]\w\[\e[0m\]${_ps_branch:+ \[\e[36;1m\](\[\e[33m\]$_ps_branch${_ps_unstaged_icon:+ \[\e[31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[32m\]$_ps_staged_icon}\[\e[36m\])\[\e[0m\]} $ '
-
+PS1=''
 if [[ -n $SSH_CLIENT || -n $SSH_TTY ]]; then
 	# 원격 접속 시에는 <user>@<host>를 추가로 표시
 	# "ljw@jwlee-macbook-air🅑 ~/dev/jwlee/dotfiles (main ✗) $ " 형태
-	PS1='\[\e[32m\]\u\[\e[35m\]@\h\[\e[0m\]\[\e[1m\]$(XIT=$?; [[ $XIT != 0 ]] && printf "%s" "\[\e[31m\]"; printf "🅑")\[\e[0m\] \[\e[36;4m\]\w\[\e[0m\]${_ps_branch:+ \[\e[36;1m\](\[\e[33m\]$_ps_branch${_ps_unstaged_icon:+ \[\e[31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[32m\]$_ps_staged_icon}\[\e[36m\])\[\e[0m\]} $ '
+	PS1+='\[\e[32m\]\u\[\e[35m\]@\h\[\e[0m\]'
 fi
+# "🅑 ~/dev/jwlee/dotfiles (main ✗) $ " 형태
+
+# 🅑 로 Bash임을 표시
+PS1+='\[\e[1m\]$(XIT=$?; [[ $XIT != 0 ]] && printf "%s" "\[\e[31m\]"; printf "🅑")\[\e[0m\] '
+# 현재 디렉토리 경로를 표시
+PS1+='\[\e[36;4m\]\w\[\e[0m\]'
+# shellcheck disable=SC2154
+# (1) git 브랜치 정보가 있으면 공백을 두고 확장
+PS1+='${_ps_branch:+ '
+# (2) 괄호 열기
+PS1+='\[\e[36;1m\]('
+# - 브랜치명
+PS1+='\[\e[33m\]$_ps_branch'
+# shellcheck disable=SC2154
+# - upstream과의 차이가 있으면 표시
+PS1+='${_ps_has_upstream_diff:+ }${_ps_upstream_ahead:+\[\e[32m\]⇡${_ps_upstream_ahead}\[\e[0m\]}${_ps_upstream_behind:+\[\e[31m\]⇣${_ps_upstream_behind}\[\e[0m\]}'
+# shellcheck disable=SC2154
+# - staged/unstaged 변경 사항이 있으면 표시
+PS1+='${_ps_unstaged_icon:+ \[\e[31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[32m\]$_ps_staged_icon}'
+# (2) 괄호 닫기
+PS1+='\[\e[36m\])\[\e[0m\]'
+# (1) `${_ps_branch:+ ...` 구문 닫기
+PS1+='}'
+# 프롬프트 끝에 $ 표시
+PS1+=' $ '
 
 # Zsh의 %F{cyan}%U%~%u%f $ 대응 (안시 이스케이프 색상 사용)
 # \e[4m = 밑줄 시작, \e[24m = 밑줄 끝, \e[36m = 청록색

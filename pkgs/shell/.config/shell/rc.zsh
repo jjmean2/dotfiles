@@ -32,18 +32,36 @@ fi
 # 등을 이용해 PROMPT_DIRTRIM 값에서 지정한 만큼 경로를 줄이도록 작성함
 PROMPT_DIRTRIM=4
 
-# 🅩 로 Zsh 임을 표시.
-# "🅩 ~/dev/jwlee/dotfiles (main ✗) $ " 형태
-PROMPT='%B%(?:%f:%F{red})🅩%b %F{cyan}%U${${${(M)PROMPT_DIRTRIM:#(+|)<1->}:+%($((PROMPT_DIRTRIM+3))~:%-1~/.../%$((PROMPT_DIRTRIM))~:%~)}:-%~}%u%f${_ps_branch:+ %B%F{cyan\}(%F{yellow\}$_ps_branch%f${_ps_unstaged_icon:+ %F{red\}$_ps_unstaged_icon}${_ps_staged_icon:+ %F{green\}$_ps_staged_icon}${_ps_has_upstream_diff:+ }${_ps_upstream_ahead:+%F{green\}⇡${_ps_upstream_ahead}%f}${_ps_upstream_behind:+%F{red\}⇣${_ps_upstream_behind}%f}%F{cyan\})%f%b} $ '
-
-# 에러로 끝난 경우, 우측에서 직전 명령의 종료 코드 확인하기
-RPROMPT="%(?..%F{red}%?🚫%f)"
-
+PROMPT=''
 if [[ -n $SSH_CLIENT || -n $SSH_TTY ]]; then
 	# 원격 접속 시에는 <user>@<host>를 추가로 표시
 	# "ljw@jwlee-macbook-air🅩 ~/dev/jwlee/dotfiles (main ✗) $ " 형태
-	PROMPT='%F{green}%n%F{magenta}@%m%B%(?:%f:%F{red})🅩%b %F{cyan}%U${${${(M)PROMPT_DIRTRIM:#(+|)<1->}:+%($((PROMPT_DIRTRIM+3))~:%-1~/.../%$((PROMPT_DIRTRIM))~:%~)}:-%~}%u%f${_ps_branch:+ %B%F{cyan\}(%F{yellow\}$_ps_branch%f${_ps_unstaged_icon:+ %F{red\}$_ps_unstaged_icon}${_ps_staged_icon:+ %F{green\}$_ps_staged_icon}${_ps_has_upstream_diff:+ }${_ps_upstream_ahead:+%F{green\}⇡${_ps_upstream_ahead}%f}${_ps_upstream_behind:+%F{red\}⇣${_ps_upstream_behind}%f}%F{cyan\})%f%b} $ '
+	PROMPT+='%F{green}%n%F{magenta}@%m%f'
 fi
+# "🅩 ~/dev/jwlee/dotfiles (main ✗) $ " 형태
+# 🅩 로 Zsh 임을 표시.
+PROMPT+='%B%(?:%f:%F{red})🅩%b '
+# 현재 디렉토리 경로를 표시
+PROMPT+='%F{cyan}%U${${${(M)PROMPT_DIRTRIM:#(+|)<1->}:+%($((PROMPT_DIRTRIM+3))~:%-1~/.../%$((PROMPT_DIRTRIM))~:%~)}:-%~}%u%f'
+# (1) git 브랜치 정보가 있으면 공백을 두고 확장
+PROMPT+='${_ps_branch:+ '
+# (2) 괄호 열기
+PROMPT+='%B%F{cyan\}('
+# - 브랜치명
+PROMPT+='%F{yellow\}$_ps_branch%f'
+# - upstream과의 차이가 있으면 표시
+PROMPT+='${_ps_has_upstream_diff:+ }${_ps_upstream_ahead:+%F{green\}⇡${_ps_upstream_ahead}%f}${_ps_upstream_behind:+%F{red\}⇣${_ps_upstream_behind}%f}'
+# - staged/unstaged 변경 사항이 있으면 표시
+PROMPT+='${_ps_unstaged_icon:+ %F{red\}$_ps_unstaged_icon}${_ps_staged_icon:+ %F{green\}$_ps_staged_icon}'
+# (2) 괄호 닫기
+PROMPT+='%F{cyan\})%f%b'
+# (1) ${_ps_branch:+ ... 구문 닫기
+PROMPT+='}'
+# 프롬프트 끝에 $ 표시
+PROMPT+=' $ '
+
+# 에러로 끝난 경우, 우측에서 직전 명령의 종료 코드 확인하기
+RPROMPT="%(?..%F{red}%?🚫%f)"
 
 # PROMPT="%F{yellow}%n%f%F{green}@%m%f %F{cyan}%U%~%u%f $ "
 #
