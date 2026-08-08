@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import pty
+import subprocess
+
+
+def main() -> None:
+    # 1. 인자 파서 설정
+    parser = argparse.ArgumentParser(
+        description="가상 터미널(PTY)에 stty 상태를 적용하고 설정을 확인합니다."
+    )
+    parser.add_argument("state", help="적용할 stty -g 상태 문자열")
+    parser.add_argument(
+        "-e", action="store_true", help="stty -e 형태로 출력 (BSD 확장 포맷)"
+    )
+    parser.add_argument(
+        "-g", action="store_true", help="stty -g 형태로 출력 (재사용 가능한 상태 포맷)"
+    )
+    parser.add_argument("-a", action="store_true", help="stty -a 형태로 출력 (기본값)")
+
+    args = parser.parse_args()
+
+    # 2. 출력 플래그 결정 (-e, -g 명시 시 해당 플래그 사용, 기본값은 -a)
+    if args.e:
+        display_flag = "-e"
+    elif args.g:
+        display_flag = "-g"
+    else:
+        display_flag = "-a"
+
+    master, slave = pty.openpty()
+
+    pid = os.fork()
+    if pid == 0:
+        # 자식 프로세스: login_tty를 통해 제어 터미널 설정 및 FD 0, 1, 2 자동 연결
+        os.close(master)
+        os.login_tty(slave)  # setsid + TIOCSCTTY + dup2(0, 1, 2)를 한 번에 처리
+
+        # 지정된 display_flag(-a, -e, -g 등)로 stty 실행
+        subprocess.run(
+            f"stty {args.state} && stty {display_flag}", shell=True, check=True
+        )
+        os._exit(0)
+    else:
+        # 부모 프로세스: 가상 터미널의 출력 결과만 읽어서 화면에 표시
+        os.close(slave)
+
+        output_bytes = bytearray()
+        while True:
+            try:
+                chunk = os.read(master, 1024)
+                if not chunk:  # macOS/BSD 계열 EOF
+                    break
+                output_bytes.extend(chunk)
+            except OSError:  # Linux 계열 EIO (Input/output error)
+                break
+
+        os.close(master)
+        os.waitpid(pid, 0)
+
+        print(output_bytes.decode(errors="ignore"))  # 출력 결과를 화면에 표시
+
+
+if __name__ == "__main__":
+    main()

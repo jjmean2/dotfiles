@@ -67,8 +67,13 @@ sq_with_https() {
 		"$@"
 }
 
-if [ -n "$ZSH_VERSION" ]; then
-	[ -f "$HOME/.config/shell/functions.zsh" ] && . "$HOME/.config/shell/functions.zsh"
-elif [ -n "$BASH_VERSION" ]; then
-	[ -f "$HOME/.config/shell/functions.bash" ] && . "$HOME/.config/shell/functions.bash"
+if [ -d "$HOME/.config/shell/functions.d" ]; then
+	while IFS= read -r _fn_file <&3; do
+		case "$_fn_file" in
+		*.sh) . "$_fn_file" ;;
+		*.zsh) [ -n "$ZSH_VERSION" ] && . "$_fn_file" ;;
+		*.bash) [ -n "$BASH_VERSION" ] && . "$_fn_file" ;;
+		esac
+	done 3< <(find -L "$HOME/.config/shell/functions.d" -maxdepth 1 -type f \( -name "*.sh" -o -name "*.zsh" -o -name "*.bash" \) | sort)
+	unset _fn_file
 fi
