@@ -1,0 +1,48 @@
+services:
+  # 1. Gerrit 서비스
+  gerrit:
+    image: gerritcodereview/gerrit:latest
+    container_name: gerrit_app
+    ports:
+      - "29418:29418" # SSH (git push 전용)
+    environment:
+      - CANONICAL_WEB_URL=http://gerrit.internal
+    volumes:
+      - gerrit_git:/var/gerrit/git
+      - gerrit_etc:/var/gerrit/etc
+      - gerrit_index:/var/gerrit/index
+      - gerrit_cache:/var/gerrit/cache
+    networks:
+      - default_net
+      - proxy_net
+    depends_on:
+      - gerrit-db
+    restart: always
+
+  # 2. Database 서비스 (PostgreSQL)
+  gerrit-db:
+    image: postgres:15
+    container_name: gerrit_db
+    environment:
+      POSTGRES_DB: gerrit
+      POSTGRES_USER: gerrit
+      POSTGRES_PASSWORD: gerrit_password
+    volumes:
+      - gerrit_db_data:/var/lib/postgresql/data
+    networks:
+      - default_net # DB는 Caddy에 노출될 필요 없으므로 내부 네트워크만 연결
+    restart: always
+
+volumes:
+  gerrit_git:
+  gerrit_etc:
+  gerrit_index:
+  gerrit_cache:
+  gerrit_db_data:
+
+networks:
+  default_net:
+    driver: bridge
+  proxy_net:
+    # external: true
+    name: jongwan-proxy-net # 🌟 기존 Caddy의 외부 네트워크에 참여

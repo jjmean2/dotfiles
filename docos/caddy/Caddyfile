@@ -1,7 +1,34 @@
-# http://kroki.local 로 접속하면
-kroki.internal {
-    tls /etc/caddy/certs/kroki.internal.pem /etc/caddy/certs/kroki.internal-key.pem
+(custom_tls) {
+    tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+}
+
+kroki.jwlee.dev {
+    import custom_tls
     reverse_proxy kroki:8000
+}
+
+gerrit.jwlee.dev {
+    import custom_tls
+    reverse_proxy gerrit_app:8080
+}
+
+ws.jwlee.dev {
+    import custom_tls
+    reverse_proxy https://host.docker.internal:8910 {
+        transport http {
+            tls_trusted_ca_certs /etc/caddy/root-certs/rootCA.pem
+        }
+    }
+}
+
+nest.jwlee.dev {
+  @cats {
+    path /cats
+    path /cats/*
+  }
+  handle @cats {
+    reverse_proxy host.docker.internal:8181
+  }
 }
 
 # 또 다른 툴이 있다면 아래에 계속 추가 가능

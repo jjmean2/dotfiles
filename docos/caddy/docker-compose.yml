@@ -8,6 +8,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - ./certs:/etc/caddy/certs
+      - "/Users/ljw/Library/Application Support/mkcert:/etc/caddy/root-certs" # 🌟 macOS에서 mkcert 인증서를 Caddy 컨테이너에 마운트
       - caddy_data:/data
       - caddy_config:/config
     networks:

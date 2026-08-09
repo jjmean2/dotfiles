@@ -30,5 +30,32 @@
   // .luarc.json 파일의 JSON schema 로드를 위해
   "json.schemaDownload.trustedDomains": {
     "https://raw.githubusercontent.com/LuaLS": true
-  }
+  },
+  "peacock.color": "#bfa604",
+  "workbench.colorCustomizations": {
+    "activityBar.activeBackground": "#f1d105",
+    "activityBar.background": "#f1d105",
+    "activityBar.foreground": "#15202b",
+    "activityBar.inactiveForeground": "#15202b99",
+    "activityBarBadge.background": "#039c87",
+    "activityBarBadge.foreground": "#e7e7e7",
+    "activityBarTop.activeBackground": "#f1d105",
+    "activityBarTop.background": "#f1d105",
+    "activityBarTop.foreground": "#15202b",
+    "activityBarTop.inactiveForeground": "#15202b99",
+    "commandCenter.border": "#15202b99",
+    "commandCenter.foreground": "#15202b",
+    "sash.hoverBorder": "#f1d105",
+    "statusBar.background": "#bfa604",
+    "statusBar.debuggingBackground": "#bfa604",
+    "statusBar.debuggingForeground": "#15202b",
+    "statusBar.foreground": "#15202b",
+    "statusBarItem.hoverBackground": "#8d7b03",
+    "statusBarItem.remoteBackground": "#a1fdf1",
+    "statusBarItem.remoteForeground": "#15202b",
+    "titleBar.activeBackground": "#bfa604",
+    "titleBar.activeForeground": "#15202b",
+    "titleBar.inactiveBackground": "#bfa60499",
+    "titleBar.inactiveForeground": "#15202b99"
+  },
 }
