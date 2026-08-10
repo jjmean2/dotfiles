@@ -61,41 +61,37 @@
 # 지시자(directives) + 인자(argument/matchers) + { block } 구조로 이루어져 있음.
 
 
-
 (custom_tls) {
-    tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 }
 
 kroki.jwlee.lan {
-    import custom_tls
-    reverse_proxy kroki:8000
+	import custom_tls
+	reverse_proxy kroki:8000
 }
 
-gerrit.jwlee.lan, gerrit.jwlee.priv, gerrit.jwlee.internal {
-    import custom_tls
-    reverse_proxy gerrit_app:8080
+# catch-all 블록
+gerrit.jwlee.lan:443 {
+	import custom_tls
+	reverse_proxy gerrit_app:8080
 }
 
 ws.jwlee.lan {
-    import custom_tls
-    reverse_proxy https://host.docker.internal:8910 {
-        transport http {
-            tls_trusted_ca_certs /etc/caddy/root-certs/rootCA.pem
-        }
-    }
+	import custom_tls
+	reverse_proxy https://host.docker.internal:8910 {
+		transport http {
+			tls_trust_pool file /etc/caddy/root-certs/rootCA.pem
+		}
+	}
 }
 
 nest.jwlee.lan {
-  @cats {
-    path /cats
-    path /cats/*
-  }
-  handle @cats {
-    reverse_proxy host.docker.internal:8181
-  }
+	@cats {
+		path /cats
+		path /cats/*
+	}
+	handle @cats {
+		# 호스트 OS의 8181 포트로 요청을 전달
+		reverse_proxy host.docker.internal:8181
+	}
 }
-
-# 또 다른 툴이 있다면 아래에 계속 추가 가능
-# drawio.local {
-#     reverse_proxy host.docker.internal:8190
-# }

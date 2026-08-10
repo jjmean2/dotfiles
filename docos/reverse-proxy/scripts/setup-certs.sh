@@ -4,10 +4,10 @@ set -euo pipefail
 
 DOMAINS=(
 	"*.jwlee.lan"
-	"*.jwlee.lab"
 	"*.jwlee.priv"
 	"*.home.arpa"
 	"*.jwlee.internal"
+	"localhost"
 )
 
 # 1. 스크립트가 위치한 디렉토리 경로 추출

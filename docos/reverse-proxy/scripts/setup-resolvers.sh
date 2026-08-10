@@ -2,8 +2,6 @@
 set -euo pipefail
 
 DOMAINS=(
-	"lan"
-	"lab"
 	"priv"
 	"home.arpa"
 	"internal"
