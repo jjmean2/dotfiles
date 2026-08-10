@@ -65,18 +65,17 @@
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 }
 
-kroki.jwlee.lan {
+kroki.jwlee.priv {
 	import custom_tls
 	reverse_proxy kroki:8000
 }
 
-# catch-all 블록
-gerrit.jwlee.lan:443 {
+gerrit.jwlee.lan, gerrit.jwlee.priv {
 	import custom_tls
 	reverse_proxy gerrit_app:8080
 }
 
-ws.jwlee.lan {
+ws.jwlee.priv {
 	import custom_tls
 	reverse_proxy https://host.docker.internal:8910 {
 		transport http {
@@ -85,7 +84,7 @@ ws.jwlee.lan {
 	}
 }
 
-nest.jwlee.lan {
+nest.jwlee.priv {
 	@cats {
 		path /cats
 		path /cats/*
