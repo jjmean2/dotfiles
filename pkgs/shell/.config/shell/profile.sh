@@ -71,6 +71,31 @@ if [ -f "$HOME/.cargo/env" ]; then
 	. "$HOME/.cargo/env"
 fi
 
+# go 명령어가 존재하는지 먼저 확인
+if command -v go >/dev/null 2>&1; then
+	# go env GOPATH 실행 결과를 변수에 저장
+	_target_gopath=$(go env GOPATH 2>/dev/null)
+
+elif command -v mise >/dev/null 2>&1 && mise which go >/dev/null 2>&1; then
+	_target_gopath=$(mise exec go -- go env GOPATH 2>/dev/null)
+fi
+
+# 값이 존재하고 비어있지 않은 경우
+if [ -n "$_target_gopath" ]; then
+	PATH="$_target_gopath/bin:$PATH"
+fi
+unset _target_gopath
+
+if command -v go >/dev/null 2>&1; then
+	# go env에서 GOPATH를 가져와서 PATH에 추가
+	GOPATH="$(go env GOPATH)"
+	PATH="$GOPATH/bin:$PATH"
+fi
+
+if [ -n "$GOPATH" ]; then
+	PATH="$HOME/go/bin:$PATH"
+fi
+
 # Toolbox App
 if [ -d "$HOME/Library/Application Support/JetBrains/Toolbox/scripts" ]; then
 	PATH="$HOME/Library/Application Support/JetBrains/Toolbox/scripts:$PATH"
