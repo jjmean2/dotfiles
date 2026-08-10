@@ -1,14 +1,17 @@
 services:
   caddy:
-    image: caddy:latest
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+    container_name: caddy
     restart: unless-stopped
+    environment:
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile
-      - ./caddy/certs:/etc/caddy/certs
-      - "/Users/ljw/Library/Application Support/mkcert:/etc/caddy/root-certs" # 🌟 macOS에서 mkcert 인증서를 Caddy 컨테이너에 마운트
       - caddy_data:/data
       - caddy_config:/config
     networks:

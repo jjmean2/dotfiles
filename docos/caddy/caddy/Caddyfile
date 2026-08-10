@@ -65,12 +65,17 @@
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 }
 
+{
+	# Cloudflare DNS-01 Challenge 글로벌 설정
+	acme_dns cloudflare ${CLOUDFLARE_API_TOKEN}
+}
+
 kroki.jwlee.priv {
 	import custom_tls
 	reverse_proxy kroki:8000
 }
 
-gerrit.jwlee.lan, gerrit.jwlee.priv {
+gerrit.justwonder.me {
 	import custom_tls
 	reverse_proxy gerrit_app:8080
 }
