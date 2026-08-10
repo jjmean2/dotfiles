@@ -1,0 +1,55 @@
+services:
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/certs:/etc/caddy/certs
+      - "/Users/ljw/Library/Application Support/mkcert:/etc/caddy/root-certs" # 🌟 macOS에서 mkcert 인증서를 Caddy 컨테이너에 마운트
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - proxy_net
+
+  # 2. DoH 프록시 (cloudflared)
+  dnscrypt-proxy:
+    image: klutchell/dnscrypt-proxy:latest
+    container_name: dnscrypt-proxy
+    restart: unless-stopped
+    environment:
+      - LISTEN_ADDRESSES=0.0.0.0:5353
+      - SERVER_NAMES=cloudflare
+    networks:
+      - proxy_net
+
+  # 3. Dnsmasq (Dockerfile 직접 빌드)
+  dnsmasq:
+    build:
+      context: ./dnsmasq
+      dockerfile: Dockerfile
+    container_name: local-dnsmasq
+    restart: unless-stopped
+    ports:
+      # IPv4 localhost(127.0.0.1)에만 바인딩
+      - "127.0.0.1:53:53/udp"
+      - "127.0.0.1:53:53/tcp"
+      # IPv6 localhost([::1])에만 바인딩
+      - "[::1]:53:53/udp"
+      - "[::1]:53:53/tcp"
+    volumes:
+      - ./dnsmasq/dnsmasq.conf:/etc/dnsmasq.conf
+    depends_on:
+      - dnscrypt-proxy
+    networks:
+      - proxy_net
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  proxy_net:
+    name: jongwan-proxy-net # 🌟 중요: 프로젝트 이름을 무시하고 이 이름으로 네트워크를 생성/확인합니다.

@@ -6,7 +6,7 @@ services:
     ports:
       - "29418:29418" # SSH (git push 전용)
     environment:
-      - CANONICAL_WEB_URL=http://gerrit.internal
+      - CANONICAL_WEB_URL=http://gerrit.jwlee.lan
     volumes:
       - gerrit_git:/var/gerrit/git
       - gerrit_etc:/var/gerrit/etc
