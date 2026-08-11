@@ -88,12 +88,7 @@ unset _target_gopath
 
 if command -v go >/dev/null 2>&1; then
 	# go env에서 GOPATH를 가져와서 PATH에 추가
-	GOPATH="$(go env GOPATH)"
 	PATH="$GOPATH/bin:$PATH"
-fi
-
-if [ -n "$GOPATH" ]; then
-	PATH="$HOME/go/bin:$PATH"
 fi
 
 # Toolbox App

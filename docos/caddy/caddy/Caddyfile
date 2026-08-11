@@ -60,36 +60,38 @@
 # 지시자(directives)들은 기본적으로
 # 지시자(directives) + 인자(argument/matchers) + { block } 구조로 이루어져 있음.
 
-
-(custom_tls) {
+(mkcert_tls) {
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 }
 
-{
-	# Cloudflare DNS-01 Challenge 글로벌 설정
-	acme_dns cloudflare ${CLOUDFLARE_API_TOKEN}
-}
-
-kroki.jwlee.priv {
-	import custom_tls
+kroki.justwonder.prv {
+	import mkcert_tls
 	reverse_proxy kroki:8000
 }
 
-gerrit.justwonder.me {
-	import custom_tls
+gerrit.justwonder.prv {
+	import mkcert_tls
 	reverse_proxy gerrit_app:8080
 }
 
-ws.jwlee.priv {
-	import custom_tls
+gerrit.justwonder.me {
+	tls {
+		# Cloudflare DNS-01 Challenge
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	}
+	reverse_proxy gerrit_app:8080
+}
+
+ws.justwonder.prv {
+	import mkcert_tls
 	reverse_proxy https://host.docker.internal:8910 {
-		transport http {
-			tls_trust_pool file /etc/caddy/root-certs/rootCA.pem
-		}
+		# transport http {
+		# 	tls_trust_pool file /etc/caddy/root-certs/rootCA.pem
+		# }
 	}
 }
 
-nest.jwlee.priv {
+nest.justwnder.prv {
 	@cats {
 		path /cats
 		path /cats/*

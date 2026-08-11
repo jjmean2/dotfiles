@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DOMAINS=(
-	"priv"
+	"prv"
 	"home.arpa"
 	"internal"
 )

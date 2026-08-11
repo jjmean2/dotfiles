@@ -3,10 +3,9 @@
 set -euo pipefail
 
 DOMAINS=(
-	"*.jwlee.lan"
-	"*.jwlee.priv"
+	"*.justwonder.prv"
 	"*.home.arpa"
-	"*.jwlee.internal"
+	"*.justwonder.internal"
 	"localhost"
 )
 
