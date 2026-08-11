@@ -85,13 +85,13 @@ gerrit.justwonder.me {
 ws.justwonder.prv {
 	import mkcert_tls
 	reverse_proxy https://host.docker.internal:8910 {
-		# transport http {
-		# 	tls_trust_pool file /etc/caddy/root-certs/rootCA.pem
-		# }
+		transport http {
+			tls_trust_pool file /etc/caddy/root-certs/rootCA.pem
+		}
 	}
 }
 
-nest.justwnder.prv {
+nest.justwonder.prv {
 	@cats {
 		path /cats
 		path /cats/*
