@@ -40,8 +40,9 @@ PS1+='\[\e[36;4m\]\w\[\e[0m\]'
 PS1+='${_ps_branch:+ '
 # (2) 괄호 열기
 PS1+='\[\e[36;1m\]('
+# shellcheck disable=SC2154
 # - 브랜치명
-PS1+='\[\e[33m\]$_ps_branch'
+PS1+='\[\e[${_ps_detached_color:-33}m\]$_ps_branch'
 # shellcheck disable=SC2154
 # - upstream과의 차이가 있으면 표시
 PS1+='${_ps_has_upstream_diff:+ }${_ps_upstream_ahead:+\[\e[32m\]⇡${_ps_upstream_ahead}\[\e[0m\]}${_ps_upstream_behind:+\[\e[31m\]⇣${_ps_upstream_behind}\[\e[0m\]}'

@@ -48,7 +48,7 @@ PROMPT+='${_ps_branch:+ '
 # (2) 괄호 열기
 PROMPT+='%B%F{cyan\}('
 # - 브랜치명
-PROMPT+='%F{yellow\}$_ps_branch%f'
+PROMPT+='${${_ps_detached_color:+%F{magenta\}}:-%F{yellow\}}$_ps_branch%f'
 # - upstream과의 차이가 있으면 표시
 PROMPT+='${_ps_has_upstream_diff:+ }${_ps_upstream_ahead:+%F{green\}⇡${_ps_upstream_ahead}%f}${_ps_upstream_behind:+%F{red\}⇣${_ps_upstream_behind}%f}'
 # - staged/unstaged 변경 사항이 있으면 표시

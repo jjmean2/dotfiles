@@ -86,11 +86,6 @@ if [ -n "$_target_gopath" ]; then
 fi
 unset _target_gopath
 
-if command -v go >/dev/null 2>&1; then
-	# go env에서 GOPATH를 가져와서 PATH에 추가
-	PATH="$GOPATH/bin:$PATH"
-fi
-
 # Toolbox App
 if [ -d "$HOME/Library/Application Support/JetBrains/Toolbox/scripts" ]; then
 	PATH="$HOME/Library/Application Support/JetBrains/Toolbox/scripts:$PATH"

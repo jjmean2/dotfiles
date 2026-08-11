@@ -10,6 +10,7 @@
 _ps_set_git_status() {
 	# 프롬프트에서 사용해야 하므로 매번 초기화해야 한다.
 	_ps_branch=""
+	_ps_detached_color=""
 	_ps_staged_icon=""
 	_ps_unstaged_icon=""
 	_ps_upstream_ahead=""
@@ -82,6 +83,8 @@ _ps_set_git_status() {
 	if [[ "$branch" == "(detached)" ]]; then
 		# Detached HEAD 상태이면 커밋 해시 7자리를 브랜치 대신 표시
 		_ps_branch="${oid:0:7}" # 7자리 짧은 해시
+		# magenta
+		_ps_detached_color=35
 	else
 		_ps_branch="$branch"
 	fi
