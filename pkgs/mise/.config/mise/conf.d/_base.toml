@@ -2,6 +2,10 @@
 node = "lts"
 python = "latest"
 go = "latest"
+ruby = "latest"
+
 
 [settings]
 go.set_gobin = false
+node.npm_shim = false
+node.corepack = true
