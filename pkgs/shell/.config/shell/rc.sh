@@ -139,3 +139,26 @@ if [ -n "$ZSH_VERSION" ]; then
 elif [ -n "$BASH_VERSION" ]; then
 	[ -f "$HOME/.config/shell/rc.bash" ] && . "$HOME/.config/shell/rc.bash"
 fi
+
+# ==================================================
+# 🛠️ rc.d/ 스크립트 로드
+# ==================================================
+
+# rc.d/ 내 파일을 lexical 순서로 순회하며, 확장자에 맞는 shell에서만 sourcing
+if [ -d "$HOME/.config/shell/rc.d" ]; then
+	for _rc_file in "$HOME/.config/shell/rc.d"/*; do
+		[ -e "$_rc_file" ] || continue
+		case "$_rc_file" in
+		*.zsh)
+			[ -n "$ZSH_VERSION" ] && . "$_rc_file"
+			;;
+		*.bash)
+			[ -n "$BASH_VERSION" ] && . "$_rc_file"
+			;;
+		*.sh)
+			. "$_rc_file"
+			;;
+		esac
+	done
+	unset _rc_file
+fi

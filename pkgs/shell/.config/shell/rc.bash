@@ -108,6 +108,16 @@ elif [ -r /etc/profile.d/bash_completion.sh ]; then
 elif [ -r /etc/bash_completion ]; then
 	. /etc/bash_completion
 fi
+# bash-completion 설정을 한 경우, macOS Homebrew로 설치한 경우, 다음 경로를 탐색한다.
+# - ~/.local/share/bash-completion/completions/ (사용자 전용)
+# - /opt/homebrew/share/bash-completion/completions/(Homebrew 중앙)
+# - (레거시)/opt/homebrew/etc/bash_completion.d/ (구버전 호환)
+
+# 리눅스에서는 다음 경로를 탐색한다.
+# - ~/.local/share/bash-completion/completions/ (사용자 전용)
+# - /usr/local/share/bash-completion/completions/ (시스템 로컬)
+# - /usr/share/bash-completion/completions/ (시스템 표준)
+# - (레거시) /etc/bash_completion.d/ (구버전 호환)
 
 # LS_COLORS 설정 (Zsh의 list-colors 대응)
 export LS_COLORS="di=34:ln=35:so=32:pi=33:ex=31:bd=34;46:cd=34;43:su=30;41:sg=30;46:tw=30;42:ow=30;43"
