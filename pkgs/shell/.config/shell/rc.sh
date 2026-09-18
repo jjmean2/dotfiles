@@ -60,6 +60,11 @@ if [ -f /Applications/MacVim.app/Contents/MacOS/Vim ]; then
 	alias mvim='/Applications/MacVim.app/Contents/MacOS/Vim -g'
 fi
 
+if [ -f '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' ]; then
+	alias chrome='"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"'
+fi
+
+
 if [ -f /usr/libexec/PlistBuddy ]; then
 	alias PlistBuddy='/usr/libexec/PlistBuddy'
 fi
