@@ -59,13 +59,6 @@ if [ -f "$HOME/.swiftly/env.sh" ]; then
 	. "$HOME/.swiftly/env.sh"
 fi
 
-# SDKMAN
-#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
-if [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
-	export SDKMAN_DIR="$HOME/.sdkman"
-	. "$HOME/.sdkman/bin/sdkman-init.sh"
-fi
-
 # cargo
 if [ -f "$HOME/.cargo/env" ]; then
 	. "$HOME/.cargo/env"

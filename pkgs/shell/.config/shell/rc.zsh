@@ -141,7 +141,15 @@ fi
 # ==================================================
 
 # region: zsh 자동완성 (completion)
-autoload -Uz compinit && compinit
+autoload -Uz compinit
+
+zcompdump="${ZDOTDIR:-$HOME}/.zcompdump"
+if [[ ! -f "$zcompdump" || $(date +'%j') != $(stat -f '%Sm' -t '%j' "$zcompdump" 2>/dev/null) ]]; then
+  compinit
+else
+  compinit -C
+fi
+unset zcompdump
 
 # 파일이나 디렉터리 이름을 입력할 때 대소문자를 무시하고 찾아서 자동완성해주는 설정. 예를 들어 downloads라고 소문자로만 쳐도 대문자로 시작하는 Downloads/ 폴더를 찾아준다.
 # 뒤에 복잡하게 똑같은 패턴이 반복되는 부분은 Zsh 자동완성 시스템이 1단계 매칭 실패 시 2단계, 3단계로 넘어가며 '부분 일치'나 '오타 교정'까지 시도하도록 규칙을 겹겹이 쌓아두는 부분

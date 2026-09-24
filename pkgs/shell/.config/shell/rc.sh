@@ -115,15 +115,6 @@ if command -v fzf >/dev/null 2>&1; then
 	fi
 fi
 
-# Google Cloud SDK
-# The next line enables shell command completion for gcloud.
-if [ -n "$ZSH_VERSION" ]; then
-	[ -f "$HOME/dev/toolbox/google-cloud-sdk/completion.zsh.inc" ] &&
-		. "$HOME/dev/toolbox/google-cloud-sdk/completion.zsh.inc"
-elif [ -n "$BASH_VERSION" ]; then
-	[ -f "$HOME/dev/toolbox/google-cloud-sdk/completion.bash.inc" ] &&
-		. "$HOME/dev/toolbox/google-cloud-sdk/completion.bash.inc"
-fi
 
 # iPhone ShellFish 앱
 if [ -e "$HOME/.shellfishrc" ]; then
@@ -136,7 +127,7 @@ if [ -f "$HOME/.config/shell/functions.sh" ]; then
 fi
 
 # ==================================================
-# 🛠️ Shell 별 전용 설정 로드
+# 🛠️ Shell 별 전용 설정 로드 (completion 설정은 여기서 진행)
 # ==================================================
 
 if [ -n "$ZSH_VERSION" ]; then
@@ -167,3 +158,25 @@ if [ -d "$HOME/.config/shell/rc.d" ]; then
 	done
 	unset _rc_file
 fi
+
+# ==================================================
+# 🛠️ 각 도구에서 진행하는 completion
+# ==================================================
+
+# Google Cloud SDK
+# The next line enables shell command completion for gcloud.
+if [ -n "$ZSH_VERSION" ]; then
+	[ -f "$HOME/dev/toolbox/google-cloud-sdk/completion.zsh.inc" ] &&
+		. "$HOME/dev/toolbox/google-cloud-sdk/completion.zsh.inc"
+elif [ -n "$BASH_VERSION" ]; then
+	[ -f "$HOME/dev/toolbox/google-cloud-sdk/completion.bash.inc" ] &&
+		. "$HOME/dev/toolbox/google-cloud-sdk/completion.bash.inc"
+fi
+
+# SDKMAN
+#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
+if [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
+	export SDKMAN_DIR="$HOME/.sdkman"
+	. "$HOME/.sdkman/bin/sdkman-init.sh"
+fi
+
