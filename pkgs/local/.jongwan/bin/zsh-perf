@@ -202,44 +202,55 @@ capture_trace() {
 	PS4='+%D{%s%6.} %N:%i> ' zsh $zsh_flags -c exit 2>"$trace_file"
 }
 
-# Reads the raw xtrace log and emits one TSV record per step that took at
-# least $min_elapsed ms: elapsed_ms, sequence, file, line, command.
+# Reads the raw xtrace log and emits one TSV record per step: elapsed_ms
+# (or "-" when unknown), sequence, file, line, command. Elapsed time is the
+# gap to the *next* xtrace line, so the very last command has no measured
+# duration; it is still emitted (marked "-") when order is exec, since
+# execution-order output is meant to show every step that ran.
 parse_trace() {
 	local trace_file=$1
-	awk -v min_elapsed="$min_elapsed" '
+	awk -v min_elapsed="$min_elapsed" -v order="$order" '
+    function emit(ms_field, seq, raw_line,    rest, sep, location, command, colon, file, line) {
+      rest = raw_line
+      sub(/^\+[^ ]+ /, "", rest)
+
+      sep = index(rest, ">")
+      if (sep > 0) {
+        location = substr(rest, 1, sep - 1)
+        command = substr(rest, sep + 1)
+        sub(/^ /, "", command)
+      } else {
+        location = rest
+        command = ""
+      }
+
+      colon = match(location, /:[0-9]+$/)
+      if (colon > 0) {
+        file = substr(location, 1, colon - 1)
+        line = substr(location, colon + 1)
+      } else {
+        file = location
+        line = ""
+      }
+
+      printf "%s\t%d\t%s\t%s\t%s\n", ms_field, seq, file, line, command
+    }
+
     /^\+[0-9]/ {
       timestamp = substr($1, 2)
       if (have_previous) {
         elapsed_ms = (timestamp - previous_timestamp) / 1000
-        if (elapsed_ms >= min_elapsed) {
-          rest = previous_line
-          sub(/^\+[^ ]+ /, "", rest)
-
-          sep = index(rest, ">")
-          if (sep > 0) {
-            location = substr(rest, 1, sep - 1)
-            command = substr(rest, sep + 1)
-            sub(/^ /, "", command)
-          } else {
-            location = rest
-            command = ""
-          }
-
-          colon = match(location, /:[0-9]+$/)
-          if (colon > 0) {
-            file = substr(location, 1, colon - 1)
-            line = substr(location, colon + 1)
-          } else {
-            file = location
-            line = ""
-          }
-
-          printf "%.3f\t%d\t%s\t%s\t%s\n", elapsed_ms, sequence++, file, line, command
-        }
+        if (elapsed_ms >= min_elapsed)
+          emit(sprintf("%.3f", elapsed_ms), sequence++, previous_line)
       }
       previous_timestamp = timestamp
       previous_line = $0
       have_previous = 1
+    }
+
+    END {
+      if (have_previous && order == "exec")
+        emit("-", sequence, previous_line)
     }
   ' "$trace_file"
 }
@@ -271,9 +282,11 @@ format_output() {
     BEGIN {
       RED = "\033[1;31m"; YELLOW = "\033[1;33m"; GREEN = "\033[0;32m"
       CYAN = "\033[0;36m"; MAGENTA = "\033[0;35m"; DIM = "\033[2m"; RESET = "\033[0m"
+      # Width of "%8.3f ms", so an unknown "-" duration still lines up.
+      HUMAN_TIME_WIDTH = 11
     }
     {
-      ms = $1 + 0
+      unknown = ($1 == "-")
       file = $3
       line = $4
       command = $5
@@ -284,15 +297,24 @@ format_output() {
           : substr(command, 1, max_length)
       }
 
-      time_str = (time_format == "human") ? sprintf("%8.3f ms", ms) : sprintf("%.3f", ms)
+      if (unknown) {
+        time_str = (time_format == "human") ? sprintf("%*s", HUMAN_TIME_WIDTH, "-") : "-"
+      } else {
+        ms = $1 + 0
+        time_str = (time_format == "human") ? sprintf("%8.3f ms", ms) : sprintf("%.3f", ms)
+      }
 
       if (use_color) {
-        if (ms >= crit_threshold) time_color = RED
-        else if (ms >= warn_threshold) time_color = YELLOW
-        else time_color = GREEN
+        if (unknown) time_colored = time_str
+        else {
+          if (ms >= crit_threshold) time_color = RED
+          else if (ms >= warn_threshold) time_color = YELLOW
+          else time_color = GREEN
+          time_colored = time_color time_str RESET
+        }
 
-        printf "%s%s%s  %s%s%s:%s%s%s  %s%s%s\n", \
-          time_color, time_str, RESET, \
+        printf "%s  %s%s%s:%s%s%s  %s%s%s\n", \
+          time_colored, \
           CYAN, file, RESET, MAGENTA, line, RESET, \
           DIM, command, RESET
       } else {
