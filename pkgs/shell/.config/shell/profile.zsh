@@ -14,6 +14,6 @@ if [[ -d $HOME/.docker/completions ]]; then
 fi
 
 # homebrew로 설치한 zsh-completions의 completion 함수들을 fpath에 추가
-if [[ -d "${HOMEBREW_PREFIX}/share/zsh-completions" ]]; then
+if [[ -d $HOMEBREW_PREFIX/share/zsh-completions ]]; then
 	fpath+=($HOMEBREW_PREFIX/share/zsh-completions)
 fi
