@@ -78,9 +78,25 @@ fi
 # ==================================================
 
 # fasd 초기화
+# if command -v fasd >/dev/null 2>&1; then
+# 	# https://github.com/clvv/fasd
+# 	eval "$(fasd --init auto)"
+# fi
+
+# fasd 초기화 최적화
 if command -v fasd >/dev/null 2>&1; then
-	# https://github.com/clvv/fasd
-	eval "$(fasd --init auto)"
+  if [ -n "$ZSH_VERSION" ]; then
+    _fasd_cache="$HOME/.fasd-init-zsh"
+  elif [ -n "$BASH_VERSION" ]; then
+    _fasd_cache="$HOME/.fasd-init-bash"
+  fi
+
+  # https://github.com/clvv/fasd
+  if [ ! -s "$_fasd_cache" ] || [ "$(command -v fasd)" -nt "$_fasd_cache" ]; then
+    fasd --init auto >| "$_fasd_cache" 2>/dev/null
+  fi
+  [ -s "$_fasd_cache" ] && . "$_fasd_cache"
+  unset _fasd_cache
 fi
 
 # fzf 초기화
