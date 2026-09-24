@@ -3,28 +3,50 @@
 emulate -L zsh
 setopt no_unset
 
-typeset login=1 interactive=1 color_mode=auto
-typeset truncate=1 truncate_length=80 order=time top=20
+typeset min_elapsed=0.5
+
+typeset login=0 interactive=0
+typeset order=exec top=0
+typeset truncate_enabled=1 truncate_length=80
+typeset time_format=human
+typeset color_mode=auto
+typeset warn_threshold=2 crit_threshold=10
 
 usage() {
 	cat <<'EOF'
 Usage: zsh-perf [options]
 
-Measure zsh startup commands and print steps that take at least 0.5 ms.
+Measure zsh startup commands and print steps that take at least --min-elapsed ms.
 
-Shell options:
-  -l, --login             Include zsh's login-shell startup files (default)
-  -i, --interactive       Include zsh's interactive-shell startup files (default)
-      --no-login          Do not use zsh -l
-      --no-interactive     Do not use zsh -i
+Shell mode (default: neither):
+  -l, --login                Include zsh's login-shell startup files
+  -i, --interactive          Include zsh's interactive-shell startup files
 
-Output options:
-  -c, --color MODE        auto, always, or none (default: auto)
-  -t, --truncate LENGTH   Truncate commands to LENGTH characters (default: 80)
-      --no-truncate       Do not truncate commands
-  -o, --order MODE        execution or time (default: time)
-  -n, --top N             Show at most N rows after sorting (default: 20)
-  -h, --help              Show this help
+Filtering (default: min-elapsed 0.5):
+  -m, --min-elapsed MS       Only show steps taking at least MS ms
+                                Use 0 to include every command, no exclusion
+
+Sort order (default: exec):
+  -o, --order MODE           exec, asc, or desc
+                                exec: zsh's own execution order (no --top)
+                                asc/desc: sort by elapsed time
+  -n, --top N                Show only the top N rows (asc/desc only)
+
+Command truncation (default: truncate 80):
+  -t, --truncate LENGTH      Truncate commands longer than LENGTH
+      --no-truncate          Do not truncate commands
+
+Time display (default: human):
+  -f, --time-format MODE     human (aligned, with unit) or raw (bare number)
+
+Color (default: auto):
+  -c, --color MODE           auto, always, or none
+  -w, --warn-threshold MS    Elapsed time (ms) at which color turns yellow (default: 2)
+  -r, --crit-threshold MS    Elapsed time (ms) at which color turns red (default: 10)
+
+  -h, --help                 Show this help
+
+Short options may be combined, e.g. -li, -on desc, -t40.
 EOF
 }
 
@@ -34,133 +56,257 @@ die() {
 	exit 2
 }
 
-is_positive_integer() {
-	[[ $1 =~ '^[1-9][0-9]*$' ]]
-}
+is_nonnegative_integer() { [[ $1 =~ '^[0-9]+$' ]]; }
+is_positive_integer() { [[ $1 =~ '^[1-9][0-9]*$' ]]; }
+is_nonnegative_number() { [[ $1 =~ '^[0-9]+(\.[0-9]+)?$' ]]; }
+
+# --- argument parsing -------------------------------------------------
 
 while (($#)); do
-	case $1 in
-	-l | --login) login=1 ;;
-	-i | --interactive) interactive=1 ;;
-	--no-login) login=0 ;;
-	--no-interactive) interactive=0 ;;
-	-c | --color)
-		(($# >= 2)) || die "missing value for $1"
-		color_mode=$2
-		shift
-		;;
-	--color=*) color_mode=${1#*=} ;;
-	-t | --truncate)
-		(($# >= 2)) || die "missing value for $1"
-		truncate_length=$2
-		shift
-		;;
-	--truncate=*) truncate_length=${1#*=} ;;
-	--no-truncate) truncate=0 ;;
-	-o | --order)
-		(($# >= 2)) || die "missing value for $1"
-		order=$2
-		shift
-		;;
-	--order=*) order=${1#*=} ;;
-	-n | --top)
-		(($# >= 2)) || die "missing value for $1"
-		top=$2
-		shift
-		;;
-	--top=*) top=${1#*=} ;;
-	-h | --help)
-		usage
-		exit 0
-		;;
+	arg=$1
+	case $arg in
 	--)
 		shift
 		(($# == 0)) || die "unexpected argument: $1"
+		break
 		;;
-	-*) die "unknown option: $1" ;;
-	*) die "unexpected argument: $1" ;;
+	--help)
+		usage
+		exit 0
+		;;
+	--login) login=1 ;;
+	--interactive) interactive=1 ;;
+	--no-truncate) truncate_enabled=0 ;;
+	--min-elapsed=*) min_elapsed=${arg#*=} ;;
+	--min-elapsed)
+		(($# >= 2)) || die "missing value for $arg"
+		min_elapsed=$2
+		shift
+		;;
+	--order=*) order=${arg#*=} ;;
+	--order)
+		(($# >= 2)) || die "missing value for $arg"
+		order=$2
+		shift
+		;;
+	--top=*) top=${arg#*=} ;;
+	--top)
+		(($# >= 2)) || die "missing value for $arg"
+		top=$2
+		shift
+		;;
+	--truncate=*)
+		truncate_length=${arg#*=}
+		truncate_enabled=1
+		;;
+	--truncate)
+		(($# >= 2)) || die "missing value for $arg"
+		truncate_length=$2
+		truncate_enabled=1
+		shift
+		;;
+	--time-format=*) time_format=${arg#*=} ;;
+	--time-format)
+		(($# >= 2)) || die "missing value for $arg"
+		time_format=$2
+		shift
+		;;
+	--color=*) color_mode=${arg#*=} ;;
+	--color)
+		(($# >= 2)) || die "missing value for $arg"
+		color_mode=$2
+		shift
+		;;
+	--warn-threshold=*) warn_threshold=${arg#*=} ;;
+	--warn-threshold)
+		(($# >= 2)) || die "missing value for $arg"
+		warn_threshold=$2
+		shift
+		;;
+	--crit-threshold=*) crit_threshold=${arg#*=} ;;
+	--crit-threshold)
+		(($# >= 2)) || die "missing value for $arg"
+		crit_threshold=$2
+		shift
+		;;
+	--*) die "unknown option: $arg" ;;
+	-?*)
+		rest=${arg#-}
+		while [[ -n $rest ]]; do
+			opt=${rest[1]}
+			rest=${rest:1}
+			case $opt in
+			l) login=1 ;;
+			i) interactive=1 ;;
+			h)
+				usage
+				exit 0
+				;;
+			o | n | t | f | c | w | r | m)
+				if [[ -n $rest ]]; then
+					value=$rest
+					rest=""
+				else
+					(($# >= 2)) || die "missing value for -$opt"
+					value=$2
+					shift
+				fi
+				case $opt in
+				o) order=$value ;;
+				n) top=$value ;;
+				t)
+					truncate_length=$value
+					truncate_enabled=1
+					;;
+				f) time_format=$value ;;
+				c) color_mode=$value ;;
+				w) warn_threshold=$value ;;
+				r) crit_threshold=$value ;;
+				m) min_elapsed=$value ;;
+				esac
+				;;
+			*) die "unknown option: -$opt" ;;
+			esac
+		done
+		;;
+	*) die "unexpected argument: $arg" ;;
 	esac
 	shift
 done
 
-[[ $color_mode == (auto|always|none) ]] || die "color must be auto, always, or none"
-[[ $order == (execution|time) ]] || die "order must be execution or time"
-is_positive_integer "$truncate_length" || die "truncate length must be a positive integer"
-is_positive_integer "$top" || die "top must be a positive integer"
+# --- validation ---------------------------------------------------------
 
+[[ $order == (exec|asc|desc) ]] || die "order must be exec, asc, or desc"
+[[ $time_format == (human|raw) ]] || die "time-format must be human or raw"
+[[ $color_mode == (auto|always|none) ]] || die "color must be auto, always, or none"
+is_positive_integer "$truncate_length" || die "truncate length must be a positive integer"
+is_nonnegative_integer "$top" || die "top must be a non-negative integer"
+is_nonnegative_number "$warn_threshold" || die "warn-threshold must be a non-negative number"
+is_nonnegative_number "$crit_threshold" || die "crit-threshold must be a non-negative number"
+is_nonnegative_number "$min_elapsed" || die "min-elapsed must be a non-negative number"
+((warn_threshold < crit_threshold)) || die "warn-threshold must be less than crit-threshold"
+[[ $order == exec && $top -gt 0 ]] && die "--top is only valid with --order asc|desc"
+
+typeset use_color=0
 if [[ $color_mode == always || ($color_mode == auto && -t 1) ]]; then
 	use_color=1
-else
-	use_color=0
 fi
 
-trace_file=$(mktemp "${TMPDIR:-/tmp}/zsh-perf.XXXXXX") || die "cannot create temporary file"
-trap 'rm -f "$trace_file"' EXIT HUP INT TERM
+# --- pipeline stages ------------------------------------------------------
 
-zsh_flags=(-x)
-((login)) && zsh_flags+=(-l)
-((interactive)) && zsh_flags+=(-i)
-PS4='+%D{%s%6.} %N:%i> ' zsh $zsh_flags -c exit 2>"$trace_file"
+capture_trace() {
+	local trace_file=$1
+	local -a zsh_flags=(-x)
+	((login)) && zsh_flags+=(-l)
+	((interactive)) && zsh_flags+=(-i)
+	PS4='+%D{%s%6.} %N:%i> ' zsh $zsh_flags -c exit 2>"$trace_file"
+}
 
-awk '
-  /^\+[0-9]/ {
-    timestamp = substr($1, 2)
-    if (have_previous) {
-      elapsed_ms = (timestamp - previous_timestamp) / 1000
-      if (elapsed_ms >= 0.5) {
-        line = previous_line
-        sub(/^\+[^ ]+ /, "", line)
-        printf "%.3f\t%d\t%s\n", elapsed_ms, sequence++, line
+# Reads the raw xtrace log and emits one TSV record per step that took at
+# least $min_elapsed ms: elapsed_ms, sequence, file, line, command.
+parse_trace() {
+	local trace_file=$1
+	awk -v min_elapsed="$min_elapsed" '
+    /^\+[0-9]/ {
+      timestamp = substr($1, 2)
+      if (have_previous) {
+        elapsed_ms = (timestamp - previous_timestamp) / 1000
+        if (elapsed_ms >= min_elapsed) {
+          rest = previous_line
+          sub(/^\+[^ ]+ /, "", rest)
+
+          sep = index(rest, ">")
+          if (sep > 0) {
+            location = substr(rest, 1, sep - 1)
+            command = substr(rest, sep + 1)
+            sub(/^ /, "", command)
+          } else {
+            location = rest
+            command = ""
+          }
+
+          colon = match(location, /:[0-9]+$/)
+          if (colon > 0) {
+            file = substr(location, 1, colon - 1)
+            line = substr(location, colon + 1)
+          } else {
+            file = location
+            line = ""
+          }
+
+          printf "%.3f\t%d\t%s\t%s\t%s\n", elapsed_ms, sequence++, file, line, command
+        }
       }
+      previous_timestamp = timestamp
+      previous_line = $0
+      have_previous = 1
     }
-    previous_timestamp = timestamp
-    previous_line = $0
-    have_previous = 1
-  }
-' "$trace_file" |
-	if [[ $order == time ]]; then
-		LC_ALL=C sort -k1,1nr -k2,2n
+  ' "$trace_file"
+}
+
+sort_records() {
+	case $order in
+	exec) LC_ALL=C sort -t $'\t' -k2,2n ;;
+	asc) LC_ALL=C sort -t $'\t' -k1,1n -k2,2n ;;
+	desc) LC_ALL=C sort -t $'\t' -k1,1nr -k2,2n ;;
+	esac
+}
+
+limit_top() {
+	if [[ $order != exec ]] && ((top > 0)); then
+		head -n "$top"
 	else
-		LC_ALL=C sort -k2,2n
-	fi |
-	awk -v top="$top" -v do_truncate="$truncate" -v max_length="$truncate_length" \
-		-v use_color="$use_color" '
+		cat
+	fi
+}
+
+format_output() {
+	awk -F '\t' \
+		-v do_truncate="$truncate_enabled" \
+		-v max_length="$truncate_length" \
+		-v time_format="$time_format" \
+		-v use_color="$use_color" \
+		-v warn_threshold="$warn_threshold" \
+		-v crit_threshold="$crit_threshold" '
     BEGIN {
-      RED = "\033[1;31m"
-      YELLOW = "\033[1;33m"
-      GREEN = "\033[0;32m"
-      LOCATION = "\033[0;36m"
-      DIM = "\033[2m"
-      RESET = "\033[0m"
+      RED = "\033[1;31m"; YELLOW = "\033[1;33m"; GREEN = "\033[0;32m"
+      CYAN = "\033[0;36m"; MAGENTA = "\033[0;35m"; DIM = "\033[2m"; RESET = "\033[0m"
     }
-    NR <= top {
-      ms = $1
-      line = $0
-      sub(/^[^\t]*\t[^\t]*\t/, "", line)
+    {
+      ms = $1 + 0
+      file = $3
+      line = $4
+      command = $5
 
-      location = line
-      command = line
-      separator = index(line, ">")
-      if (separator > 0) {
-        location = substr(line, 1, separator - 1)
-        command = substr(line, separator + 1)
-        sub(/^ /, "", command)
-      }
       if (do_truncate && length(command) > max_length) {
-        if (max_length > 3)
-          command = substr(command, 1, max_length - 3) "..."
-        else
-          command = substr(command, 1, max_length)
+        command = (max_length > 3) \
+          ? substr(command, 1, max_length - 3) "..." \
+          : substr(command, 1, max_length)
       }
 
-      if (ms >= 10) time_color = RED
-      else if (ms >= 2) time_color = YELLOW
-      else time_color = GREEN
+      time_str = (time_format == "human") ? sprintf("%8.3f ms", ms) : sprintf("%.3f", ms)
 
-      if (use_color)
-        printf "%s[%8.2f ms]%s %s%s%s %s%s%s\n", time_color, ms, RESET, \
-          LOCATION, location, RESET, DIM, command, RESET
-      else
-        printf "[%8.2f ms] %s %s\n", ms, location, command
+      if (use_color) {
+        if (ms >= crit_threshold) time_color = RED
+        else if (ms >= warn_threshold) time_color = YELLOW
+        else time_color = GREEN
+
+        printf "%s%s%s  %s%s%s:%s%s%s  %s%s%s\n", \
+          time_color, time_str, RESET, \
+          CYAN, file, RESET, MAGENTA, line, RESET, \
+          DIM, command, RESET
+      } else {
+        printf "%s  %s:%s  %s\n", time_str, file, line, command
+      }
     }
   '
+}
+
+# --- main ------------------------------------------------------------
+
+typeset tmpdir=${TMPDIR:-/tmp}
+trace_file=$(mktemp "${tmpdir%/}/zsh-perf.XXXXXX") || die "cannot create temporary file"
+trap 'rm -f "$trace_file"' EXIT HUP INT TERM
+
+capture_trace "$trace_file"
+parse_trace "$trace_file" | sort_records | limit_top | format_output
