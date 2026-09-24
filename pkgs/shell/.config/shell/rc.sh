@@ -89,14 +89,26 @@ if command -v fasd >/dev/null 2>&1; then
     _fasd_cache="$HOME/.fasd-init-zsh"
   elif [ -n "$BASH_VERSION" ]; then
     _fasd_cache="$HOME/.fasd-init-bash"
+  else
+    _fasd_cache="$HOME/.fasd-init-posix-shell"
   fi
 
   # https://github.com/clvv/fasd
+  # 캐시가 없거나 fasd 실행 파일이 캐시보다 최신이면 갱신
   if [ ! -s "$_fasd_cache" ] || [ "$(command -v fasd)" -nt "$_fasd_cache" ]; then
-    fasd --init auto >| "$_fasd_cache" 2>/dev/null
+    if [ -n "$ZSH_VERSION" ]; then
+      fasd --init posix-alias zsh-hook zsh-ccomp zsh-ccomp-install zsh-wcomp zsh-wcomp-install >| "$_fasd_cache" 2>/dev/null
+    elif [ -n "$BASH_VERSION" ]; then
+      fasd --init posix-alias bash-hook bash-ccomp bash-ccomp-install >| "$_fasd_cache" 2>/dev/null
+    else
+      fasd --init posix-alias posix-hook >| "$_fasd_cache" 2>/dev/null
+    fi
   fi
+
+  # 캐시 로드
   [ -s "$_fasd_cache" ] && . "$_fasd_cache"
-  unset _fasd_cache
+  # 임시 변수 정리
+  unset _fasd_cache _fasd_opts
 fi
 
 # fzf 초기화

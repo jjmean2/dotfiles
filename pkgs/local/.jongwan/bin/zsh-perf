@@ -6,7 +6,7 @@ setopt no_unset
 typeset min_elapsed=0.5
 
 typeset login=0 interactive=0
-typeset order=exec top=0
+typeset sort_mode=exec top=0
 typeset truncate_enabled=1 truncate_length=80
 typeset time_format=human
 typeset color_mode=auto
@@ -27,7 +27,7 @@ Filtering (default: min-elapsed 0.5):
                                 Use 0 to include every command, no exclusion
 
 Sort order (default: exec):
-  -o, --order MODE           exec, asc, or desc
+  -s, --sort MODE            exec, asc, or desc
                                 exec: zsh's own execution order (no --top)
                                 asc/desc: sort by elapsed time
   -n, --top N                Show only the top N rows (asc/desc only)
@@ -46,7 +46,7 @@ Color (default: auto):
 
   -h, --help                 Show this help
 
-Short options may be combined, e.g. -li, -on desc, -t40.
+Short options may be combined, e.g. -li, -sn desc, -t40.
 EOF
 }
 
@@ -83,10 +83,10 @@ while (($#)); do
 		min_elapsed=$2
 		shift
 		;;
-	--order=*) order=${arg#*=} ;;
-	--order)
+	--sort=*) sort_mode=${arg#*=} ;;
+	--sort)
 		(($# >= 2)) || die "missing value for $arg"
-		order=$2
+		sort_mode=$2
 		shift
 		;;
 	--top=*) top=${arg#*=} ;;
@@ -142,7 +142,7 @@ while (($#)); do
 				usage
 				exit 0
 				;;
-			o | n | t | f | c | w | r | m)
+			s | n | t | f | c | w | r | m)
 				if [[ -n $rest ]]; then
 					value=$rest
 					rest=""
@@ -152,7 +152,7 @@ while (($#)); do
 					shift
 				fi
 				case $opt in
-				o) order=$value ;;
+				s) sort_mode=$value ;;
 				n) top=$value ;;
 				t)
 					truncate_length=$value
@@ -176,7 +176,7 @@ done
 
 # --- validation ---------------------------------------------------------
 
-[[ $order == (exec|asc|desc) ]] || die "order must be exec, asc, or desc"
+[[ $sort_mode == (exec|asc|desc) ]] || die "sort must be exec, asc, or desc"
 [[ $time_format == (human|raw) ]] || die "time-format must be human or raw"
 [[ $color_mode == (auto|always|none) ]] || die "color must be auto, always, or none"
 is_positive_integer "$truncate_length" || die "truncate length must be a positive integer"
@@ -185,7 +185,7 @@ is_nonnegative_number "$warn_threshold" || die "warn-threshold must be a non-neg
 is_nonnegative_number "$crit_threshold" || die "crit-threshold must be a non-negative number"
 is_nonnegative_number "$min_elapsed" || die "min-elapsed must be a non-negative number"
 ((warn_threshold < crit_threshold)) || die "warn-threshold must be less than crit-threshold"
-[[ $order == exec && $top -gt 0 ]] && die "--top is only valid with --order asc|desc"
+[[ $sort_mode == exec && $top -gt 0 ]] && die "--top is only valid with --sort asc|desc"
 
 typeset use_color=0
 if [[ $color_mode == always || ($color_mode == auto && -t 1) ]]; then
@@ -205,11 +205,11 @@ capture_trace() {
 # Reads the raw xtrace log and emits one TSV record per step: elapsed_ms
 # (or "-" when unknown), sequence, file, line, command. Elapsed time is the
 # gap to the *next* xtrace line, so the very last command has no measured
-# duration; it is still emitted (marked "-") when order is exec, since
+# duration; it is still emitted (marked "-") when sort is exec, since
 # execution-order output is meant to show every step that ran.
 parse_trace() {
 	local trace_file=$1
-	awk -v min_elapsed="$min_elapsed" -v order="$order" '
+	awk -v min_elapsed="$min_elapsed" -v sort_mode="$sort_mode" '
     function emit(ms_field, seq, raw_line,    rest, sep, location, command, colon, file, line) {
       rest = raw_line
       sub(/^\+[^ ]+ /, "", rest)
@@ -249,14 +249,14 @@ parse_trace() {
     }
 
     END {
-      if (have_previous && order == "exec")
+      if (have_previous && sort_mode == "exec")
         emit("-", sequence, previous_line)
     }
   ' "$trace_file"
 }
 
 sort_records() {
-	case $order in
+	case $sort_mode in
 	exec) LC_ALL=C sort -t $'\t' -k2,2n ;;
 	asc) LC_ALL=C sort -t $'\t' -k1,1n -k2,2n ;;
 	desc) LC_ALL=C sort -t $'\t' -k1,1nr -k2,2n ;;
@@ -264,7 +264,7 @@ sort_records() {
 }
 
 limit_top() {
-	if [[ $order != exec ]] && ((top > 0)); then
+	if [[ $sort_mode != exec ]] && ((top > 0)); then
 		head -n "$top"
 	else
 		cat
