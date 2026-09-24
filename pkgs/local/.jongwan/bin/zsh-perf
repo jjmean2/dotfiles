@@ -14,6 +14,7 @@ typeset output_file=""
 
 # report
 typeset report_file=""
+typeset view=auto focus=0 id_width=0
 typeset min_elapsed=0.5
 typeset sort_mode=exec top=0
 typeset truncate_enabled=1 truncate_length=80
@@ -45,6 +46,13 @@ Recording (record):
 Interactive sessions (no -c) record every command you run. To leave out the time
 spent waiting at the prompt, add this line at the end of your .zshrc:
   [[ -n ${ZSH_PERF_HOOK-} ]] && source "$ZSH_PERF_HOOK"
+
+View (run, report; default: auto):
+  -v, --view MODE            steps: one row per traced step
+                             commands: one row per command you ran in a recorded
+                                interactive session, numbered #1, #2, ...
+                             auto: commands if the trace has any, otherwise steps
+  -F, --focus N              Show only the steps of command #N (implies steps)
 
 Filtering (run, report; default: min-elapsed 0.5):
   -m, --min-elapsed MS       Only show steps taking at least MS ms
@@ -92,16 +100,18 @@ typeset -A option_kind=(
 	command value output value min-elapsed value sort value top value
 	truncate value time-format value color value
 	warn-threshold value crit-threshold value
+	view value focus value
 )
 
 typeset -A short_option=(
 	l login i interactive h help
 	c command o output m min-elapsed s sort n top
 	t truncate f time-format C color w warn-threshold r crit-threshold
+	v view F focus
 )
 
 typeset -a shell_options=(login interactive command)
-typeset -a report_options=(min-elapsed sort top truncate no-truncate time-format color warn-threshold crit-threshold)
+typeset -a report_options=(view focus min-elapsed sort top truncate no-truncate time-format color warn-threshold crit-threshold)
 
 typeset -A allowed_options=(
 	run "$shell_options $report_options"
@@ -125,6 +135,8 @@ apply_option() {
 		has_command=1
 		;;
 	output) output_file=$value ;;
+	view) view=$value ;;
+	focus) focus=$value ;;
 	min-elapsed) min_elapsed=$value ;;
 	sort) sort_mode=$value ;;
 	top) top=$value ;;
@@ -225,6 +237,9 @@ if ((bare && !has_command)); then
 	has_command=1
 fi
 
+[[ $view == (auto|steps|commands) ]] || die "view must be auto, steps, or commands"
+is_nonnegative_integer "$focus" || die "focus must be a non-negative integer"
+[[ $view != commands || $focus -eq 0 ]] || die "--focus shows the steps of one command; use it with --view steps"
 [[ $sort_mode == (exec|asc|desc) ]] || die "sort must be exec, asc, or desc"
 [[ $time_format == (human|raw) ]] || die "time-format must be human or raw"
 [[ $color_mode == (auto|always|none) ]] || die "color must be auto, always, or none"
@@ -326,9 +341,14 @@ record_trace() {
 # They end the step in flight, and everything between idle-start and the next
 # cmd-start (waiting at the prompt, line-editor widgets) is dropped so that
 # the user's thinking time is never charged to a step.
+#
+# The markers also delimit the commands the user ran (cmd-start .. cmd-end).
+# With view=commands each command is one record (file column "#N", no line);
+# with focus=N only the steps of command N are considered.
 parse_trace() {
 	local trace_file=$1
-	awk -v min_elapsed="$min_elapsed" -v sort_mode="$sort_mode" '
+	awk -v min_elapsed="$min_elapsed" -v sort_mode="$sort_mode" \
+		-v view="$view" -v focus="$focus" '
     function emit(ms_field, seq, raw_line,    rest, sep, location, command, colon, file, line) {
       rest = raw_line
       sub(/^\+[^ ]+ /, "", rest)
@@ -353,6 +373,10 @@ parse_trace() {
       }
 
       printf "%s\t%d\t%s\t%s\t%s\n", ms_field, seq, file, line, command
+    }
+
+    function emit_command(ms_field) {
+      printf "%s\t%d\t#%d\t\t%s\n", ms_field, cmd_id, cmd_id, cmd_text
     }
 
     function timestamp_of(text) {
@@ -406,15 +430,30 @@ parse_trace() {
     }
 
     /^@zsh-perf / {
+      kind = $2
       flush($3)
       if ($3 + 0 > last_seen)
         last_seen = $3 + 0
-      in_idle = ($2 == "idle-start")
+      if (kind == "cmd-start") {
+        cmd_id++
+        cmd_open = 1
+        cmd_start = $3 + 0
+        cmd_text = $0
+        sub(/^@zsh-perf [^ ]+ [^ ]+ ?/, "", cmd_text)
+      } else if (kind == "cmd-end" && cmd_open) {
+        elapsed_ms = ($3 - cmd_start) / 1000
+        if (view == "commands" && elapsed_ms >= min_elapsed)
+          emit_command(sprintf("%.3f", elapsed_ms))
+        cmd_open = 0
+      }
+      in_idle = (kind == "idle-start")
       next
     }
 
     /^\+[0-9]/ {
-      if (in_idle)
+      if (in_idle || view == "commands")
+        next
+      if (focus > 0 && !(cmd_open && cmd_id == focus))
         next
       count = split_line($0, parts)
       for (i = 1; i <= count; i++)
@@ -423,8 +462,14 @@ parse_trace() {
     }
 
     END {
-      if (have_previous && sort_mode == "exec")
+      if (sort_mode != "exec")
+        exit
+      if (view == "commands") {
+        if (cmd_open)
+          emit_command("-")
+      } else if (have_previous) {
         emit("-", previous_seq, previous_line)
+      }
     }
   ' "$trace_file"
 }
@@ -451,6 +496,8 @@ format_output() {
 		-v max_length="$truncate_length" \
 		-v time_format="$time_format" \
 		-v use_color="$use_color" \
+		-v view="$view" \
+		-v id_width="$id_width" \
 		-v warn_threshold="$warn_threshold" \
 		-v crit_threshold="$crit_threshold" '
     BEGIN {
@@ -464,6 +511,10 @@ format_output() {
       file = $3
       line = $4
       command = $5
+
+      # Right-align "#N" ids so the command column lines up.
+      if (view == "commands" && time_format == "human")
+        file = sprintf("%*s", id_width, file)
 
       if (do_truncate && length(command) > max_length) {
         command = (max_length > 3) \
@@ -487,18 +538,39 @@ format_output() {
           time_colored = time_color time_str RESET
         }
 
-        printf "%s  %s%s%s:%s%s%s  %s%s%s\n", \
-          time_colored, \
-          CYAN, file, RESET, MAGENTA, line, RESET, \
-          DIM, command, RESET
+        if (view == "commands")
+          location = MAGENTA file RESET
+        else
+          location = CYAN file RESET ":" MAGENTA line RESET
+        printf "%s  %s  %s%s%s\n", time_colored, location, DIM, command, RESET
       } else {
-        printf "%s  %s:%s  %s\n", time_str, file, line, command
+        if (view == "commands")
+          location = file
+        else
+          location = file ":" line
+        printf "%s  %s  %s\n", time_str, location, command
       }
     }
   '
 }
 
+# Settles view=auto for trace file $1 and rejects views the trace cannot show.
+prepare_view() {
+	local commands
+	commands=$(grep -c '^@zsh-perf cmd-start ' "$1")
+
+	if [[ $view == auto ]]; then
+		if ((focus > 0 || commands == 0)); then view=steps; else view=commands; fi
+	fi
+	if ((commands == 0)) && [[ $view == commands || $focus -gt 0 ]]; then
+		die "no commands recorded in this trace (record an interactive session; see --help for the .zshrc hook line)"
+	fi
+	((focus <= commands)) || die "no command #$focus in this trace (it has $commands)"
+	id_width=$((${#commands} + 1))
+}
+
 report_trace() {
+	prepare_view "$1"
 	parse_trace "$1" | sort_records | limit_top | format_output
 }
 
@@ -517,6 +589,11 @@ report)
 		report_file=-
 	fi
 	[[ $report_file == - || -r $report_file ]] || die "cannot read trace file: $report_file"
+	if [[ $report_file == - ]]; then
+		trace_file=$(make_temp zsh-perf) || exit 2
+		cat >"$trace_file"
+		report_file=$trace_file
+	fi
 	report_trace "$report_file"
 	;;
 run)
