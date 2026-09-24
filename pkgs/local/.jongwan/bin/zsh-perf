@@ -3,44 +3,69 @@
 emulate -L zsh
 setopt no_unset
 
-typeset min_elapsed=0.5
+# --- defaults -----------------------------------------------------------------
 
+typeset subcmd=run bare=1
+
+# zsh invocation (run, record)
 typeset login=0 interactive=0
+typeset zsh_command="" has_command=0
+typeset output_file=""
+
+# report
+typeset report_file=""
+typeset min_elapsed=0.5
 typeset sort_mode=exec top=0
 typeset truncate_enabled=1 truncate_length=80
 typeset time_format=human
 typeset color_mode=auto
 typeset warn_threshold=2 crit_threshold=10
 
+# --- help / errors ------------------------------------------------------------
+
 usage() {
 	cat <<'EOF'
-Usage: zsh-perf [options]
+Usage:
+  zsh-perf [options]                    Same as: zsh-perf run -c exit [options]
+  zsh-perf run [options]                Record a zsh run, then report it
+  zsh-perf record -o FILE [options]     Record the xtrace of a zsh run to FILE
+  zsh-perf report [FILE] [options]      Report a recorded trace (FILE or stdin)
 
-Measure zsh startup commands and print steps that take at least --min-elapsed ms.
+Measures how long each command traced by zsh's xtrace takes.
 
-Shell mode (default: neither):
-  -l, --login                Include zsh's login-shell startup files
-  -i, --interactive          Include zsh's interactive-shell startup files
+Zsh options (run, record):
+  -l, --login                Start zsh as a login shell
+  -i, --interactive          Start zsh as an interactive shell
+  -c, --command CMD          Run CMD in zsh and exit. Without -c, zsh stays open
+                             and everything you run is recorded until you exit.
 
-Filtering (default: min-elapsed 0.5):
+Recording (record):
+  -o, --output FILE          Write the trace to FILE
+
+Interactive sessions (no -c) record every command you run. To leave out the time
+spent waiting at the prompt, add this line at the end of your .zshrc:
+  [[ -n ${ZSH_PERF_HOOK-} ]] && source "$ZSH_PERF_HOOK"
+
+Filtering (run, report; default: min-elapsed 0.5):
   -m, --min-elapsed MS       Only show steps taking at least MS ms
                                 Use 0 to include every command, no exclusion
 
-Sort order (default: exec):
+Sort order (run, report; default: exec):
   -s, --sort MODE            exec, asc, or desc
-                                exec: zsh's own execution order (no --top)
+                                exec: zsh's own execution order (no --top);
+                                      steps with no measurable time show "-"
                                 asc/desc: sort by elapsed time
   -n, --top N                Show only the top N rows (asc/desc only)
 
-Command truncation (default: truncate 80):
+Command truncation (run, report; default: truncate 80):
   -t, --truncate LENGTH      Truncate commands longer than LENGTH
       --no-truncate          Do not truncate commands
 
-Time display (default: human):
+Time display (run, report; default: human):
   -f, --time-format MODE     human (aligned, with unit) or raw (bare number)
 
-Color (default: auto):
-  -c, --color MODE           auto, always, or none
+Color (run, report; default: auto):
+  -C, --color MODE           auto, always, or none
   -w, --warn-threshold MS    Elapsed time (ms) at which color turns yellow (default: 2)
   -r, --crit-threshold MS    Elapsed time (ms) at which color turns red (default: 10)
 
@@ -60,121 +85,145 @@ is_nonnegative_integer() { [[ $1 =~ '^[0-9]+$' ]]; }
 is_positive_integer() { [[ $1 =~ '^[1-9][0-9]*$' ]]; }
 is_nonnegative_number() { [[ $1 =~ '^[0-9]+(\.[0-9]+)?$' ]]; }
 
-# --- argument parsing -------------------------------------------------
+# --- option table -------------------------------------------------------------
 
-while (($#)); do
-	arg=$1
-	case $arg in
-	--)
-		shift
-		(($# == 0)) || die "unexpected argument: $1"
-		break
-		;;
-	--help)
+typeset -A option_kind=(
+	login flag interactive flag no-truncate flag help flag
+	command value output value min-elapsed value sort value top value
+	truncate value time-format value color value
+	warn-threshold value crit-threshold value
+)
+
+typeset -A short_option=(
+	l login i interactive h help
+	c command o output m min-elapsed s sort n top
+	t truncate f time-format C color w warn-threshold r crit-threshold
+)
+
+typeset -a shell_options=(login interactive command)
+typeset -a report_options=(min-elapsed sort top truncate no-truncate time-format color warn-threshold crit-threshold)
+
+typeset -A allowed_options=(
+	run "$shell_options $report_options"
+	record "$shell_options output"
+	report "$report_options"
+)
+
+typeset -a given_options=() positionals=()
+
+apply_option() {
+	local name=$1 value=${2-}
+	case $name in
+	help)
 		usage
 		exit 0
 		;;
-	--login) login=1 ;;
-	--interactive) interactive=1 ;;
-	--no-truncate) truncate_enabled=0 ;;
-	--min-elapsed=*) min_elapsed=${arg#*=} ;;
-	--min-elapsed)
-		(($# >= 2)) || die "missing value for $arg"
-		min_elapsed=$2
-		shift
+	login) login=1 ;;
+	interactive) interactive=1 ;;
+	command)
+		zsh_command=$value
+		has_command=1
 		;;
-	--sort=*) sort_mode=${arg#*=} ;;
-	--sort)
-		(($# >= 2)) || die "missing value for $arg"
-		sort_mode=$2
-		shift
-		;;
-	--top=*) top=${arg#*=} ;;
-	--top)
-		(($# >= 2)) || die "missing value for $arg"
-		top=$2
-		shift
-		;;
-	--truncate=*)
-		truncate_length=${arg#*=}
+	output) output_file=$value ;;
+	min-elapsed) min_elapsed=$value ;;
+	sort) sort_mode=$value ;;
+	top) top=$value ;;
+	truncate)
+		truncate_length=$value
 		truncate_enabled=1
 		;;
-	--truncate)
-		(($# >= 2)) || die "missing value for $arg"
-		truncate_length=$2
-		truncate_enabled=1
-		shift
+	no-truncate) truncate_enabled=0 ;;
+	time-format) time_format=$value ;;
+	color) color_mode=$value ;;
+	warn-threshold) warn_threshold=$value ;;
+	crit-threshold) crit_threshold=$value ;;
+	esac
+	given_options+=("$name")
+}
+
+# --- argument parsing ---------------------------------------------------------
+
+case ${1-} in
+run | record | report)
+	subcmd=$1
+	bare=0
+	shift
+	;;
+esac
+
+while (($#)); do
+	arg=$1
+	shift
+	case $arg in
+	--)
+		positionals+=("$@")
+		break
 		;;
-	--time-format=*) time_format=${arg#*=} ;;
-	--time-format)
-		(($# >= 2)) || die "missing value for $arg"
-		time_format=$2
-		shift
+	--*=*)
+		name=${${arg%%=*}#--}
+		case ${option_kind[$name]-} in
+		value) apply_option "$name" "${arg#*=}" ;;
+		flag) die "option --$name does not take a value" ;;
+		*) die "unknown option: --$name" ;;
+		esac
 		;;
-	--color=*) color_mode=${arg#*=} ;;
-	--color)
-		(($# >= 2)) || die "missing value for $arg"
-		color_mode=$2
-		shift
+	--*)
+		name=${arg#--}
+		case ${option_kind[$name]-} in
+		flag) apply_option "$name" ;;
+		value)
+			(($# >= 1)) || die "missing value for $arg"
+			apply_option "$name" "$1"
+			shift
+			;;
+		*) die "unknown option: $arg" ;;
+		esac
 		;;
-	--warn-threshold=*) warn_threshold=${arg#*=} ;;
-	--warn-threshold)
-		(($# >= 2)) || die "missing value for $arg"
-		warn_threshold=$2
-		shift
-		;;
-	--crit-threshold=*) crit_threshold=${arg#*=} ;;
-	--crit-threshold)
-		(($# >= 2)) || die "missing value for $arg"
-		crit_threshold=$2
-		shift
-		;;
-	--*) die "unknown option: $arg" ;;
 	-?*)
 		rest=${arg#-}
 		while [[ -n $rest ]]; do
-			opt=${rest[1]}
+			letter=${rest[1]}
 			rest=${rest:1}
-			case $opt in
-			l) login=1 ;;
-			i) interactive=1 ;;
-			h)
-				usage
-				exit 0
-				;;
-			s | n | t | f | c | w | r | m)
+			name=${short_option[$letter]-}
+			[[ -n $name ]] || die "unknown option: -$letter"
+			if [[ ${option_kind[$name]} == flag ]]; then
+				apply_option "$name"
+			else
 				if [[ -n $rest ]]; then
 					value=$rest
 					rest=""
 				else
-					(($# >= 2)) || die "missing value for -$opt"
-					value=$2
+					(($# >= 1)) || die "missing value for -$letter"
+					value=$1
 					shift
 				fi
-				case $opt in
-				s) sort_mode=$value ;;
-				n) top=$value ;;
-				t)
-					truncate_length=$value
-					truncate_enabled=1
-					;;
-				f) time_format=$value ;;
-				c) color_mode=$value ;;
-				w) warn_threshold=$value ;;
-				r) crit_threshold=$value ;;
-				m) min_elapsed=$value ;;
-				esac
-				;;
-			*) die "unknown option: -$opt" ;;
-			esac
+				apply_option "$name" "$value"
+			fi
 		done
 		;;
-	*) die "unexpected argument: $arg" ;;
+	*) positionals+=("$arg") ;;
 	esac
-	shift
 done
 
-# --- validation ---------------------------------------------------------
+# --- validation ---------------------------------------------------------------
+
+for name in $given_options; do
+	[[ " ${allowed_options[$subcmd]} " == *" $name "* ]] || die "--$name is not valid for '$subcmd'"
+done
+
+if [[ $subcmd == report ]]; then
+	((${#positionals} <= 1)) || die "unexpected argument: ${positionals[2]}"
+	report_file=${positionals[1]-}
+else
+	((${#positionals} == 0)) || die "unexpected argument: ${positionals[1]}"
+fi
+
+[[ $subcmd != record || -n $output_file ]] || die "record requires -o FILE"
+
+if ((bare && !has_command)); then
+	zsh_command=exit
+	has_command=1
+fi
 
 [[ $sort_mode == (exec|asc|desc) ]] || die "sort must be exec, asc, or desc"
 [[ $time_format == (human|raw) ]] || die "time-format must be human or raw"
@@ -192,21 +241,91 @@ if [[ $color_mode == always || ($color_mode == auto && -t 1) ]]; then
 	use_color=1
 fi
 
-# --- pipeline stages ------------------------------------------------------
+# --- record -------------------------------------------------------------------
 
-capture_trace() {
-	local trace_file=$1
-	local -a zsh_flags=(-x)
-	((login)) && zsh_flags+=(-l)
-	((interactive)) && zsh_flags+=(-i)
-	PS4='+%D{%s%6.} %N:%i> ' zsh $zsh_flags -c exit 2>"$trace_file"
+typeset trace_file="" hook_file=""
+
+cleanup() {
+	[[ -z $trace_file ]] || rm -f "$trace_file"
+	[[ -z $hook_file ]] || rm -f "$hook_file"
 }
+
+make_temp() {
+	local dir=${TMPDIR:-/tmp}
+	mktemp "${dir%/}/$1.XXXXXX" || die "cannot create temporary file"
+}
+
+# Sourced by the recorded interactive shell (from .zshrc, via $ZSH_PERF_HOOK).
+# It writes marker lines into the xtrace stream (stderr) so the report knows
+# where each command starts and ends and can drop the time spent at the prompt.
+# The marker functions come first/last in the hook arrays so that the user's
+# own preexec/precmd hooks are counted as part of the command/prompt.
+hook_source() {
+	cat <<'EOF'
+__zsh_perf_mark() {
+	setopt local_options no_xtrace
+	local ts
+	print -Pv ts '%D{%s%6.}'
+	print -ru2 -- "@zsh-perf $1 $ts${2:+ $2}"
+}
+__zsh_perf_preexec() { __zsh_perf_mark cmd-start "${1//$'\n'/ }"; }
+__zsh_perf_precmd_first() { __zsh_perf_mark cmd-end; }
+__zsh_perf_precmd_last() { __zsh_perf_mark idle-start; }
+if [[ -z ${preexec_functions[(r)__zsh_perf_preexec]-} ]]; then
+	preexec_functions=(__zsh_perf_preexec ${preexec_functions[@]})
+	precmd_functions=(__zsh_perf_precmd_first ${precmd_functions[@]} __zsh_perf_precmd_last)
+fi
+EOF
+}
+
+# Runs zsh with xtrace on and writes the trace (zsh's stderr) to $1.
+record_trace() {
+	setopt local_traps
+	local output=$1
+	local -a zsh_args=(-x)
+	((login)) && zsh_args+=(-l)
+	((interactive)) && zsh_args+=(-i)
+	((has_command)) && zsh_args+=(-c "$zsh_command")
+
+	if ((!has_command)); then
+		print -u2 "zsh-perf: recording to $output; exit the shell to finish"
+		hook_file=$(make_temp zsh-perf-hook) || exit 2
+		hook_source >"$hook_file"
+		# An interactive session gets its own Ctrl-C; this wrapper must outlive it.
+		trap : INT
+	fi
+
+	ZSH_PERF_HOOK=$hook_file PS4='+%D{%s%6.} %N:%i> ' zsh "${zsh_args[@]}" 2>"$output"
+
+	if ((!has_command)) && ! grep -q '^@zsh-perf ' "$output"; then
+		print -u2 "zsh-perf: no prompt markers recorded, so time spent waiting at the prompt is included."
+		print -u2 "zsh-perf: add this line at the end of your .zshrc:"
+		print -u2 '  [[ -n ${ZSH_PERF_HOOK-} ]] && source "$ZSH_PERF_HOOK"'
+	fi
+}
+
+# --- report -------------------------------------------------------------------
 
 # Reads the raw xtrace log and emits one TSV record per step: elapsed_ms
 # (or "-" when unknown), sequence, file, line, command. Elapsed time is the
-# gap to the *next* xtrace line, so the very last command has no measured
-# duration; it is still emitted (marked "-") when sort is exec, since
-# execution-order output is meant to show every step that ran.
+# gap to the *next* event, so a step's time is what happens until the shell
+# moves on. Steps whose time cannot be measured are listed as "-" (exec order
+# only, since they cannot be ranked by time): the very last command, which
+# has no next event, and the stale lines described below.
+#
+# Assignments like x=$(cmd), (( )) and [[ ]] make zsh print "PS4 x=", run the
+# substitution (whose own trace lands on the same physical line), and later
+# print the finished "PS4 x=value" again with the *original* timestamp. So:
+#   - a second PS4 prefix inside a line (timestamp not older than the line's
+#     own) starts a new step; the text before it is a step of its own
+#   - a step whose timestamp is older than the latest one seen is such a
+#     repeat: it is shown as "-" and does not take part in any timing
+#
+# Interactive sessions also contain marker lines written by the hook
+# (see hook_source): "@zsh-perf cmd-end|idle-start|cmd-start TS [TEXT]".
+# They end the step in flight, and everything between idle-start and the next
+# cmd-start (waiting at the prompt, line-editor widgets) is dropped so that
+# the user's thinking time is never charged to a step.
 parse_trace() {
 	local trace_file=$1
 	awk -v min_elapsed="$min_elapsed" -v sort_mode="$sort_mode" '
@@ -236,21 +355,76 @@ parse_trace() {
       printf "%s\t%d\t%s\t%s\t%s\n", ms_field, seq, file, line, command
     }
 
-    /^\+[0-9]/ {
-      timestamp = substr($1, 2)
-      if (have_previous) {
-        elapsed_ms = (timestamp - previous_timestamp) / 1000
-        if (elapsed_ms >= min_elapsed)
-          emit(sprintf("%.3f", elapsed_ms), sequence++, previous_line)
+    function timestamp_of(text) {
+      match(text, /^\+[0-9]+/)
+      return substr(text, 2, RLENGTH - 1) + 0
+    }
+
+    # Splits one physical line at every embedded PS4 prefix that is not older
+    # than the line'"'"'s own timestamp (older ones are quoted text, not prefixes).
+    function split_line(raw, parts,    n, offset, from, pos, first_ts) {
+      split("", parts)
+      n = 0
+      offset = 1
+      from = 2
+      first_ts = timestamp_of(raw)
+      while (match(substr(raw, from), /\+[0-9]+ [^>]+:[0-9]+> /)) {
+        pos = from + RSTART - 1
+        if (timestamp_of(substr(raw, pos)) >= first_ts) {
+          parts[++n] = substr(raw, offset, pos - offset)
+          offset = pos
+        }
+        from = pos + 1
       }
-      previous_timestamp = timestamp
-      previous_line = $0
+      parts[++n] = substr(raw, offset)
+      return n
+    }
+
+    function flush(end_timestamp,    elapsed_ms) {
+      if (!have_previous)
+        return
+      elapsed_ms = (end_timestamp - previous_timestamp) / 1000
+      if (elapsed_ms >= min_elapsed)
+        emit(sprintf("%.3f", elapsed_ms), previous_seq, previous_line)
+      have_previous = 0
+    }
+
+    function process(step,    ts, seq) {
+      ts = timestamp_of(step)
+      seq = arrivals++
+      if (ts < last_seen) {
+        if (sort_mode == "exec")
+          emit("-", seq, step)
+        return
+      }
+      last_seen = ts
+      flush(ts)
+      previous_timestamp = ts
+      previous_line = step
+      previous_seq = seq
       have_previous = 1
+    }
+
+    /^@zsh-perf / {
+      flush($3)
+      if ($3 + 0 > last_seen)
+        last_seen = $3 + 0
+      in_idle = ($2 == "idle-start")
+      next
+    }
+
+    /^\+[0-9]/ {
+      if (in_idle)
+        next
+      count = split_line($0, parts)
+      for (i = 1; i <= count; i++)
+        if (parts[i] !~ /^\+[0-9]+ __zsh_perf_/)
+          process(parts[i])
     }
 
     END {
       if (have_previous && sort_mode == "exec")
-        emit("-", sequence, previous_line)
+        emit("-", previous_seq, previous_line)
     }
   ' "$trace_file"
 }
@@ -324,11 +498,30 @@ format_output() {
   '
 }
 
-# --- main ------------------------------------------------------------
+report_trace() {
+	parse_trace "$1" | sort_records | limit_top | format_output
+}
 
-typeset tmpdir=${TMPDIR:-/tmp}
-trace_file=$(mktemp "${tmpdir%/}/zsh-perf.XXXXXX") || die "cannot create temporary file"
-trap 'rm -f "$trace_file"' EXIT HUP INT TERM
+# --- main ---------------------------------------------------------------------
 
-capture_trace "$trace_file"
-parse_trace "$trace_file" | sort_records | limit_top | format_output
+trap cleanup EXIT
+trap 'exit 1' INT HUP TERM
+
+case $subcmd in
+record)
+	record_trace "$output_file"
+	;;
+report)
+	if [[ -z $report_file ]]; then
+		[[ ! -t 0 ]] || die "report needs a trace FILE or piped input"
+		report_file=-
+	fi
+	[[ $report_file == - || -r $report_file ]] || die "cannot read trace file: $report_file"
+	report_trace "$report_file"
+	;;
+run)
+	trace_file=$(make_temp zsh-perf) || exit 2
+	record_trace "$trace_file"
+	report_trace "$trace_file"
+	;;
+esac
