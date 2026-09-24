@@ -1,0 +1,166 @@
+#!/usr/bin/env zsh
+
+emulate -L zsh
+setopt no_unset
+
+typeset login=1 interactive=1 color_mode=auto
+typeset truncate=1 truncate_length=80 order=time top=20
+
+usage() {
+	cat <<'EOF'
+Usage: zsh-perf [options]
+
+Measure zsh startup commands and print steps that take at least 0.5 ms.
+
+Shell options:
+  -l, --login             Include zsh's login-shell startup files (default)
+  -i, --interactive       Include zsh's interactive-shell startup files (default)
+      --no-login          Do not use zsh -l
+      --no-interactive     Do not use zsh -i
+
+Output options:
+  -c, --color MODE        auto, always, or none (default: auto)
+  -t, --truncate LENGTH   Truncate commands to LENGTH characters (default: 80)
+      --no-truncate       Do not truncate commands
+  -o, --order MODE        execution or time (default: time)
+  -n, --top N             Show at most N rows after sorting (default: 20)
+  -h, --help              Show this help
+EOF
+}
+
+die() {
+	print -u2 "zsh-perf: $*"
+	print -u2 "Try 'zsh-perf --help' for usage."
+	exit 2
+}
+
+is_positive_integer() {
+	[[ $1 =~ '^[1-9][0-9]*$' ]]
+}
+
+while (($#)); do
+	case $1 in
+	-l | --login) login=1 ;;
+	-i | --interactive) interactive=1 ;;
+	--no-login) login=0 ;;
+	--no-interactive) interactive=0 ;;
+	-c | --color)
+		(($# >= 2)) || die "missing value for $1"
+		color_mode=$2
+		shift
+		;;
+	--color=*) color_mode=${1#*=} ;;
+	-t | --truncate)
+		(($# >= 2)) || die "missing value for $1"
+		truncate_length=$2
+		shift
+		;;
+	--truncate=*) truncate_length=${1#*=} ;;
+	--no-truncate) truncate=0 ;;
+	-o | --order)
+		(($# >= 2)) || die "missing value for $1"
+		order=$2
+		shift
+		;;
+	--order=*) order=${1#*=} ;;
+	-n | --top)
+		(($# >= 2)) || die "missing value for $1"
+		top=$2
+		shift
+		;;
+	--top=*) top=${1#*=} ;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	--)
+		shift
+		(($# == 0)) || die "unexpected argument: $1"
+		;;
+	-*) die "unknown option: $1" ;;
+	*) die "unexpected argument: $1" ;;
+	esac
+	shift
+done
+
+[[ $color_mode == (auto|always|none) ]] || die "color must be auto, always, or none"
+[[ $order == (execution|time) ]] || die "order must be execution or time"
+is_positive_integer "$truncate_length" || die "truncate length must be a positive integer"
+is_positive_integer "$top" || die "top must be a positive integer"
+
+if [[ $color_mode == always || ($color_mode == auto && -t 1) ]]; then
+	use_color=1
+else
+	use_color=0
+fi
+
+trace_file=$(mktemp "${TMPDIR:-/tmp}/zsh-perf.XXXXXX") || die "cannot create temporary file"
+trap 'rm -f "$trace_file"' EXIT HUP INT TERM
+
+zsh_flags=(-x)
+((login)) && zsh_flags+=(-l)
+((interactive)) && zsh_flags+=(-i)
+PS4='+%D{%s%6.} %N:%i> ' zsh $zsh_flags -c exit 2>"$trace_file"
+
+awk '
+  /^\+[0-9]/ {
+    timestamp = substr($1, 2)
+    if (have_previous) {
+      elapsed_ms = (timestamp - previous_timestamp) / 1000
+      if (elapsed_ms >= 0.5) {
+        line = previous_line
+        sub(/^\+[^ ]+ /, "", line)
+        printf "%.3f\t%d\t%s\n", elapsed_ms, sequence++, line
+      }
+    }
+    previous_timestamp = timestamp
+    previous_line = $0
+    have_previous = 1
+  }
+' "$trace_file" |
+	if [[ $order == time ]]; then
+		LC_ALL=C sort -k1,1nr -k2,2n
+	else
+		LC_ALL=C sort -k2,2n
+	fi |
+	awk -v top="$top" -v do_truncate="$truncate" -v max_length="$truncate_length" \
+		-v use_color="$use_color" '
+    BEGIN {
+      RED = "\033[1;31m"
+      YELLOW = "\033[1;33m"
+      GREEN = "\033[0;32m"
+      LOCATION = "\033[0;36m"
+      DIM = "\033[2m"
+      RESET = "\033[0m"
+    }
+    NR <= top {
+      ms = $1
+      line = $0
+      sub(/^[^\t]*\t[^\t]*\t/, "", line)
+
+      location = line
+      command = line
+      separator = index(line, ">")
+      if (separator > 0) {
+        location = substr(line, 1, separator - 1)
+        command = substr(line, separator + 1)
+        sub(/^ /, "", command)
+      }
+      if (do_truncate && length(command) > max_length) {
+        if (max_length > 3)
+          command = substr(command, 1, max_length - 3) "..."
+        else
+          command = substr(command, 1, max_length)
+      }
+
+      if (ms >= 10) time_color = RED
+      else if (ms >= 2) time_color = YELLOW
+      else time_color = GREEN
+
+      if (use_color)
+        printf "%s[%8.2f ms]%s %s%s%s %s%s%s\n", time_color, ms, RESET, \
+          LOCATION, location, RESET, DIM, command, RESET
+      else
+        printf "[%8.2f ms] %s %s\n", ms, location, command
+    }
+  '
