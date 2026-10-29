@@ -1,0 +1,8 @@
+{{- /* chezmoi init 시 ~/.config/chezmoi/chezmoi.toml 을 생성하는 템플릿 */ -}}
+{{- $email := promptStringOnce . "email" "Email address" -}}
+
+{{- /* 기본 위치(~/.local/share/chezmoi)가 아닌 곳의 저장소로 init 한 경우에도 그 위치를 유지한다. */ -}}
+sourceDir = {{ .chezmoi.workingTree | quote }}
+
+[data]
+  email = {{ $email | quote }}

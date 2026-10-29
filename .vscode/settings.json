@@ -8,7 +8,7 @@
     "source_zsh_variants": "shellscript",
     "*.sh.tmpl": "shellscript",
     "**/dot_jongwan/bin/executable_doco.tmpl": "shellscript",
-    "**/git/{config.base,config.darwin,config.linux,create_config}": "properties",
+    "**/git/{config.base,config.base.tmpl,config.darwin,config.linux,create_config}": "properties",
     "mpv.conf": "ini"
   },
   // Lua LSP 설정
