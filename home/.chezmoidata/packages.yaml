@@ -33,3 +33,5 @@ packages:
       - gettext
       - tree-sitter-cli
       - bash-completion
+      # fasd 를 소스에서 빌드(make install)할 때 필요
+      - make
