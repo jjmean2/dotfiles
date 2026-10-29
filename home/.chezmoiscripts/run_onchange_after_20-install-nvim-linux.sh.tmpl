@@ -1,3 +1,4 @@
+{{ if eq .chezmoi.os "linux" -}}
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -43,3 +44,4 @@ ln -sf "$TARGET_OPT_DIR/neovim/bin/nvim" "$TARGET_BIN_DIR/nvim"
 popd &>/dev/null
 
 echo "Neovim ($ARCH) installation completed!"
+{{ end -}}

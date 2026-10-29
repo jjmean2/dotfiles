@@ -1,9 +1,11 @@
+{{ if eq .chezmoi.os "linux" -}}
 #!/usr/bin/env bash
 set -euo pipefail
 
 # Linux(주로 dev container) 환경에 필요한 최소한의 도구를 설치한다.
 # 배포판마다 다른 패키지 매니저를 자동으로 감지해서 사용하고,
 # 이미 설치되어 있는 도구는 건너뛰므로 여러 번 실행해도 안전하다(멱등).
+# run_onchange_ 스크립트라서 packages.yaml 의 목록이 바뀌어 이 스크립트 내용이 바뀔 때만 다시 실행된다.
 
 has() { command -v "$1" &>/dev/null; }
 
@@ -15,9 +17,9 @@ as_root() {
 	fi
 }
 
-# 설치할 도구 목록. 새 도구를 추가하려면 여기에 이름만 추가하면 되고,
-# 패키지 이름/실행파일 이름이 도구 이름과 다를 때만 아래 테이블에 예외를 등록한다.
-tools=(rg fd jq stow gettext tree-sitter-cli bash-completion)
+# 설치할 도구 목록(.chezmoidata/packages.yaml 의 packages.linux.tools). 새 도구를 추가하려면
+# 거기에 이름만 추가하면 되고, 패키지 이름/실행파일 이름이 도구 이름과 다를 때만 아래 테이블에 예외를 등록한다.
+tools=({{ .packages.linux.tools | join " " }})
 
 # 도구의 기본 패키지 이름이 tools 의 이름과 다를 때만 등록한다. (배포판 공통)
 # 실행파일 이름은 tools 자체가 canonical bin 이름이므로 별도 기본값 테이블이 필요 없다.
@@ -104,9 +106,5 @@ link_renamed_bins "$manager"
 
 has mise || curl https://mise.run | sh
 
-dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-
-"$dir/installer/nvim-linux.sh"
-"$dir/installer/fasd.sh"
-
 echo "Linux 기본 도구 설치 완료: ${tools[*]}"
+{{ end -}}

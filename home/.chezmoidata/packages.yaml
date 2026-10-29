@@ -1,0 +1,35 @@
+# .chezmoiscripts/run_onchange_before_10-install-packages-*.sh.tmpl 에서 읽는 설치 목록.
+# 목록이 바뀌면 스크립트 내용도 바뀌므로, 다음 chezmoi apply 때 설치 스크립트가 다시 실행된다.
+packages:
+  darwin:
+    # brew bundle 로 설치한다. 이미 설치된 formula 의 버전 업그레이드는 하지 않는다.
+    brews:
+      - chezmoi
+      - bash
+      - git
+      - jq
+      - ripgrep
+      - fzf
+      - fd
+      - neovim
+      - mise
+      - coreutils
+      - gettext
+      - cmake
+      - tree-sitter-cli
+    # mise use --global 로 설치할 언어 런타임
+    mise:
+      - node@lts
+      - go@latest
+      - python@latest
+      - deno@latest
+  linux:
+    # 도구 이름(= canonical 실행파일 이름). 패키지/실행파일 이름이 다른 경우는
+    # 설치 스크립트 안의 default_pkg/pkg_override/bin_override 테이블에 등록한다.
+    tools:
+      - rg
+      - fd
+      - jq
+      - gettext
+      - tree-sitter-cli
+      - bash-completion

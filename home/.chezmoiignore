@@ -1,0 +1,16 @@
+# 패턴은 소스 경로가 아니라 대상(홈 기준) 경로에 매칭된다. 파일 전체가 템플릿으로 해석된다.
+
+# 다른 OS 전용 파일(.darwin/.linux 토큰이 붙은 파일)은 설치하지 않는다.
+{{ if ne .chezmoi.os "darwin" -}}
+**/*.darwin
+**/*.darwin.*
+{{ end -}}
+{{ if ne .chezmoi.os "linux" -}}
+**/*.linux
+**/*.linux.*
+{{ end -}}
+
+# mpv 의 include 는 대상 파일이 없으면 에러를 내므로 플랫폼 파일을 OS 와 상관없이 빈 파일로 만들어 둔다.
+# (exclude(!)는 위의 include 보다 항상 우선한다)
+!.config/mpv/mpv.darwin.conf
+!.config/mpv/mpv.linux.conf

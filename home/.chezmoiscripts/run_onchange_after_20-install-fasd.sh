@@ -4,12 +4,11 @@ set -euo pipefail
 # fasd 는 저장소가 아카이브되면서 여러 패키지 매니저에서 formula/package 가 빠져,
 # 소스를 임시로 클론해서 직접 빌드/설치한다.
 # 이미 설치되어 있으면 아무것도 하지 않으므로 여러 번 실행해도 안전하다(멱등).
-#
-# 사용법: fasd.sh <prefix>  (예: fasd.sh "$(brew --prefix)", fasd.sh /usr/local)
+# make install 은 $prefix/bin/fasd 에 설치한다. ($prefix/bin 은 셸 설정에서 PATH 에 추가됨)
 
 prefix="$HOME/.jongwan"
 
-if [[ -f $prefix/fasd ]]; then
+if [[ -f $prefix/bin/fasd ]]; then
 	exit 0
 fi
 

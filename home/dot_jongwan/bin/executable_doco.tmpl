@@ -10,6 +10,9 @@ readonly CONFIG_CANDIDATES=(
 	"$HOME/.doco.conf"
 )
 
+# 기본 root: 이 dotfiles 저장소의 docos 디렉토리. chezmoi apply 시점에 저장소 경로가 채워진다.
+readonly DEFAULT_ROOT_DIR={{ joinPath .chezmoi.workingTree "docos" | quote }}
+
 readonly SCRIPT_PATH="$0"
 readonly -a ARGS=("$@")
 
@@ -161,41 +164,6 @@ run_prerequisites() {
 	ensure_command envsubst install_envsubst
 }
 
-find_repo_root() {
-	# 1. 이 스크립트가 실행될 때 사용된 경로
-	local script_file="${BASH_SOURCE[0]}"
-
-	# 스크립트 파일이 symbolic link인 경우, 원본 경로로 치환
-	while [ -L "$script_file" ]; do
-
-		local link_target
-		link_target="$(readlink "$script_file")"
-
-		if [[ $link_target != /* ]]; then
-			# 원본 주소가 상대 경로라면
-			# 부모 디렉토리의 절대 경로를 구한 후
-			local parent_dir
-			parent_dir="$(cd -P "$(dirname "$script_file")" && pwd)"
-			# 상대 경로 앞에 붙여준다.
-			script_file="$parent_dir/$link_target"
-		else
-			# 원본 주소가 절대 경로라면, 그대로 붙여준다.
-			script_file="$link_target"
-		fi
-	done
-
-	local script_dir
-	script_dir="$(cd -P "$(dirname "$script_file")" && pwd)"
-	local repo_root
-	repo_root="$(cd "$script_dir" && git rev-parse --show-toplevel 2>/dev/null)"
-
-	if [[ -z "$repo_root" ]]; then
-		repo_root="$(cd -P "$script_dir/../.." && pwd)"
-	fi
-
-	printf '%s\n' "$repo_root"
-}
-
 filter_and_substitute_config() {
 	# shellcheck disable=SC2016
 	sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' "$1" | envsubst '$HOME $JONGWAN_HOME $XDG_CONFIG_HOME $USER'
@@ -241,8 +209,7 @@ main() {
 		done < <(filter_and_substitute_config "$config_file")
 	fi
 
-	# 기본 root: 이 스크립트가 속한 저장소의 tools/docker-compose 디렉토리
-	root_dirs+=("$(find_repo_root)/docos")
+	root_dirs+=("$DEFAULT_ROOT_DIR")
 
 	readonly presets
 	readonly root_dirs

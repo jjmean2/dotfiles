@@ -1,12 +1,14 @@
 {
   "files.associations": {
-    ".zshenv*": "shellscript",
-    ".zprofile*": "shellscript",
-    ".zshrc*": "shellscript",
-    ".bash_profile*": "shellscript",
-    ".bashrc*": "shellscript",
+    "dot_zshenv*": "shellscript",
+    "dot_zprofile*": "shellscript",
+    "dot_zshrc*": "shellscript",
+    "dot_bash_profile*": "shellscript",
+    "dot_bashrc*": "shellscript",
     "source_zsh_variants": "shellscript",
-    "**/git/config.{base,darwin,skel,linux}": "properties",
+    "*.sh.tmpl": "shellscript",
+    "**/dot_jongwan/bin/executable_doco.tmpl": "shellscript",
+    "**/git/{config.base,config.darwin,config.linux,create_config}": "properties",
     "mpv.conf": "ini"
   },
   // Lua LSP 설정
