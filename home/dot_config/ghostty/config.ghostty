@@ -48,10 +48,6 @@ font-family = "D2Coding"
 # 테마 / 외관
 # -----------------------------------------------------------------------------
 
-# 테마 지정. 이름은 `ghostty +list-themes`로 확인 (버전에 따라 표기가 다를 수 있음)
-# 시스템 라이트/다크 모드에 따라 자동 전환하려면 light:/dark: 문법 사용
-#theme = light:Catppuccin Latte,dark:Catppuccin Mocha
-
 # 배경 투명도 (0.0 ~ 1.0). 1 미만이면 투명
 #background-opacity = 0.95
 
@@ -236,3 +232,8 @@ keybind = global:ctrl+alt+0=toggle_visibility
 
 # 설정을 여러 파일로 나눠 관리 (? 접두사: 파일이 없어도 에러 안 냄)
 #config-file = ?local.config
+
+# 테마 지정. 이름은 `ghostty +list-themes`로 확인 (버전에 따라 표기가 다를 수 있음)
+# 시스템 라이트/다크 모드에 따라 자동 전환하려면 light:/dark: 문법 사용
+# theme = light:Catppuccin Latte,dark:Catppuccin Mocha
+config-file = ?auto/theme.ghostty
