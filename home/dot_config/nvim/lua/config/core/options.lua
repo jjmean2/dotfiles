@@ -1,20 +1,12 @@
 -- ==================================================
--- 🛠️ 에디터 options & keymaps
+-- 🛠️ 에디터 options
 -- ==================================================
--- 파일 검색 및 탭 완성 (Built-in Fuzzy Search)
--- Search down into subfolders
--- Provides tab-completion for all file-related tasks
+-- 키맵은 여기 두지 않는다. lua/config/keymaps.lua 참고.
+
+-- 파일 찾기: :find 가 하위 디렉터리까지 뒤지게 한다 (:find **/foo<Tab>)
 vim.opt.path:append('**')
--- Display all matching files when we tab complete
-vim.opt.wildmenu = true
--- NOW WE CAN
--- - Hit tab to :find by partial match
--- - Use * to make it fuzzy
 
 -- 텍스트 편집 및 들여쓰기 규칙
-vim.opt.backspace:append({ "indent", "eol", "start" })
--- vim.opt.autoindent = true
--- vim.opt.cindent = true
 vim.opt.smartindent = true
 vim.opt.tabstop = 2
 vim.opt.softtabstop = 2
@@ -26,63 +18,20 @@ vim.opt.number = true
 vim.opt.showmatch = true
 vim.opt.matchtime = 2
 vim.opt.visualbell = true
-vim.opt.laststatus = 2
-vim.opt.ruler = true
 vim.opt.rulerformat = '%15(%c%V %p%%%)'
 
--- 검색 행동 양식
-vim.opt.hlsearch = true
-vim.opt.incsearch = true
+-- 검색: 대소문자 무시 (smartcase 는 켜지 않음, 대문자를 섞어도 무시)
 vim.opt.ignorecase = true
 
--- 인코딩 및 다국어 지원
+-- 인코딩: 한글 레거시 파일(cp949)을 latin1 보다 먼저 시도
 vim.opt.fileencodings:remove("latin1")
--- vim.opt.fileencodings:append({"korea", "latin1"})
 vim.opt.fileencodings:append({ "cp949", "latin1" })
 
--- -- Visual 모드에서 * 키로 선택 영역 아래 방향 검색
--- vim.keymap.set("v", "*", [[y/\V<C-R>=escape(@", '/\')<CR><CR>]], { noremap = true, silent = true })
---
--- -- Visual 모드에서 # 키로 선택 영역 위 방향 검색
--- vim.keymap.set("v", "#", [[y?\V<C-R>=escape(@", '?\')<CR><CR>]], { noremap = true, silent = true })
-
--- 선택 영역을 검색어로 변환하는 핵심 로직 함수
-local function visual_search(direction)
-  -- 1. 현재 visual 영역의 텍스트를 무명 레지스터(")에 복사
-  vim.cmd('normal! "vy')
-
-  -- 2. 레지스터에 담긴 내용을 가져옴
-  local text = vim.fn.getreg('v')
-
-  -- 3. 검색 시 문제가 될 수 있는 특수문자(/, \, ?, 등)를 이스케이프 처리
-  -- direction이 '/'이면 '/'를, '?'이면 '?'를 이스케이프합니다.
-  local escaped_text = vim.fn.escape(text, direction .. [[\]])
-
-  -- 4. 최종 검색 명령어 실행
-  -- \V (Very Magic Off)를 사용하여 정규표현식 해석을 최소화합니다.
-  -- <CR>을 두 번 보내서 검색 모드 진입 후 바로 실행까지 완료합니다.
-  vim.cmd(direction .. [[\V]] .. escaped_text)
-end
-
--- Visual 모드 키 매핑
-vim.keymap.set("v", "*", function() visual_search('/') end, { desc = "선택 영역 아래로 검색" })
-vim.keymap.set("v", "#", function() visual_search('?') end, { desc = "선택 영역 위로 검색" })
-
-
-
 -- ==================================================
--- 🛠️ 에디터 환경별 options & keymaps
+-- 🛠️ 환경별 options
 -- ==================================================
-
--- VS Code와 일반 터미널 환경에 따른 네이티브 설정 분기
-if vim.g.vscode then
-  -- [VS Code] 전용 설정
-
-  -- 숫자 없이 j, k 입력 시 gj, gk로 작동, vs code에서는 gj가 커스텀 키매핑으로 지정되어 있으므로 remap = true 지정 필요
-  vim.keymap.set('n', 'k', "v:count == 0 ? 'gk' : 'k'", { expr = true, silent = true, remap = true })
-  vim.keymap.set('n', 'j', "v:count == 0 ? 'gj' : 'j'", { expr = true, silent = true, remap = true })
-else
-  -- [일반 터미널] 전용 설정
+-- VS Code 안(vscode-neovim)에서는 화면 표시 옵션이 의미가 없으므로 터미널에서만 적용
+if not vim.g.vscode then
   vim.opt.listchars = {
     tab = '▸ ',
     lead = '·',
@@ -93,7 +42,4 @@ else
     eol = '↲'
   }
   vim.opt.list = true
-
-  vim.keymap.set('n', 'k', 'gk')
-  vim.keymap.set('n', 'j', 'gj')
 end

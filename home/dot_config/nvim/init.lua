@@ -2,11 +2,11 @@
 # 섹션 분류 방식
 1. 기본 설정
   - 전역/핵심 변수 설정
-  - 네이티브 UX 설정 (options, keymaps)
-2. 플러그인 초기화 (lazy.nvim)
-3. 플러그인 튜닝
-  - LSP / Tree-sitter / 자동 완성 설정 (IDE 인프라)
-  - UI 테마 및 사용자 편의 플러그인 튜닝
+  - 네이티브 options (config/core/options.lua)
+2. 플러그인 초기화 (lazy.nvim, lua/plugins/*.lua 스펙)
+3. 플러그인 로딩 후 설정
+  - colorscheme, 진단 표시 (config/plugin/options.lua)
+  - 모든 키맵 (config/keymaps.lua) — 플러그인 명령을 참조할 수 있도록 마지막에 로드
 
 NeoVim에서는 기본 설정을 한 후에 플러그인을 구동시키면,
 플러그인에서 기본 설정을 고려하여 동작을 결정하는 경우가 많다고 한다.
@@ -53,7 +53,7 @@ vim.g.mapleader = " "
 vim.g.maplocalleader = ","
 
 -- ==================================================
--- 🛠️ 에디터 options & keymaps
+-- 🛠️ 에디터 options
 -- ==================================================
 require_config_with_variants("config.core.options")
 
@@ -63,6 +63,11 @@ require_config_with_variants("config.core.options")
 require("config.lazy")
 
 -- ==================================================
--- ✨ 플러그인 로딩 후 최종 options & keymaps
+-- ✨ 플러그인 로딩 후 options
 -- ==================================================
 require_config_with_variants("config.plugin.options")
+
+-- ==================================================
+-- ⌨️  키맵 (순정 보강 + 플러그인 키 전부)
+-- ==================================================
+require_config_with_variants("config.keymaps")

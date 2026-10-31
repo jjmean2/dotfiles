@@ -47,22 +47,12 @@ return {
             -- nvim-lspconfig가 runtimepath에 제공하는 프리셋을 Neovim 코어가 직접 읽어서 켭니다.
             vim.lsp.enable(servers)
 
-            -- 4. [핵심] 단축키 바인딩은 이제 전역 Autocmd (LspAttach)로 처리하는 것이 모범 사례입니다.
-            vim.api.nvim_create_autocmd("LspAttach", {
-                group = JwVim.augroup("UserLspConfig"),
-                callback = function(ev)
-                    local opts = { buffer = ev.buf, silent = true }
-
-                    -- 내장 LSP 단축키 바인딩
-                    -- gd를 누르면 정의 이동 함수 호출
-                    vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
-                    -- K를 누르면 호버(문서 팝업) 함수 호출
-                    vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
-                    vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, opts)
-                    -- <leader>rn을 누르면 심볼 이름 변경
-                    vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
-                end,
-            })
+            -- 4. 키맵은 따로 두지 않는다.
+            -- nvim 0.11+ 은 LSP 가 붙으면 순정 기본 키와 옵션을 스스로 설정한다 (:help lsp-defaults).
+            --   K 호버 / grn 이름변경 / grr 참조 / gri 구현 / grt 타입정의 / gra 코드액션 / gO 문서심볼
+            --   CTRL-]  정의로 이동 (tagfunc 가 LSP 로 설정됨), CTRL-T 로 되돌아옴
+            --   CTRL-X CTRL-O  LSP 완성 (omnifunc),  gq  LSP 포맷 (formatexpr),  i_CTRL-S  시그니처
+            -- 추가 키가 필요해지면 lua/config/keymaps.lua 에 둔다.
         end,
     },
 }

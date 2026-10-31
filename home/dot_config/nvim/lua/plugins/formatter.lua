@@ -8,16 +8,8 @@ return {
         -- 파일 저장 직전에 실행되도록 트리거
         event = { "BufWritePre" },
         cmd = { "ConformInfo" },
-        keys = {
-            {
-                "<leader>f",
-                function()
-                    require("conform").format({ async = true, lsp_format = "fallback" })
-                end,
-                mode = { "n", "v" }, -- 노멀 모드와 비주얼(블록 선택) 모드 모두 지원
-                desc = "[F]ormat buffer or selection",
-            },
-        },
+        -- 키맵(<leader>cf)은 lua/config/keymaps.lua 에 있다.
+        -- lazy.nvim 은 require("conform") 시점에 이 플러그인을 로드하므로 keys 트리거가 없어도 된다.
         opts = {
             -- 언어별로 사용할 포맷터 지정
             formatters_by_ft = {
