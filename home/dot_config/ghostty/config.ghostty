@@ -38,7 +38,7 @@ font-size = 11
 #adjust-cell-height = 10%
 
 # 한글 등 특정 글리프를 다른 폰트로 대체 (font-family 를 여러 번 쓰면 fallback 순서가 됨)
-#font-family = "D2Coding"
+font-family = "D2Coding"
 
 # macOS에서 폰트를 약간 더 굵게 렌더링 (Retina에서 얇게 보일 때)
 #font-thicken = true
