@@ -1,8 +1,12 @@
 -- git: gitsigns.nvim.
 --
--- 역할 분담 (2단계에서 정함)
---   편집 중 "이 줄이 바뀌었나, 무엇이 바뀌었나, 되돌릴까" → gitsigns (이 파일)
---   스테이징·커밋·브랜치·히스토리 같은 저장소 단위 작업   → lazygit (tmux prefix G 팝업)
+-- 역할 분담 (2단계에서 정함, 키 배치는 LazyVim 과 같다)
+--   편집 중 "이 줄이 바뀌었나, 무엇이 바뀌었나, 되돌릴까" → gitsigns (이 파일), <leader>gh*
+--   목록 (저장소 전체 hunk, status)                        → snacks 피커, <leader>gd / gs
+--   로그, 파일 히스토리, 스테이징·커밋·브랜치             → lazygit. nvim 안에서는 <leader>gg/gl/gf
+--                                                           (snacks lazygit 모듈: 컬러스킴에서 테마 생성,
+--                                                           e 로 연 파일은 이 nvim 에 열림), nvim 밖에서는
+--                                                           tmux prefix G 팝업
 --   파일 비교                                              → gitsigns diffthis 가 여는 순정 diff 모드
 -- diffview.nvim 은 2024-08 이후 커밋이 없어 넣지 않았다. fugitive 는 성숙하지만 크고 오래된
 -- 쪽이라 보류. 둘이 하던 일은 위 셋으로 나뉜다.
