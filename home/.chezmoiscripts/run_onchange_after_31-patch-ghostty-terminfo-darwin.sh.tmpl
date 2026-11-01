@@ -1,0 +1,77 @@
+{{ if and (eq .chezmoi.os "darwin") (stat "/Applications/Ghostty.app/Contents/Resources/terminfo/78/xterm-ghostty") -}}
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Ghostty 의 terminfo(xterm-ghostty)에서 실제 동작과 다른 다섯 항목을 바로잡은 사본을
+# ~/.terminfo 에 둔다. Ghostty 의 동작(보내는 바이트)은 건드리지 않고 설명서만 고친다.
+#
+# 왜: Ghostty 는 수식키가 붙은 F3 를 kitty 와 같은 \E[13;N~ 로 보낸다 (xterm 식 \E[1;NR 은
+#     커서 위치 보고 응답과 바이트가 겹쳐 2024-12 PR #3019 에서 바꿨다). 그런데 번들
+#     terminfo 의 kf15/kf27/kf39/kf51/kf63 은 여전히 \E[1;NR 이라 htop 같은 ncurses
+#     프로그램이 Shift+F3 를 알아보지 못한다 (Discussion #9537, 미수정).
+#
+# 방식: 설치된 번들의 항목을 infocmp 로 뽑아 다섯 항목만 치환하고 tic 으로 ~/.terminfo 에
+#     컴파일한다. 손으로 쓴 복사본을 두지 않고 번들에서 파생시키므로 Ghostty 가 올라가며
+#     다른 항목이 바뀌어도 따라간다. ~/.terminfo 가 번들보다 먼저 검색되게 하는 환경변수는
+#     ~/.config/ghostty/terminfo.darwin.ghostty 에서 설정한다.
+#
+# 재실행: run_onchange_ 스크립트라 내용이 바뀔 때만 돈다. Ghostty 업그레이드로 번들
+#     terminfo 파일이 바뀌면 아래 해시가 바뀌어 다시 실행된다.
+# bundle hash: {{ output "shasum" "-a" "256" "/Applications/Ghostty.app/Contents/Resources/terminfo/78/xterm-ghostty" | trim }}
+
+# 두 경로는 테스트할 때 환경변수로 바꿔 끼울 수 있다 (평소에는 지정하지 않는다).
+bundle="${GHOSTTY_TERMINFO_DIR:-/Applications/Ghostty.app/Contents/Resources/terminfo}"
+dest="${GHOSTTY_TERMINFO_PATCH_DEST:-$HOME/.terminfo}"
+override="$dest/78/xterm-ghostty"
+
+# 번들 항목을 소스 텍스트로 뽑는다. -x 는 표준 밖의 확장 항목까지 포함한다.
+src="$(TERMINFO="$bundle" /usr/bin/infocmp -x xterm-ghostty)"
+
+# 상류가 이미 고쳤으면(번들이 \E[13;2~ 를 담고 있으면) 우리 덮개를 걷고 끝낸다.
+if grep -q 'kf15=\\E\[13;2~' <<<"$src"; then
+	if [[ -e $override ]]; then
+		rm -f "$override"
+		echo "Ghostty 번들 terminfo 가 이미 올바르므로 $override 를 제거했다."
+	fi
+	exit 0
+fi
+
+# 바꿀 다섯 항목이 기대한 형태로 정확히 있는지 먼저 센다. 번들 형식이 달라졌다면
+# 엉뚱한 결과를 내는 대신 여기서 멈춘다.
+before="$(grep -o -E 'kf(15|27|39|51|63)=\\E\[1;[2-6]R' <<<"$src" | wc -l | tr -d ' ')"
+if [[ $before != 5 ]]; then
+	echo "xterm-ghostty 의 F3 수식키 항목이 기대와 다르다 (찾은 개수: $before). 스크립트를 점검할 것." >&2
+	exit 1
+fi
+
+# Shift(2) Alt(3) Alt+Shift(4) Ctrl(5) Ctrl+Shift(6): \E[1;NR -> \E[13;N~
+patched="$(sed \
+	-e 's/kf15=\\E\[1;2R/kf15=\\E[13;2~/' \
+	-e 's/kf51=\\E\[1;3R/kf51=\\E[13;3~/' \
+	-e 's/kf63=\\E\[1;4R/kf63=\\E[13;4~/' \
+	-e 's/kf27=\\E\[1;5R/kf27=\\E[13;5~/' \
+	-e 's/kf39=\\E\[1;6R/kf39=\\E[13;6~/' \
+	<<<"$src")"
+
+after="$(grep -o -E 'kf(15|27|39|51|63)=\\E\[13;[2-6]~' <<<"$patched" | wc -l | tr -d ' ')"
+if [[ $after != 5 ]]; then
+	echo "치환 결과가 기대와 다르다 (바뀐 개수: $after)." >&2
+	exit 1
+fi
+
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+printf '%s\n' "$patched" >"$tmp"
+
+# macOS 기본 tic(ncurses 5.7)으로 컴파일된다. "older tic versions may treat the description
+# field as an alias" 경고는 무해하다.
+/usr/bin/tic -x -o "$dest" "$tmp" 2>&1 | grep -v 'older tic versions' || true
+
+# 결과 확인: 컴파일된 항목에서 고친 값이 읽히는지 본다.
+if ! TERMINFO="$dest" /usr/bin/infocmp -x1 xterm-ghostty | grep -q 'kf15=\\E\[13;2~'; then
+	echo "컴파일된 $override 에서 고친 kf15 를 읽지 못했다." >&2
+	exit 1
+fi
+
+echo "terminfo 보정 완료: $override (kf15/kf27/kf39/kf51/kf63 -> \\E[13;N~)"
+{{ end -}}

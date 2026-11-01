@@ -250,3 +250,8 @@ keybind = global:opt+space=toggle_visibility
 # light:/dark: 문법 사용 (예: theme = light:Catppuccin Latte,dark:Catppuccin Mocha)
 theme = Snazzy
 config-file = ?auto/theme.ghostty
+
+# macOS 에서 Ghostty terminfo 의 F3 수식키 항목 불일치(kf15 등)를 바로잡은 ~/.terminfo 를
+# 프로그램들이 먼저 찾도록 TERMINFO 환경변수를 돌린다. 내용과 이유는 그 파일 참고.
+# *.darwin.* 파일은 다른 OS 에 설치되지 않으며, ? 접두사라 없어도 오류가 없다.
+config-file = ?terminfo.darwin.ghostty
