@@ -58,6 +58,33 @@ sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --source ~/dev/jwle
 경우 1 과 2 를 합친 것이다. chezmoi 가 이미 있으면 둘째 줄 대신 `chezmoi init --source ~/dev/jwlee/dotfiles --apply`.
 다른 브랜치로 시작하려면 클론할 때 `-b <브랜치>` 를 준다.
 
+### 이미 설정 파일이 있는 머신이라면
+
+chezmoi 는 **자기가 관리하는 경로만** 건드리고, 그 경로에 이미 있던 파일은 첫 apply 때 **묻지 않고 덮어쓴다**
+(아직 자기가 쓴 적이 없는 파일이라 "내가 쓴 뒤 바뀌었는지" 를 판단할 기록이 없기 때문이다). 격리 환경에서 확인한
+동작은 다음과 같다.
+
+| 기존 상태 | 첫 apply 결과 |
+|---|---|
+| 내용이 다른 일반 파일 (`~/.zshrc` 등) | 소스 내용으로 덮어씀. 프롬프트 없음 |
+| Stow 등이 만든 심볼릭 링크 | 링크를 지우고 일반 파일로 교체. 링크가 가리키던 원본은 그대로 |
+| `create_` 대상 (`~/.config/git/config` 등) | 있으면 그대로 둠 |
+| chezmoi 가 관리하지 않는 파일 | 건드리지 않음 |
+| chezmoi 가 한 번 쓴 뒤 손으로 고친 파일 | 다음 apply 때 "changed since chezmoi last wrote it" 프롬프트 (overwrite / diff / skip) |
+
+그래서 기존 머신에서는 `--apply` 없이 init 한 뒤 차이를 보고 적용한다.
+
+```sh
+chezmoi init jjmean2              # 클론과 config 생성만
+chezmoi managed                   # 건드릴 경로 목록
+chezmoi diff                      # 기존 파일과의 차이 (심볼릭 링크 교체도 여기 보인다)
+chezmoi apply --dry-run -v        # 실제로 할 일 미리보기
+chezmoi apply -v
+```
+
+남기고 싶은 머신별 내용은 적용 전에 `*.local` 파일이나 `.chezmoiignore` 에 있는 머신 전용 파일로 옮긴다.
+Stow 로 관리하던 머신은 `stow -D <패키지>` 로 링크를 먼저 걷어도 되고, 그냥 두어도 chezmoi 가 링크를 파일로 바꾼다.
+
 ### 첫 apply 에서 일어나는 일
 
 1. `.chezmoi.toml.tmpl` 이 이메일을 묻고 `~/.config/chezmoi/chezmoi.toml` 을 만든다 (한 번만 묻는다).
