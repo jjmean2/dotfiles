@@ -1,0 +1,29 @@
+# 모든 머신이 공유하는 mise 전역 기본값 (chezmoi 관리).
+#
+# 구조
+#   conf.d/shared.toml  : 이 파일. 프로젝트가 버전을 선언하지 않았을 때의 기본 런타임과 공통 설정.
+#   config.toml         : 이 머신 전용. chezmoi 가 관리하지 않는다(.chezmoiignore). mise use -g,
+#                         mise settings 등 mise 가 스스로 쓰는 내용이 기본으로 여기에 모인다.
+#   우선순위: conf.d/* < config.toml < config.local.toml (뒤가 이김). 로컬이 공유를 덮어쓴다.
+#
+# 쓰기 규칙 (mise use -g 가 파일을 고르는 순서)
+#   1. 그 도구를 이미 선언한 전역 파일이 있으면 거기에 쓴다. 두 파일에 있으면 오류.
+#   2. 없으면 settings.write_targets.tools.  3. 그것도 없으면 config.toml.
+#   따라서 여기 있는 도구를 이 머신에서만 다른 버전으로 쓰려면 반드시 -p 를 붙인다:
+#     mise use -g -p ~/.config/mise/config.toml node@24
+#   -p 없이 치면 이 파일이 바뀌고 chezmoi status 에 잡힌다.
+#   로컬 실험을 공유로 올리려면 config.toml 의 줄을 여기로 옮기고 커밋한다.
+#
+# 설치: .chezmoiscripts 의 설치 스크립트가 mise install 로 여기 선언된 것을 설치한다.
+
+[tools]
+node = "lts"
+python = "latest"
+go = "latest"
+ruby = "latest"
+deno = "latest"
+
+[settings]
+go.set_gobin = false
+node.npm_shim = false
+node.corepack = true

@@ -25,12 +25,8 @@ packages:
       - ghostty
       # ghostty 의 한글 fallback 폰트 (config.ghostty 의 font-family)
       - font-d2coding
-    # mise use --global 로 설치할 언어 런타임
-    mise:
-      - node@lts
-      - go@latest
-      - python@latest
-      - deno@latest
+    # 언어 런타임은 여기가 아니라 dot_config/mise/conf.d/shared.toml 에 선언한다.
+    # 설치 스크립트가 mise install 로 그 파일을 읽어 설치한다.
   linux:
     # 도구 이름(= canonical 실행파일 이름). 패키지/실행파일 이름이 다른 경우는
     # 설치 스크립트 안의 default_pkg/pkg_override/bin_override 테이블에 등록한다.

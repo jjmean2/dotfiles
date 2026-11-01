@@ -17,3 +17,6 @@
 
 # ghostty 테마 선택기가 써넣는 머신별 덮어쓰기 파일. 기본값은 config.ghostty 의 theme 에 있다.
 .config/ghostty/auto/theme.ghostty
+
+# mise 의 머신 전용 전역 설정. 공유 기본값은 .config/mise/conf.d/shared.toml 에 있다.
+.config/mise/config.toml

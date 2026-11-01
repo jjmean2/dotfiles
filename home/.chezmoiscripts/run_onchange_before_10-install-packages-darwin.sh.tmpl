@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # macOS 개발 환경에 필요한 기본 도구를 설치한다.
-# Homebrew(.chezmoidata/packages.yaml 의 brews 와 casks), mise 로 관리하는 언어 런타임 순서로 설치하며
+# Homebrew(.chezmoidata/packages.yaml 의 brews 와 casks)와 mise 본체를 설치하며
 # 이미 설치되어 있으면 건너뛰므로 여러 번 실행해도 안전하다(멱등).
 # run_onchange_ 스크립트라서 packages.yaml 의 목록이 바뀌어 이 스크립트 내용이 바뀔 때만 다시 실행된다.
 
@@ -48,8 +48,9 @@ fi
 
 eval "$(mise activate bash)"
 
-# mise use --global 은 지정한 버전이 없으면 설치하고, 이미 설치/설정되어 있으면 그대로 둔다.
-mise use --global {{ .packages.darwin.mise | join " " }}
+# 언어 런타임 설치는 여기서 하지 않는다. 이 스크립트는 run_onchange_before_ 라 dotfiles 가
+# 깔리기 전에 돌기 때문에 ~/.config/mise/conf.d/shared.toml 이 아직 없을 수 있다.
+# run_onchange_after_20-install-mise-tools 가 파일 적용 뒤에 mise install 을 실행한다.
 
 echo "macOS 기본 도구 설치 완료"
 {{ end -}}

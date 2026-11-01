@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# mise 전역 설정에 선언된 언어 런타임을 설치한다.
+#
+# run_onchange_after_ 인 이유: ~/.config/mise/conf.d/shared.toml 은 chezmoi 가 까는 파일이라
+# 파일 적용이 끝난 "뒤" 에 읽어야 한다. before 스크립트에서 돌리면 새 머신에서 공유 런타임이
+# 하나도 설치되지 않는다.
+#
+# mise install 은 설정 파일(shared.toml 과 이 머신의 config.toml)을 읽어 없는 것만 설치하고
+# 아무 파일도 쓰지 않는다. 예전의 mise use --global 은 전역 설정에 "쓰기" 때문에 같은 도구가
+# 두 파일에 있으면 어디에 쓸지 몰라 실패했다.
+#
+# run_onchange_ 라서 내용이 바뀔 때만 다시 실행된다. shared.toml 이 바뀌면 함께 다시 돌도록
+# 그 파일의 해시를 박아 둔다.
+# source hash: {{ include "dot_config/mise/conf.d/shared.toml" | sha256sum }}
+
+# mise 본체는 before 스크립트가 설치한다 (macOS: brew, Linux: ~/.local/bin). PATH 에 아직
+# 없을 수 있으므로 알려진 위치를 직접 찾는다.
+find_mise() {
+	if command -v mise &>/dev/null; then
+		command -v mise
+	elif [ -x "$HOME/.local/bin/mise" ]; then
+		echo "$HOME/.local/bin/mise"
+	elif [ -x /opt/homebrew/bin/mise ]; then
+		echo /opt/homebrew/bin/mise
+	elif [ -x /usr/local/bin/mise ]; then
+		echo /usr/local/bin/mise
+	else
+		return 1
+	fi
+}
+
+MISE="$(find_mise)" || {
+	echo "mise 를 찾을 수 없습니다. 설치 스크립트(10-install-packages)가 정상적으로 끝났는지 확인해 주세요." >&2
+	exit 1
+}
+
+"$MISE" install
+echo "mise 런타임 설치 완료"
