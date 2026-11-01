@@ -17,6 +17,14 @@ packages:
       - gettext
       - cmake
       - tree-sitter-cli
+      - tmux
+      # tmux 상태바의 git 상태 표시 (tmux.conf 의 status-right 가 호출)
+      - gitmux
+    # brew install --cask 로 설치하는 GUI 앱과 폰트
+    casks:
+      - ghostty
+      # ghostty 의 한글 fallback 폰트 (config.ghostty 의 font-family)
+      - font-d2coding
     # mise use --global 로 설치할 언어 런타임
     mise:
       - node@lts

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # macOS 개발 환경에 필요한 기본 도구를 설치한다.
-# Homebrew(.chezmoidata/packages.yaml 의 brews), mise 로 관리하는 언어 런타임 순서로 설치하며
+# Homebrew(.chezmoidata/packages.yaml 의 brews 와 casks), mise 로 관리하는 언어 런타임 순서로 설치하며
 # 이미 설치되어 있으면 건너뛰므로 여러 번 실행해도 안전하다(멱등).
 # run_onchange_ 스크립트라서 packages.yaml 의 목록이 바뀌어 이 스크립트 내용이 바뀔 때만 다시 실행된다.
 
@@ -35,6 +35,9 @@ brew update
 HOMEBREW_NO_AUTO_UPDATE=1 brew bundle --file=/dev/stdin --no-upgrade <<'EOF'
 {{ range .packages.darwin.brews -}}
 brew {{ . | quote }}
+{{ end -}}
+{{ range .packages.darwin.casks -}}
+cask {{ . | quote }}
 {{ end -}}
 EOF
 

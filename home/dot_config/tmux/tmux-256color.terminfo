@@ -3,10 +3,8 @@
 # 출처: Homebrew ncurses 의 terminfo 데이터베이스에서 다음 명령으로 추출했다.
 #   /opt/homebrew/opt/ncurses/bin/infocmp -x -A /opt/homebrew/opt/ncurses/share/terminfo tmux-256color
 #
-# 용도: macOS 의 /usr/share/terminfo/74/tmux-256color 는 ncurses 5.7 시절 것이라 kf13 이후
-#   (Shift/Ctrl + F키) 항목이 없다. .chezmoiscripts/run_onchange_after_30-install-tmux-terminfo-darwin
-#   이 이 파일을 같은 이름으로 ~/.terminfo 에 컴파일한다(tic -x). 자세한 이유는 tmux.conf 의
-#   default-terminal 주석 참고.
+# 용도: .chezmoiscripts/run_onchange_after_30-install-tmux-terminfo-darwin 이 이 파일을
+#   ~/.terminfo 에 컴파일한다. 왜 필요한지는 tmux.conf 의 default-terminal 주석(원본)을 볼 것.
 #
 # 갱신: ncurses 가 올라가면 위 명령으로 다시 뽑아 아래 내용만 바꾼다.
 tmux-256color|tmux with 256 colors,

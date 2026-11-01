@@ -37,13 +37,36 @@ end
 local sysname = (vim.uv or vim.loop).os_uname().sysname
 local os_name = sysname and string.lower(sysname)
 
+--- 설정 모듈을 로드한다. 실패를 조용히 넘기지 않는다.
+---
+--- pcall 로 감싸는 이유는 한 모듈의 오류가 init.lua 의 나머지 로드를 막지 않게 하기
+--- 위해서이고, 오류를 버리기 위해서가 아니다. 모듈이 "없는" 경우만 선택적(optional)
+--- 모듈에 한해 조용히 넘기고, 모듈 안에서 난 오류(문법 오류, 잘못된 keymap 옵션 등)는
+--- 항상 vim.notify 로 알린다. 그렇지 않으면 keymaps.lua 의 오타 하나로 모든 키맵이
+--- 아무 메시지 없이 사라진다.
+---
+---@param config_module string 모듈 이름
+---@param optional boolean 모듈이 없어도 되는지 (_darwin, _local 같은 변형 파일)
+local function try_require(config_module, optional)
+  local ok, err = pcall(require, config_module)
+  if ok then
+    return
+  end
+  local not_found = tostring(err):find("module '" .. config_module .. "' not found", 1, true)
+  if optional and not_found then
+    return
+  end
+  vim.notify(("설정 모듈 로드 실패: %s\n%s"):format(config_module, err), vim.log.levels.ERROR)
+end
+
+--- 기본 모듈과 그 변형(_<os>, _local)을 순서대로 로드한다. 기본 모듈은 필수, 변형은 선택.
 ---@param config_module string @module
 local function require_config_with_variants(config_module)
-  pcall(require, config_module)
+  try_require(config_module, false)
   if os_name then
-    pcall(require, config_module .. "_" .. os_name)
+    try_require(config_module .. "_" .. os_name, true)
   end
-  pcall(require, config_module .. "_local")
+  try_require(config_module .. "_local", true)
 end
 
 -- ==================================================
