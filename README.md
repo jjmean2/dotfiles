@@ -34,6 +34,8 @@ sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --apply jjmean2
   `init --apply` 를 실행한다. SSH 키가 이미 있으면 `--ssh` 를 붙여 SSH 로 클론할 수 있다.
 - macOS 는 설치 스크립트가 brew 로 chezmoi 를 다시 설치하므로 `~/.local/bin/chezmoi` 는 지워도 된다.
   Linux 는 그대로 쓴다 (`~/.local/bin` 은 PATH 에 있다).
+- chezmoi 를 이미 `brew install chezmoi` 로 받아 두었다면 설치 스크립트 없이 `chezmoi init --apply jjmean2` 만
+  실행한다. `get.chezmoi.io` 는 바이너리를 받은 뒤 `--` 뒤의 인자를 chezmoi 에 그대로 넘기는 래퍼다.
 
 ### 경우 2. 이미 클론해 둔 저장소를 소스로 쓰기
 
@@ -53,7 +55,8 @@ git clone git@github.com:jjmean2/dotfiles.git ~/dev/jwlee/dotfiles   # 또는 ht
 sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --source ~/dev/jwlee/dotfiles --apply
 ```
 
-경우 1 과 2 를 합친 것이다. 다른 브랜치로 시작하려면 클론할 때 `-b <브랜치>` 를 준다.
+경우 1 과 2 를 합친 것이다. chezmoi 가 이미 있으면 둘째 줄 대신 `chezmoi init --source ~/dev/jwlee/dotfiles --apply`.
+다른 브랜치로 시작하려면 클론할 때 `-b <브랜치>` 를 준다.
 
 ### 첫 apply 에서 일어나는 일
 
