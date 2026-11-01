@@ -14,7 +14,8 @@
 -- 네임스페이스 (예약 포함)
 --   <leader>e / E   탐색기 (explorer)
 --   <leader>c       코드 (code): 포맷 등. LSP 동작은 순정 gr* 키를 쓴다.
---   <leader>f       찾기 (find): 1단계에서 피커 도입 시 사용 예정
+--   <leader>f       찾기 (find): 1단계 비교 기간에는 fzf-lua
+--   <leader>p       피커 비교용 임시 (picker): snacks.picker. 결정 뒤 삭제 예정
 --   <leader>g       git: 2단계 예정
 --   <leader>t       토글 (toggle): 예정
 --
@@ -65,3 +66,57 @@ map("n", "<leader>E", "<Cmd>NvimTreeFindFile<CR>", { desc = "탐색기에서 현
 map({ "n", "v" }, "<leader>cf", function()
   require("conform").format({ async = true, lsp_format = "fallback" })
 end, { desc = "포맷 (버퍼 또는 선택 영역)" })
+
+-- --------------------------------------------------
+-- 피커 (1단계 비교: <leader>f = fzf-lua, <leader>p = snacks.picker)
+-- --------------------------------------------------
+-- 두 네임스페이스의 둘째 글자는 같은 뜻이다. 결정 뒤 이긴 쪽이 <leader>f 를 가져간다.
+--
+--   둘째 글자 | 하는 일                    | 순정 대응
+--   f         | 프로젝트 파일 (Cmd+P)       | :find **/이름
+--   g         | 파일 내용 live grep         | :grep 패턴 → :copen
+--   b         | 열린 버퍼                   | :ls → :b 번호
+--   .         | 최근 연 파일                | :oldfiles → :e #<번호
+--   r         | LSP 참조 (커서 심볼)        | grr
+--   s         | 현재 파일 심볼 (Cmd+P @)    | gO
+--   d         | 현재 파일 진단 (Problems)   | ]d, :lua vim.diagnostic.setloclist()
+--   c         | 명령어 (Cmd+Shift+P)        | :  + Tab
+--   h         | 도움말 태그                 | :h 이름
+--   k         | 키맵 목록                   | :map
+--   R         | 마지막 피커 다시 열기       | (없음)
+--
+-- 피커 안에서 (둘 다 거의 같다)
+--   이동 Ctrl-j/k 또는 방향키 · Tab 여러 개 선택 · Enter 열기
+--   Ctrl-v 세로 분할 · Ctrl-s 가로 분할 · Ctrl-t 탭 · Ctrl-q 전체를 quickfix 로
+--   fzf-lua : alt-q 선택한 것만 quickfix, F4 미리보기 토글, Esc 닫기
+--   snacks  : Esc 는 노멀 모드(j/k 로 이동, q 닫기), ? 도움말, alt-p 미리보기 토글
+
+local fzf = function(fn, opts)
+  return function() require("fzf-lua")[fn](opts) end
+end
+map("n", "<leader>ff", fzf("files"), { desc = "[fzf] 파일" })
+map("n", "<leader>fg", fzf("live_grep"), { desc = "[fzf] live grep" })
+map("n", "<leader>fb", fzf("buffers"), { desc = "[fzf] 버퍼" })
+map("n", "<leader>f.", fzf("oldfiles"), { desc = "[fzf] 최근 파일" })
+map("n", "<leader>fr", fzf("lsp_references"), { desc = "[fzf] LSP 참조" })
+map("n", "<leader>fs", fzf("lsp_document_symbols"), { desc = "[fzf] 문서 심볼" })
+map("n", "<leader>fd", fzf("diagnostics_document"), { desc = "[fzf] 진단 (현재 파일)" })
+map("n", "<leader>fc", fzf("commands"), { desc = "[fzf] 명령어" })
+map("n", "<leader>fh", fzf("helptags"), { desc = "[fzf] 도움말" })
+map("n", "<leader>fk", fzf("keymaps"), { desc = "[fzf] 키맵" })
+map("n", "<leader>fR", fzf("resume"), { desc = "[fzf] 마지막 피커 다시" })
+
+local snacks = function(fn, opts)
+  return function() Snacks.picker[fn](opts) end
+end
+map("n", "<leader>pf", snacks("files"), { desc = "[snacks] 파일" })
+map("n", "<leader>pg", snacks("grep"), { desc = "[snacks] live grep" })
+map("n", "<leader>pb", snacks("buffers"), { desc = "[snacks] 버퍼" })
+map("n", "<leader>p.", snacks("recent"), { desc = "[snacks] 최근 파일" })
+map("n", "<leader>pr", snacks("lsp_references"), { desc = "[snacks] LSP 참조" })
+map("n", "<leader>ps", snacks("lsp_symbols"), { desc = "[snacks] 문서 심볼" })
+map("n", "<leader>pd", snacks("diagnostics_buffer"), { desc = "[snacks] 진단 (현재 파일)" })
+map("n", "<leader>pc", snacks("commands"), { desc = "[snacks] 명령어" })
+map("n", "<leader>ph", snacks("help"), { desc = "[snacks] 도움말" })
+map("n", "<leader>pk", snacks("keymaps"), { desc = "[snacks] 키맵" })
+map("n", "<leader>pR", snacks("resume"), { desc = "[snacks] 마지막 피커 다시" })
