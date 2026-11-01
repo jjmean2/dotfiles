@@ -25,6 +25,12 @@ return {
     opts = {
       picker = {
         enabled = true,
+        -- 열릴 때 포커스를 입력창("input", 기본값) 이 아니라 목록("list") 에 둔다.
+        -- 목록 창은 노멀 모드라 j/k/gg/G 로 움직이고 Enter 로 열며, i 또는 / 를 누르면
+        -- 입력창으로 가서 타이핑으로 좁힌다. 기본값에서는 열리자마자 insert 모드라
+        -- j 가 검색어로 들어간다. 타이핑부터 하는 게 편한 source 는 아래처럼 따로 되돌린다:
+        --   sources = { files = { focus = "input" }, grep = { focus = "input" } },
+        focus = "list",
         -- true 로 하면 vim.ui.select (gra 코드 액션 메뉴, 순정 선택 프롬프트) 가 snacks
         -- 피커로 바뀐다. 순정 UI 를 먼저 익힌 뒤 켤지 정하기로 하고 지금은 끈다.
         ui_select = false,

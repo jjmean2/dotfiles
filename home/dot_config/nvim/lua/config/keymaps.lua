@@ -89,8 +89,8 @@ end, { desc = "포맷 (버퍼 또는 선택 영역)" })
 --   <leader>fR   | 마지막 피커 다시 열기       | (없음)
 --
 -- 피커 안에서
---   삽입 모드: 타이핑으로 좁히기 · Ctrl-j/k 이동 · Tab 여러 개 선택 · Enter 열기
---   Esc 는 닫기가 아니라 노멀 모드: j/k/gg/G 로 이동, q 또는 Esc 로 닫기, i 로 다시 입력
+--   열리면 목록(노멀 모드)에 포커스: j/k/gg/G 이동 · Enter 열기 · i 또는 / 로 입력창 이동
+--   입력창(insert 모드): 타이핑으로 좁히기 · Ctrl-j/k 이동 · Tab 여러 개 선택 · Esc 로 노멀 모드 · q 닫기
 --   Ctrl-v 세로 분할 · Ctrl-s 가로 분할 · Ctrl-t 탭 · Ctrl-q 전체(또는 선택)를 quickfix 로
 --   alt-p 미리보기 토글 · alt-h 숨김 파일 · alt-i .gitignore 무시 토글 · ? 키 도움말
 -- 피커는 nvim 의 cwd 를 프로젝트 루트로 본다. :pwd 로 확인, :cd 로 변경.
