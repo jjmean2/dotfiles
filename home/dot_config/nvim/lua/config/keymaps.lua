@@ -16,8 +16,8 @@
 --   <leader>c       코드 (code): 포맷 등. LSP 동작은 순정 gr* 키를 쓴다.
 --   <leader>f       찾기 (find): snacks.picker
 --   <leader><leader> 파일 찾기 별칭 (VS Code 의 Cmd+P 자리)
---   <leader>g       git: 2단계 예정
---   <leader>t       토글 (toggle): 예정
+--   <leader>g       git (gitsigns). 저장소 단위 작업은 tmux prefix G 의 lazygit
+--   <leader>t       토글 (toggle)
 --
 -- 어떤 키가 어디서 정의됐는지 볼 때:  :verbose map <키>
 --
@@ -111,3 +111,64 @@ map("n", "<leader>fh", pick("help"), { desc = "도움말" })
 map("n", "<leader>fk", pick("keymaps"), { desc = "키맵" })
 map("n", "<leader>fp", pick("projects"), { desc = "프로젝트 전환 (cwd 변경)" })
 map("n", "<leader>fR", pick("resume"), { desc = "마지막 피커 다시" })
+
+-- --------------------------------------------------
+-- <leader>g  git (gitsigns)
+-- --------------------------------------------------
+-- hunk = 연속된 변경 묶음. gitsigns 는 버퍼와 index 를 비교해 hunk 목록을 들고 있고,
+-- 아래 키는 전부 "커서가 있는 hunk" 또는 "이 버퍼의 hunk 전부" 에 대한 조작이다.
+--
+--   키           | 하는 일                          | 순정/CLI 대응
+--   ]c  [c       | 다음/이전 hunk (diff 모드에서는 순정 ]c) | diff 모드의 ]c [c
+--   <leader>gp   | hunk 미리보기 (플로팅)            | :!git diff %
+--   <leader>gi   | hunk 미리보기 (인라인)            |
+--   <leader>gs   | hunk 스테이징 (비주얼: 선택 줄만) | git add -p
+--   <leader>gr   | hunk 되돌리기 (비주얼: 선택 줄만) | git checkout -p
+--   <leader>gu   | hunk 스테이징 취소                | git reset -p
+--   <leader>gS   | 버퍼 전체 스테이징                | git add %
+--   <leader>gR   | 버퍼 전체 되돌리기                | git checkout %
+--   <leader>gd   | index 와 diff (순정 diff 모드)    | :vnew | r !git show :./# | windo diffthis
+--   <leader>gD   | HEAD 와 diff                      | 위에서 :./# 대신 HEAD:./#
+--   <leader>gb   | 현재 줄 blame 자세히              | :!git blame -L <줄>,<줄> %
+--   <leader>gq   | 이 버퍼의 hunk 를 quickfix 로     | (없음)
+--   <leader>gQ   | 모든 버퍼의 hunk 를 quickfix 로   |
+--   ih           | hunk 텍스트 객체 (vih, dih 등)     |
+--   <leader>tb   | 줄 끝 blame 토글                  |
+--
+-- diff 모드 안에서는 순정 키가 그대로다: ]c [c 이동, do 가져오기, dp 보내기, :diffoff! 종료.
+-- <leader>gd 로 열리는 창이 바로 그 diff 모드다.
+
+local gs = function(fn, ...)
+  local args = { ... }
+  return function() require("gitsigns")[fn](unpack(args)) end
+end
+
+-- ]c / [c: 순정은 diff 모드에서만 뜻이 있고 그 밖에서는 아무 매핑이 없다.
+-- diff 모드면 순정 그대로, 아니면 hunk 이동으로 "빈 자리를 채우는" 확장이다 (gitsigns 권장 방식).
+map("n", "]c", function()
+  if vim.wo.diff then vim.cmd.normal({ "]c", bang = true }) else require("gitsigns").nav_hunk("next") end
+end, { desc = "다음 hunk / diff 변경" })
+map("n", "[c", function()
+  if vim.wo.diff then vim.cmd.normal({ "[c", bang = true }) else require("gitsigns").nav_hunk("prev") end
+end, { desc = "이전 hunk / diff 변경" })
+
+map("n", "<leader>gp", gs("preview_hunk"), { desc = "hunk 미리보기" })
+map("n", "<leader>gi", gs("preview_hunk_inline"), { desc = "hunk 미리보기 (인라인)" })
+map("n", "<leader>gs", gs("stage_hunk"), { desc = "hunk 스테이징" })
+map("n", "<leader>gr", gs("reset_hunk"), { desc = "hunk 되돌리기" })
+map("v", "<leader>gs", function() require("gitsigns").stage_hunk({ vim.fn.line("."), vim.fn.line("v") }) end, { desc = "선택 줄 스테이징" })
+map("v", "<leader>gr", function() require("gitsigns").reset_hunk({ vim.fn.line("."), vim.fn.line("v") }) end, { desc = "선택 줄 되돌리기" })
+map("n", "<leader>gu", gs("undo_stage_hunk"), { desc = "hunk 스테이징 취소" })
+map("n", "<leader>gS", gs("stage_buffer"), { desc = "버퍼 전체 스테이징" })
+map("n", "<leader>gR", gs("reset_buffer"), { desc = "버퍼 전체 되돌리기" })
+map("n", "<leader>gd", gs("diffthis"), { desc = "index 와 diff" })
+map("n", "<leader>gD", gs("diffthis", "~"), { desc = "HEAD 와 diff" })
+map("n", "<leader>gb", function() require("gitsigns").blame_line({ full = true }) end, { desc = "현재 줄 blame" })
+map("n", "<leader>gq", gs("setqflist"), { desc = "이 버퍼 hunk → quickfix" })
+map("n", "<leader>gQ", gs("setqflist", "all"), { desc = "모든 hunk → quickfix" })
+map({ "o", "x" }, "ih", gs("select_hunk"), { desc = "hunk 텍스트 객체" })
+
+-- --------------------------------------------------
+-- <leader>t  토글
+-- --------------------------------------------------
+map("n", "<leader>tb", gs("toggle_current_line_blame"), { desc = "줄 끝 blame 토글" })
