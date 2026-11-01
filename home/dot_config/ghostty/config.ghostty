@@ -161,7 +161,10 @@ quick-terminal-size = 50%
 keybind = global:ctrl+alt+9=toggle_quick_terminal
 
 # Ghostty 전체 창 표시/숨김 토글
-keybind = global:ctrl+alt+0=toggle_visibility
+# opt+space 는 iTerm2 에서 오래 쓰던 hotkey 를 그대로 가져온 것이다. Alfred/Raycast 의
+# 기본 호출 키와 같고, global 이라 다른 앱에서 Option+Space 로 NBSP 를 입력하는 것도
+# 가로채지만, 해당 런처를 쓰지 않고 손에 익은 키를 우선하기로 한 의도적 선택이다.
+keybind = global:opt+space=toggle_visibility
 
 
 # -----------------------------------------------------------------------------
