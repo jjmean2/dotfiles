@@ -136,6 +136,18 @@ if [ "$TERM_PROGRAM" = "iTerm.app" ] || [ "$LC_TERMINAL" = "iTerm2" ]; then
 		iterm2_set_user_var gitBranch "$( (git branch 2>/dev/null) | grep '\*' | cut -c3-)"
 	}
 fi
+
+# ==================================================
+# 🪄 tmux shell integration
+# ==================================================
+# tmux 안에서는 셸이 대화하는 터미널이 tmux 다. 터미널 에뮬레이터(Ghostty/iTerm2)의 통합은
+# tmux 가 띄운 셸엔 주입되지 않고, 주입돼도 tmux 가 OSC 133 을 밖으로 넘기지 않는다.
+# 대신 tmux 용 통합을 소싱해 tmux 자신이 프롬프트 위치를 알게 한다 (previous-prompt 등).
+# 자세한 설명은 스크립트 머리말 참고.
+if [[ -n $TMUX && -r $HOME/.config/shell/tmux/tmux_shell_integration.zsh ]]; then
+	source "$HOME/.config/shell/tmux/tmux_shell_integration.zsh"
+fi
+
 # ==================================================
 # 🪄 Zsh 자동 완성 시스템 초기화 (compinit)
 # ==================================================
