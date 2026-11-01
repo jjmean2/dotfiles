@@ -1,0 +1,21 @@
+# lazygit 설정. LG_CONFIG_FILE 로 가리킨다 (rc.sh, tmux.conf 의 prefix G).
+#
+# 두 환경에서 쓰인다.
+#   - tmux prefix G 팝업: 이 파일만 적용. gui.theme 이 색을 정한다.
+#   - nvim <leader>gg (snacks lazygit 모듈): 이 파일 뒤에 nvim 컬러스킴에서 만든 테마 파일이
+#     덧붙어 gui.theme 을 덮어쓴다. 아래 테마는 팝업 쪽 기준으로 tmux 팔레트에 맞췄다.
+# 키 목록은 lazygit 안에서 ? 로 본다. 전체 옵션: https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md
+
+gui:
+  # Nerd Font 아이콘 (Ghostty 폰트가 지원). 아이콘이 깨지면 "" 로 끈다.
+  nerdFontsVersion: "3"
+  theme:
+    activeBorderColor: ["#b4befe", "bold"]  # 포커스된 패널 테두리 (tmux 세션 뱃지 색)
+    inactiveBorderColor: ["#45475a"]        # 나머지 패널 테두리 (tmux 탭 구분선 색)
+    selectedLineBgColor: ["#313244"]        # 선택 줄 배경 (tmux 탭 배경색)
+    optionsTextColor: ["#89b4fa"]           # 하단 키 안내
+    defaultFgColor: ["default"]             # 글자색은 터미널 기본
+
+os:
+  # 파일을 e 로 열 때: nvim 안($NVIM 있음)이면 그 nvim 의 새 탭에, 밖이면 새 nvim 을 띄운다.
+  editPreset: "nvim-remote"
