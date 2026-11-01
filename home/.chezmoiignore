@@ -14,3 +14,6 @@
 # (exclude(!)는 위의 include 보다 항상 우선한다)
 !.config/mpv/mpv.darwin.conf
 !.config/mpv/mpv.linux.conf
+
+# ghostty 테마 선택기가 써넣는 머신별 덮어쓰기 파일. 기본값은 config.ghostty 의 theme 에 있다.
+.config/ghostty/auto/theme.ghostty
