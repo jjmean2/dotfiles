@@ -129,7 +129,7 @@ keybind = ctrl+left_bracket=text:\x1b
 # 프롬프트 단위로 스크롤 이동 (셸 통합이 찍는 OSC 133 마크를 사용). macOS 기본값이 이미
 # cmd+up/down 과 cmd+shift+up/down 이라 따로 켤 필요는 없다.
 # tmux 안에서는 동작하지 않는다: 스크롤백이 tmux 에 있고 tmux 가 마크를 밖으로 넘기지 않는다.
-# tmux 안에서는 대신 option+up/down (tmux.conf 3절, shell/tmux/tmux_shell_integration.zsh).
+# tmux 안에서는 대신 option+shift+up/down (tmux.conf 3절, shell/tmux/tmux_shell_integration.zsh).
 # cmd 조합은 macOS 터미널이 pty 로 인코딩하지 않아 tmux 에 전달할 수 없다.
 #keybind = cmd+up=jump_to_prompt:-1
 #keybind = cmd+down=jump_to_prompt:1

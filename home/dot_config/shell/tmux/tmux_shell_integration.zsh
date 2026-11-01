@@ -20,7 +20,7 @@
 #   - copy-mode 의 previous-prompt / next-prompt (-o 는 출력 시작 줄로)  → tmux.conf 3절
 #   - pane-shell-prompt / pane-command-started / pane-command-finished 훅
 #   - pane_command_running / pane_command_status / pane_command_duration 포맷 변수
-#     (tmux.conf 의 root M-Up 바인딩은 pane_command_running 으로 "프롬프트인가, 프로그램 실행 중인가"
+#     (tmux.conf 의 root M-S-Up 바인딩은 pane_command_running 으로 "프롬프트인가, 프로그램 실행 중인가"
 #      를 판단해 실행 중이면 키를 프로그램에 넘긴다)
 #
 # 구현 메모:
@@ -34,7 +34,7 @@
 # 확인 방법 (tmux 안에서):
 #   false; tmux display -p '#{pane_command_status}'   → 1
 #   print -r -- ${(V)PS1}                              → %{^[]133;A^G%} ... %{^[]133;B^G%}
-#   Option+↑ = M-Up (tmux.conf 바인딩)                 → 이전 프롬프트 줄로 이동
+#   Option+Shift+↑ = M-S-Up (tmux.conf 바인딩)         → 이전 프롬프트 줄로 이동
 
 _tmux_shell_integration() {
     builtin emulate -L zsh -o no_warn_create_global -o no_aliases
