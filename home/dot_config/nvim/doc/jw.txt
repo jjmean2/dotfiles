@@ -64,6 +64,11 @@ LSP (서버가 붙으면 자동) ~
 	Ctrl-N  Ctrl-P	항목 이동			Ctrl-Y  확정 (스니펫/import 적용)
 	Ctrl-E		팝업 닫기			Enter  는 평소대로 줄바꿈 (noselect)
 	Tab		스니펫 안에서 다음 자리		<leader>th  inlay hint 토글
+	조절은 lua/config/core/options.lua 의 자동완성 블록 한 곳에서 한다:
+	  너무 자주 뜬다 → autocompletedelay 올리기 (ms)
+	  버퍼 단어가 LSP 후보를 가린다 → complete 의 .^5 w^5 b^5 숫자를 줄이거나 빼기
+	  엉뚱한 fuzzy 항목이 올라온다 → completeopt 에서 fuzzy 빼기
+	  아예 끄려면 :set noautocomplete (수동 Ctrl-X Ctrl-O 는 그대로)
 	gq		LSP 포맷 (formatexpr). 저장 시 포맷은 conform, 수동은 <leader>cf
 
 진단 ~
