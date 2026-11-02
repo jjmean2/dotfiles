@@ -37,7 +37,20 @@ return {
             require("mason").setup()
 
             -- 2. Mason-Lspconfig 초기화 (원하는 서버 목록 자동 설치)
-            local servers = { "lua_ls", "vtsls" }
+            -- 이름은 nvim-lspconfig 의 설정 이름(lsp/<이름>.lua)이고, mason-lspconfig 가 mason 패키지로
+            -- 바꿔 설치한다. 처음 nvim 을 띄울 때 네트워크로 받으며, 런타임은 mise 의 것을 쓴다
+            -- (node: vtsls/bashls/jsonls/yamlls, go: gopls, python: basedpyright).
+            -- 서버가 없는 파일 형식에서는 자동완성이 버퍼 단어만으로 돌아간다.
+            local servers = {
+                "lua_ls",        -- lua (nvim 설정)
+                "vtsls",         -- typescript / javascript
+                "bashls",        -- sh / bash / zsh (shellcheck 이 PATH 에 있으면 진단도)
+                "jsonls",        -- json
+                "yamlls",        -- yaml
+                "taplo",         -- toml (mise, chezmoi 설정)
+                "gopls",         -- go
+                "basedpyright",  -- python
+            }
             require("mason-lspconfig").setup({
                 ensure_installed = servers,
                 automatic_installation = true,
@@ -47,12 +60,28 @@ return {
             -- nvim-lspconfig가 runtimepath에 제공하는 프리셋을 Neovim 코어가 직접 읽어서 켭니다.
             vim.lsp.enable(servers)
 
-            -- 4. 키맵은 따로 두지 않는다.
+            -- 4. 서버가 붙을 때 한 번: 완성 항목 확정 시 부수효과 활성화.
+            -- 자동완성 자체는 순정 'autocomplete' 옵션이 omnifunc 를 통해 띄운다 (core/options.lua).
+            -- 여기서 completion.enable 을 호출해 두면 Ctrl-Y 로 항목을 고를 때 LSP 가 보낸
+            -- 스니펫 확장, import 문 삽입, 추가 텍스트 편집이 적용된다. autotrigger 는 'autocomplete'
+            -- 와 겹치므로 끈다 (기본값 false).
+            vim.api.nvim_create_autocmd("LspAttach", {
+                group = JwVim.augroup("LspCompletion"),
+                callback = function(ev)
+                    local client = vim.lsp.get_client_by_id(ev.data.client_id)
+                    if client and client:supports_method("textDocument/completion") then
+                        vim.lsp.completion.enable(true, client.id, ev.buf)
+                    end
+                end,
+            })
+
+            -- 5. 키맵은 따로 두지 않는다.
             -- nvim 0.11+ 은 LSP 가 붙으면 순정 기본 키와 옵션을 스스로 설정한다 (:help lsp-defaults).
             --   K 호버 / grn 이름변경 / grr 참조 / gri 구현 / grt 타입정의 / gra 코드액션 / gO 문서심볼
             --   CTRL-]  정의로 이동 (tagfunc 가 LSP 로 설정됨), CTRL-T 로 되돌아옴
             --   CTRL-X CTRL-O  LSP 완성 (omnifunc),  gq  LSP 포맷 (formatexpr),  i_CTRL-S  시그니처
-            -- 추가 키가 필요해지면 lua/config/keymaps.lua 에 둔다.
+            --   Tab  스니펫 안에서 다음 자리로 (vim.snippet 기본 매핑)
+            -- 추가 키(inlay hint 토글 등)는 lua/config/keymaps.lua 에 둔다.
         end,
     },
 }
