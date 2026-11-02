@@ -106,7 +106,7 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
 
 ### nvim 플러그인 버전
 
-`home/dot_config/nvim/lazy-lock.json` 이 플러그인마다 설치된 commit 을 기록한다. lazy.nvim 이 이 저장소 파일에 직접 쓰므로(`lazy.lua.tmpl` 의 `lockfile`), `:Lazy update` 뒤에는 바뀐 lockfile 을 커밋하면 되고, 다른 머신에서는 pull 한 뒤 `:Lazy restore` 로 같은 commit 에 맞춘다. 업데이트가 뭔가를 깨뜨리면 lockfile 커밋을 되돌리고 `:Lazy restore`.
+`home/dot_config/nvim/lazy-lock.json` 이 플러그인마다 설치된 commit 을 기록한다. lazy.nvim 이 이 저장소 파일에 직접 쓰므로(`lazy.lua.tmpl` 의 `lockfile`), `:Lazy update` 뒤에는 바뀐 lockfile 을 커밋하면 되고(`nvim-lock-push` 가 lockfile 만 골라 `chore(nvim): 플러그인 업데이트` 로 커밋·push 한다. PR 없이 main 에 바로), 다른 머신에서는 pull 한 뒤 `:Lazy restore` 로 같은 commit 에 맞춘다. 업데이트가 뭔가를 깨뜨리면 lockfile 커밋을 되돌리고 `:Lazy restore`.
 
 ### 자주 하는 조정
 
