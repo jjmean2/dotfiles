@@ -30,4 +30,10 @@ require("lazy").setup({
   install = { colorscheme = { "habamax" } },
   -- automatically check for plugin updates
   checker = { enabled = true },
+  -- lockfile: 플러그인마다 설치된 commit 을 기록한다. install/update/clean 뒤에 lazy 가 다시 쓰고,
+  -- :Lazy restore 가 이 파일대로 되돌린다. 머신 간 플러그인 버전을 맞추려고 git 으로 추적한다.
+  -- 기본 위치(stdpath("config"))는 chezmoi 가 배포하는 쪽이라, 거기 두면 update 할 때마다
+  -- chezmoi add 로 되가져와야 한다. 대신 lazy 가 저장소(chezmoi 소스 디렉터리)에 직접 쓰게 하고
+  -- .chezmoiignore 로 배포에서 뺀다. 그래서 이 파일만 .tmpl 이다: 소스 경로가 머신마다 다르다.
+  lockfile = {{ printf "%s/dot_config/nvim/lazy-lock.json" .chezmoi.sourceDir | quote }},
 })
