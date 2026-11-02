@@ -1,6 +1,5 @@
 .DS_Store
 *.local
-**/nvim/lazy-lock.json
 # Claude Code 세션이 만드는 worktree 등
 .claude/
 # tmux -v 디버그 로그

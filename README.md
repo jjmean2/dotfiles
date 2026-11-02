@@ -100,9 +100,13 @@ chezmoi doctor        # source-dir, config-file 이 기대한 위치인지
 chezmoi data          # email 이 맞는지
 chezmoi status        # 비어 있어야 정상
 exec $SHELL -l        # 새 셸 (PATH, LG_CONFIG_FILE 등)
-nvim                  # 첫 실행에서 lazy.nvim 이 플러그인을, mason 이 LSP 서버를 받는다. :checkhealth
+nvim                  # 첫 실행에서 lazy.nvim 이 플러그인을 lazy-lock.json 에 적힌 commit 으로, mason 이 LSP 서버를 받는다. :checkhealth
 tmux new -s test      # 상태바와 prefix G 팝업 확인
 ```
+
+### nvim 플러그인 버전
+
+`home/dot_config/nvim/lazy-lock.json` 이 플러그인마다 설치된 commit 을 기록한다. lazy.nvim 이 이 저장소 파일에 직접 쓰므로(`lazy.lua.tmpl` 의 `lockfile`), `:Lazy update` 뒤에는 바뀐 lockfile 을 커밋하면 되고, 다른 머신에서는 pull 한 뒤 `:Lazy restore` 로 같은 commit 에 맞춘다. 업데이트가 뭔가를 깨뜨리면 lockfile 커밋을 되돌리고 `:Lazy restore`.
 
 ### 자주 하는 조정
 
