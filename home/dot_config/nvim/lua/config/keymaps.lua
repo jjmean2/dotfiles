@@ -89,8 +89,11 @@ end, { desc = "포맷 (버퍼 또는 선택 영역)" })
 --   <leader>fR   | 마지막 피커 다시 열기       | (없음)
 --
 -- 피커 안에서
---   열리면 목록(노멀 모드)에 포커스: j/k/gg/G 이동 · Enter 열기 · i 또는 / 로 입력창 이동
---   입력창(insert 모드): 타이핑으로 좁히기 · Ctrl-j/k 이동 · Tab 여러 개 선택 · Esc 로 노멀 모드 · q 닫기
+--   시작 포커스는 소스에 따라 다르다 (picker.lua 의 sources 참고):
+--     입력창(insert)에서 시작: 파일(ff, <leader><leader>), grep, 도움말, 명령어, 키맵, 심볼
+--     목록(노멀 모드)에서 시작: 버퍼, 최근, 프로젝트, 참조, 진단, git diff/status, resume
+--   목록 창: j/k/gg/G 이동 · Enter 열기 · i 또는 / 로 입력창 이동 · q 닫기
+--   입력창: 타이핑으로 좁히기 · Ctrl-j/k 이동 · Tab 여러 개 선택 · Esc 로 노멀 모드(j/k 가 목록 이동)
 --   Ctrl-v 세로 분할 · Ctrl-s 가로 분할 · Ctrl-t 탭 · Ctrl-q 전체(또는 선택)를 quickfix 로
 --   alt-p 미리보기 토글 · alt-h 숨김 파일 · alt-i .gitignore 무시 토글 · ? 키 도움말
 -- 피커는 nvim 의 cwd 를 프로젝트 루트로 본다. :pwd 로 확인, :cd 로 변경.
