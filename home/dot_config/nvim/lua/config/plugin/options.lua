@@ -10,5 +10,6 @@ vim.cmd.colorscheme("tokyonight")
 -- 진단 표시: 줄 끝 가상 텍스트 + 사인 컬럼 아이콘
 vim.diagnostic.config {
   virtual_text = true,
-  signs = true
+  signs = true,
+  severity_sort = true, -- 같은 줄에 여럿이면 에러가 경고보다 앞에
 }

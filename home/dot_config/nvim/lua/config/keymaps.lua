@@ -26,6 +26,8 @@
 --   LSP   : K 호버, grn 이름변경, grr 참조, gri 구현, grt 타입정의, gra 코드액션,
 --           gO 문서심볼, CTRL-] 정의로 이동(tagfunc) / CTRL-T 되돌아오기,
 --           CTRL-X CTRL-O 완성(omnifunc), gq 포맷(formatexpr), i_CTRL-S 시그니처
+--   완성  : 'autocomplete' 로 타이핑 중 자동 팝업. Ctrl-N/P 이동, Ctrl-Y 확정, Ctrl-E 닫기,
+--           Tab 스니펫 다음 자리
 --   진단  : ]d [d 이동, CTRL-W d 현재 줄 진단 플로팅
 --   목록  : ]q [q quickfix, ]l [l location list, ]b [b 버퍼, ]a [a arglist
 --   기타  : gcc / gc 주석 토글, 비주얼 * # 선택 영역 검색, CTRL-L 하이라이트 해제
@@ -198,6 +200,10 @@ map("n", "<leader>gb", function() require("gitsigns").blame_line({ full = true }
 -- <leader>t  토글
 -- --------------------------------------------------
 map("n", "<leader>tb", gs("toggle_current_line_blame"), { desc = "줄 끝 blame 토글" })
+-- inlay hint: 타입/매개변수 이름을 코드 사이에 가상 텍스트로 보여주는 LSP 기능. 시끄러워 꺼 두고 토글.
+map("n", "<leader>th", function()
+  vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled())
+end, { desc = "inlay hint 토글" })
 
 -- --------------------------------------------------
 -- <leader>?  개인 치트시트

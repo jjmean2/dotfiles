@@ -57,7 +57,13 @@ LSP (서버가 붙으면 자동) ~
 	grr		참조 → quickfix		gri  구현	grt  타입 정의
 	grn		이름 변경			gra  코드 액션
 	gO		문서 심볼 → location list
-	Ctrl-X Ctrl-O	insert 모드 완성 (omnifunc)	i_Ctrl-S  시그니처
+	Ctrl-X Ctrl-O	insert 모드 수동 완성 (omnifunc)	i_Ctrl-S  시그니처
+
+자동완성 ('autocomplete', 플러그인 없음) ~
+	타이핑하면 팝업이 뜬다. LSP 후보가 먼저, 버퍼 단어가 뒤에.
+	Ctrl-N  Ctrl-P	항목 이동			Ctrl-Y  확정 (스니펫/import 적용)
+	Ctrl-E		팝업 닫기			Enter  는 평소대로 줄바꿈 (noselect)
+	Tab		스니펫 안에서 다음 자리		<leader>th  inlay hint 토글
 	gq		LSP 포맷 (formatexpr). 저장 시 포맷은 conform, 수동은 <leader>cf
 
 진단 ~
