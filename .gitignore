@@ -5,3 +5,5 @@
 .claude/
 # tmux -v 디버그 로그
 tmux-*.log
+# nvim 개인 도움말의 태그 색인 (helptags 가 생성)
+**/nvim/doc/tags

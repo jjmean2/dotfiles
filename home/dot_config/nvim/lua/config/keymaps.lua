@@ -18,6 +18,7 @@
 --   <leader><leader> 파일 찾기 별칭 (VS Code 의 Cmd+P 자리)
 --   <leader>g       git 목록·도구 (snacks 피커, lazygit). hunk 조작은 <leader>gh 아래 (LazyVim 배치)
 --   <leader>t       토글 (toggle)
+--   <leader>?       개인 치트시트 (:h jw, doc/jw.txt)
 --
 -- 어떤 키가 어디서 정의됐는지 볼 때:  :verbose map <키>
 --
@@ -197,3 +198,10 @@ map("n", "<leader>gb", function() require("gitsigns").blame_line({ full = true }
 -- <leader>t  토글
 -- --------------------------------------------------
 map("n", "<leader>tb", gs("toggle_current_line_blame"), { desc = "줄 끝 blame 토글" })
+
+-- --------------------------------------------------
+-- <leader>?  개인 치트시트
+-- --------------------------------------------------
+-- doc/jw.txt 를 순정 help 로 새 탭에 연다 (:h write-local-help). 닫기는 :q.
+-- 전수 목록은 which-key(<leader> 누르고 멈춤)와 <leader>fk, 선별 목록은 여기.
+map("n", "<leader>?", "<Cmd>tab help jw-learning<CR>", { desc = "치트시트 (:h jw)" })

@@ -1,0 +1,194 @@
+*jw.txt*	내 설정의 키와 작업 흐름 (dotfiles 개인 치트시트)
+
+==============================================================================
+목차								*jw* *jw-keys*
+
+이 파일은 dotfiles 가 설치한 설정(nvim, tmux, lazygit)에서 내가 정한 키 배치와
+익히려는 순정 키를 모아 둔 개인 치트시트다. 플러그인 문서가 아니라 "내 배치" 의
+문서다. 여는 법: <leader>? 또는 :h jw. tmux 에서는 prefix H.
+
+  1. 지금 익히는 키		|jw-learning|
+  2. nvim 순정			|jw-nvim|
+  3. 피커 (snacks.picker)	|jw-picker|
+  4. git			|jw-git|
+  5. tmux			|jw-tmux|
+  6. lazygit			|jw-lazygit|
+  7. 이 파일 고치기		|jw-edit|
+
+원칙: 순정 키는 지우거나 뜻을 바꾸지 않는다. 추가 키는 <leader>(스페이스) 아래
+네임스페이스에 둔다. 어떤 키가 어디서 왔는지는 :verbose map <키>.
+
+==============================================================================
+1. 지금 익히는 키						*jw-learning*
+
+손에 붙을 때까지 이 절만 본다. 붙으면 아래 절로 내리고 다음 묶음을 올린다.
+
+Claude 가 고친 것 검토하기 (가장 자주 하는 일) ~
+	]h  [h		다음/이전 hunk 로
+	<leader>ghp	이 hunk 가 뭘 바꿨나 (인라인 미리보기)
+	<leader>ghs	이 hunk 스테이징		비주얼이면 선택한 줄만
+	<leader>ghr	이 hunk 되돌리기		비주얼이면 선택한 줄만
+	<leader>ghd	파일 전체를 index 와 나란히 (순정 diff 모드, |jw-diff|)
+
+파일 찾기와 검색 ~
+	<leader><leader>	파일 (Cmd+P). 입력창에서 시작
+	<leader>fg		내용 grep. Ctrl-q 로 전부 quickfix 에 → :copen → ]q
+	Ctrl-^			직전 파일로 (순정)
+
+코드 (순정 LSP 키) ~
+	Ctrl-]  Ctrl-T	정의로 / 돌아오기		K  문서
+	grr		참조 목록 (quickfix)		gO  현재 파일 심볼 목록
+	grn  gra	이름 변경 / 코드 액션		]d [d  진단 이동
+
+git 전체 ~
+	<leader>gg	lazygit (nvim 안)		prefix G  lazygit (tmux 팝업)
+
+도움말 ~
+	<leader>?	이 파일				<leader>fk  키맵 검색
+
+==============================================================================
+2. nvim 순정							*jw-nvim*
+
+전부 플러그인 없이 되는 것들이다. :h default-mappings, :h lsp-defaults.
+
+LSP (서버가 붙으면 자동) ~
+	K		호버 문서
+	Ctrl-]		정의로 (tagfunc)		Ctrl-T  태그 스택 되돌아오기
+	grr		참조 → quickfix		gri  구현	grt  타입 정의
+	grn		이름 변경			gra  코드 액션
+	gO		문서 심볼 → location list
+	Ctrl-X Ctrl-O	insert 모드 완성 (omnifunc)	i_Ctrl-S  시그니처
+	gq		LSP 포맷 (formatexpr). 저장 시 포맷은 conform, 수동은 <leader>cf
+
+진단 ~
+	]d  [d		다음/이전 진단		Ctrl-W d  현재 줄 진단 자세히
+	<leader>fd	현재 파일 진단 피커
+
+quickfix / location list (|jw-quickfix|) ~				*jw-quickfix*
+	:copen :cclose	quickfix 창			:lopen :lclose  location list
+	]q  [q		다음/이전 항목		[Q  ]Q  처음/끝
+	:cdo {cmd}	각 항목에서 실행 (예: :cdo s/old/new/g | update)
+	:colder		이전 목록 (최근 10개 보관)
+	채우는 것: :grep (ripgrep), grr, 피커의 Ctrl-q, <leader>ghq
+
+diff 모드 (|jw-diff|) ~							*jw-diff*
+	]c  [c		변경 블록 이동 (diff 모드 안에서만 순정 그대로)
+	do  dp		상대 창에서 가져오기 / 상대 창으로 보내기
+	zo  zc		접힌 영역 열기/닫기
+	:diffoff! | only	종료
+	여는 법: <leader>ghd (index), <leader>ghD (HEAD). 순정으로는
+	:vnew | r !git show :./# | windo diffthis
+
+그 밖에 ~
+	gcc  gc{motion}	주석 토글			Ctrl-L  검색 하이라이트 해제
+	Ctrl-^		직전 파일			:cd {dir}  프로젝트 루트 이동 (|jw-cwd|)
+	:verbose map {키}	그 키가 어디서 정의됐나
+
+cwd (|jw-cwd|) ~							*jw-cwd*
+	전제: nvim 하나 = 프로젝트 하나 = cwd. 피커, :grep, :find, LSP 가 전부 cwd 를 본다.
+	:pwd / :cd {dir} / :cd -	확인 / 이동 / 직전으로
+	<leader>fp			최근 프로젝트 피커 (cwd 변경)
+	nvim-tree 는 cwd 와 양방향 동기화돼 있다 (- 로 상위, Ctrl-] 로 루트 변경도 :cd).
+
+==============================================================================
+3. 피커 (snacks.picker)						*jw-picker*
+
+멘탈 모델: source(후보) → picker(좁히기) → action(열기/분할/quickfix). 피커는
+quickfix 로 들어가는 입구이고, 결과를 쌓아 돌아다니는 건 여전히 quickfix 다.
+
+	<leader>ff  <leader><leader>	파일				:find
+	<leader>fg			내용 grep			:grep
+	<leader>fb			버퍼				:ls
+	<leader>f.			최근 파일			:oldfiles
+	<leader>fr			LSP 참조			grr
+	<leader>fs			현재 파일 심볼			gO
+	<leader>fd			현재 파일 진단
+	<leader>fc			명령어 (Cmd+Shift+P)		: + Tab
+	<leader>fh			도움말				:h
+	<leader>fk			키맵				:map
+	<leader>fp			프로젝트 전환 (cwd)		:cd
+	<leader>fR			마지막 피커 다시
+
+시작 포커스 (picker.lua 의 sources) ~
+	입력창(insert): 파일, grep, 도움말, 명령어, 키맵, 심볼	→ 바로 타이핑
+	목록(노멀):	버퍼, 최근, 프로젝트, 참조, 진단, git	→ j/k 로 고르기
+
+피커 안에서 ~
+	목록 창	j k gg G 이동	Enter 열기	i 또는 /  입력창으로	q 닫기
+	입력창	타이핑으로 좁히기	Ctrl-j/k 이동	Tab 여러 개 선택	Esc 노멀 모드
+	Ctrl-v  Ctrl-s  Ctrl-t	세로 분할 / 가로 분할 / 탭으로 열기
+	Ctrl-q			전부(또는 선택)를 quickfix 로
+	alt-p  alt-h  alt-i	미리보기 토글 / 숨김 파일 / .gitignore 무시
+	?			키 도움말
+
+==============================================================================
+4. git								*jw-git*
+
+세 층: hunk 조작(gitsigns, <leader>gh*) / 목록(피커, <leader>g*) / lazygit.
+기준 차이: gitsigns 의 sign 과 ghd 는 index 기준(스테이징하면 사라짐),
+<leader>gd 피커는 HEAD 기준(스테이징해도 남음).
+
+hunk (gitsigns) ~
+	]h  [h		다음/이전 hunk		]H  [H  마지막/첫 hunk
+	<leader>ghs	스테이징 (x: 선택 줄)	<leader>ghr  되돌리기 (x: 선택 줄)
+	<leader>ghu	스테이징 취소
+	<leader>ghS	버퍼 전체 스테이징	<leader>ghR  버퍼 전체 되돌리기
+	<leader>ghp	미리보기 (인라인)	<leader>ghP  미리보기 (플로팅)
+	<leader>ghb	현재 줄 blame		<leader>ghB  버퍼 blame
+	<leader>ghd	index 와 diff		<leader>ghD  HEAD 와 diff
+	<leader>ghq	이 버퍼 hunk → quickfix	<leader>ghQ  모든 hunk → quickfix
+	ih		hunk 텍스트 객체 (vih, dih, yih)
+	<leader>tb	줄 끝 blame 토글
+
+목록과 도구 ~
+	<leader>gd	저장소 전체 hunk 피커. Tab 스테이징, Ctrl-r 되돌리기
+	<leader>gs	git status 피커
+	<leader>gl	커밋 로그 (lazygit)	<leader>gf  현재 파일 히스토리 (lazygit)
+	<leader>gg	lazygit (nvim 안 플로팅). e 로 연 파일은 이 nvim 의 새 탭에
+	<leader>gb	현재 줄 blame (ghb 와 같음)
+
+==============================================================================
+5. tmux								*jw-tmux*
+
+prefix 는 Ctrl-b (순정) 또는 Ctrl-a. 모든 tmux 조작은 prefix 로 시작하고, nvim 의
+창 조작은 Ctrl-w 로 시작한다. 이 둘이 두 도구의 경계다.
+
+	prefix %   "		좌우 / 상하 분할 (현재 디렉토리 유지)
+	prefix o  방향키	패널 이동 (zoom 상태 유지)	prefix ;  직전 패널
+	prefix z		이 패널만 전체 화면 토글
+	prefix q		패널 번호 표시		prefix x  패널 닫기
+	prefix c  n  p		윈도우(탭) 만들기 / 다음 / 이전
+	prefix d		분리. tmux a 로 복귀	prefix s  세션 목록
+	prefix w		세션/윈도우/패널 트리
+	prefix [		복사 모드 (vi 키). q 로 나옴
+	prefix ?		tmux 전체 바인딩 목록
+	prefix G		lazygit 팝업
+	prefix H		이 치트시트 팝업
+	prefix :		명령 입력 (예: set -g popup-style 'bg=#2a2b3d')
+
+Claude Code 와 나란히 쓸 때 ~
+	왼쪽 claude, 오른쪽 nvim. Claude 가 파일을 고친 뒤 nvim 패널로 오면 버퍼가
+	자동 갱신된다 (focus-events + autoread). 의심되면 :e.
+
+==============================================================================
+6. lazygit							*jw-lazygit*
+
+	?		그 패널의 키 전부		q  닫기
+	Space		스테이징 토글		a  전부 토글
+	c		커밋			C  에디터로 커밋 메시지
+	P  p		푸시 / 풀		e  파일 편집 (nvim 안이면 현재 nvim 에)
+	Enter		파일: 줄 단위 스테이징 뷰 / 커밋: 변경 내용
+	브랜치 패널	Space 체크아웃  n 새 브랜치
+	]  [		패널 안 탭 이동 (Worktrees, 서브모듈 등)
+
+==============================================================================
+7. 이 파일 고치기						*jw-edit*
+
+위치: dotfiles 의 home/dot_config/nvim/doc/jw.txt → ~/.config/nvim/doc/jw.txt
+형식: :h help-writing. 첫 줄의 *jw.txt* 와 각 절의 *태그* 가 색인 대상이다.
+태그 색인(doc/tags)은 저장할 때와 nvim 시작 시(파일이 색인보다 새로우면)
+자동으로 다시 만든다 (config/core/autocmds.lua). 수동: :helptags ~/.config/nvim/doc
+새 절을 만들면 *jw-이름* 태그를 붙이고 목차에 |jw-이름| 링크를 추가한다.
+"지금 익히는 키" 는 붙은 것을 내리고 다음 묶음을 올리는 식으로 돌린다.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
