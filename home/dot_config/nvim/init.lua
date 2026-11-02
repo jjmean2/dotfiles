@@ -80,6 +80,7 @@ vim.g.maplocalleader = ","
 -- ==================================================
 require_config_with_variants("config.core.options")
 require_config_with_variants("config.core.autocmds")
+require_config_with_variants("config.core.statusline")
 
 -- ==================================================
 -- 🔌 플러그인 매니저 초기화

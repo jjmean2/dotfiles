@@ -90,6 +90,10 @@ diff 모드 (|jw-diff|) ~							*jw-diff*
 	여는 법: <leader>ghd (index), <leader>ghD (HEAD). 순정으로는
 	:vnew | r !git show :./# | windo diffthis
 
+statusline (맨 아래 한 줄, 순정 포맷 문자열) ~
+	경로 [+]  브랜치 +추가 ~변경 -삭제   ...   E에러 W경고  LSP이름  [형식] 줄:열 %
+	창이 여러 개여도 하나만 (laststatus=3), 커서가 있는 창 기준. 수정: core/statusline.lua
+
 그 밖에 ~
 	gcc  gc{motion}	주석 토글			Ctrl-L  검색 하이라이트 해제
 	Ctrl-^		직전 파일			:cd {dir}  프로젝트 루트 이동 (|jw-cwd|)

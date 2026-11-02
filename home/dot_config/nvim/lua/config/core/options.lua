@@ -18,7 +18,7 @@ vim.opt.number = true
 vim.opt.showmatch = true
 vim.opt.matchtime = 2
 vim.opt.visualbell = true
-vim.opt.rulerformat = '%15(%c%V %p%%%)'
+-- 줄:열 표시는 statusline 이 맡는다 (core/statusline.lua). ruler 는 statusline 이 비었을 때만 쓰인다.
 
 -- 플로팅 창 테두리 (0.11+). hover(K), signature, 진단 팝업, gitsigns blame 처럼 자기
 -- 테두리를 지정하지 않는 플로팅 창이 모두 이 값을 따른다. 기본값 "" 는 테두리 없음이고,
