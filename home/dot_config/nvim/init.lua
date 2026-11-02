@@ -79,6 +79,7 @@ vim.g.maplocalleader = ","
 -- 🛠️ 에디터 options
 -- ==================================================
 require_config_with_variants("config.core.options")
+require_config_with_variants("config.core.autocmds")
 
 -- ==================================================
 -- 🔌 플러그인 매니저 초기화
