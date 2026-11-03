@@ -31,3 +31,16 @@ if vim.uv.fs_stat(doc) then
   end
   if stale then helptags() end
 end
+
+-- 피커 입력창(snacks_picker_input)에서는 순정 'autocomplete' 를 끈다.
+-- 팝업 메뉴가 떠 있는 동안에는 TextChangedI 가 발생하지 않고 TextChangedP 가 대신 발생하는데
+-- (:h TextChangedI), snacks 입력창은 TextChangedI 만 들어서 팝업이 뜬 순간부터 live grep 갱신이
+-- 멈춘다. 'autocomplete' 는 global-local 이라 이 버퍼에서만 끌 수 있다 (core/options.lua 의
+-- 전역 설정은 그대로). 검색어 입력창에 자동완성은 어차피 쓸모가 없다.
+vim.api.nvim_create_autocmd("FileType", {
+  group = JwVim.augroup("PickerNoAutocomplete"),
+  pattern = "snacks_picker_input",
+  callback = function(ev)
+    vim.bo[ev.buf].autocomplete = false
+  end,
+})

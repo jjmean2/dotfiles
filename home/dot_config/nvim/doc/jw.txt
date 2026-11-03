@@ -69,6 +69,8 @@ LSP (서버가 붙으면 자동) ~
 	  버퍼 단어가 LSP 후보를 가린다 → complete 의 .^5 w^5 b^5 숫자를 줄이거나 빼기
 	  엉뚱한 fuzzy 항목이 올라온다 → completeopt 에서 fuzzy 빼기
 	  아예 끄려면 :set noautocomplete (수동 Ctrl-X Ctrl-O 는 그대로)
+	피커 입력창에서는 꺼져 있다 (core/autocmds.lua). 팝업이 떠 있으면 snacks 가 듣는
+	TextChangedI 가 발생하지 않아 live grep 갱신이 멈추기 때문.
 	gq		LSP 포맷 (formatexpr). 저장 시 포맷은 conform, 수동은 <leader>cf
 
 진단 ~
