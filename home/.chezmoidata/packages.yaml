@@ -25,6 +25,9 @@ packages:
       - ghostty
       # ghostty 의 한글 fallback 폰트 (config.ghostty 의 font-family)
       - font-d2coding
+      # 키 리매퍼. 한글 입력 상태에서 tmux prefix/Esc 를 누르면 영문으로 바꾼다 (dot_config/private_karabiner/private_karabiner.json).
+      # 설치 후 System Settings 에서 백그라운드 항목·드라이버 확장·손쉬운 사용 권한을 한 번 승인해야 동작한다.
+      - karabiner-elements
     # 언어 런타임은 여기가 아니라 dot_config/mise/conf.d/shared.toml 에 선언한다.
     # 설치 스크립트가 mise install 로 그 파일을 읽어 설치한다.
   linux:

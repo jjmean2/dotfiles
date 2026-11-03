@@ -123,6 +123,13 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
 - **초기값만 제공하는 파일**: `create_` 접두사(빈 파일은 `create_empty_`). 대상에 파일이 없을 때만 만들고 이후에는 건드리지 않는다.
   (예: `git config --global` 이 기록하는 `~/.config/git/config`)
 - **개인 도구**: `home/dot_jongwan/bin/` → `~/.jongwan/bin/`. 저장소 밖에서 넣은 도구와 섞여 있어도 chezmoi 는 관리하는 파일만 건드린다.
+- **한글 상태에서 tmux prefix / Esc (macOS)**: 입력기가 Ghostty 앞단에서 평문자를 가로채 조합하므로, 한글 상태에서는
+  `prefix c` 의 `c` 가 tmux 에 닿지 않고 vim normal 모드도 자모를 받는다. tmux 는 입력기 상태를 알 수 없어 자체 해법이 없다.
+  그래서 Karabiner-Elements 규칙(`home/dot_config/private_karabiner/private_karabiner.json`)이 Ghostty 가 앞에 있고 입력기가 한글일 때
+  `ctrl+b` / `Esc` / `ctrl+[` 를 "영문 전환 + 그 키" 로 바꾼다. 제어 조합은 입력기를 통과하므로 전환이 늦어도 prefix 는 들어가고,
+  뒤따르는 키는 영문 상태에서 들어간다. 부작용은 zsh/nvim 에서 `ctrl+b` 를 눌러도 영문으로 바뀌는 것 하나다.
+  끄려면 Karabiner 설정 창 Complex Modifications 탭에서 규칙을 끄거나 메뉴바에서 Quit. 설정 창에서 뭔가 바꾸면 Karabiner 가
+  `karabiner.json` 을 다시 써서 `chezmoi status` 에 차이가 생기므로, 유지할 변경은 `chezmoi re-add` 로 가져온다.
 - **tmux 세션 = 프로젝트**: `tmux-sessionizer [경로] [--layout ide|plain]` (tmux 안에서는 `prefix S` 팝업) 가
   프로젝트 디렉토리 이름의 세션으로 들어가고, 없으면 왼쪽 셸 / 오른쪽 nvim 으로 만든다. 찾는 곳은 스크립트 머리의 `PROJECT_ROOTS`.
 
