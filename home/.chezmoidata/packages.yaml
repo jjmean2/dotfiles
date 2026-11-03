@@ -31,6 +31,9 @@ packages:
     # 도구 이름(= canonical 실행파일 이름). 패키지/실행파일 이름이 다른 경우는
     # 설치 스크립트 안의 default_pkg/pkg_override/bin_override 테이블에 등록한다.
     tools:
+      - tmux
+      # tmux-sessionizer(prefix S)와 셸 Ctrl-R/Ctrl-T 가 쓴다. macOS 는 brews 에 있다.
+      - fzf
       - rg
       - fd
       - jq
