@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# tmux-sessionizer: 프로젝트 디렉토리를 골라 그 이름의 tmux 세션으로 들어간다 (없으면 만든다).
+#
+# 멘탈 모델: 세션 = 프로젝트. 세션에 프로젝트 이름을 붙이고 그 디렉토리에서 시작하면 세션 전환이
+# 곧 프로젝트 전환이다. 분리(prefix d)해도 세션은 살아 있어 Claude, 셸 히스토리, nvim 버퍼가
+# 프로젝트별로 보존된다. 순정 대응은 `tmux new -s 이름 -c 경로` + `prefix s` 이고, 이 스크립트는
+# "없으면 만들어 준다" 와 "기본 레이아웃" 만 보탠다.
+#
+# 사용
+#   tmux-sessionizer                  fzf 로 고른다 (tmux 안에서는 prefix S 가 팝업으로 띄움)
+#   tmux-sessionizer <디렉토리>       바로 그 프로젝트로
+#   tmux-sessionizer --layout plain   새 세션을 만들 때 레이아웃 지정 (아래 LAYOUTS)
+#   tmux-sessionizer --list           후보 목록만 출력 (디버그)
+#
+# 후보 = PROJECT_ROOTS 아래의 git 저장소 + 지금 열려 있는 세션. 세션 이름은 디렉토리 이름이고
+# tmux 가 못 쓰는 . 과 : 은 _ 로 바꾼다. 이미 있는 세션으로 갈 때는 레이아웃을 건드리지 않는다.
+set -euo pipefail
+
+# --- 설정 --------------------------------------------------------------------
+# 프로젝트를 찾을 곳. "경로:깊이" 로, 깊이만큼 내려가며 .git 이 있는 디렉토리를 모은다.
+#   ~/dev/<그룹>/<프로젝트> 구조라 dev 는 2, squarelab/work 는 자기 자신(0)과 바로 아래(1).
+PROJECT_ROOTS=(
+  "$HOME/dev:2"
+  "$HOME/squarelab:1"
+  "$HOME/work:1"
+)
+# 새 세션의 기본 레이아웃 (환경변수로 바꿀 수 있다)
+LAYOUT="${TMUX_SESSIONIZER_LAYOUT:-ide}"
+
+# --- 레이아웃 ----------------------------------------------------------------
+# 새 세션을 만든 직후 한 번만 적용한다. 이름을 추가하려면 함수를 하나 더 쓰고 case 에 넣는다.
+# tmux 자체의 패널 배치 프리셋(prefix Space, select-layout)과는 별개로, "어떤 패널에 무엇을
+# 띄우나" 를 정하는 것이다.
+layout_ide() {   # 왼쪽 셸(여기서 claude), 오른쪽 nvim. 포커스는 왼쪽
+  local session=$1 dir=$2
+  tmux split-window -h -t "$session" -c "$dir"
+  tmux send-keys -t "$session:.1" 'nvim' Enter   # 셸 위에서 띄워 nvim 을 닫아도 패널이 남는다
+  tmux select-pane -t "$session:.0"
+}
+layout_plain() { # 셸 하나
+  :
+}
+apply_layout() {
+  case "$1" in
+    ide)   layout_ide "$2" "$3" ;;
+    plain) layout_plain "$2" "$3" ;;
+    *) echo "tmux-sessionizer: 모르는 레이아웃 '$1' (ide, plain)" >&2; return 1 ;;
+  esac
+}
+
+# --- 후보 수집 ----------------------------------------------------------------
+list_projects() {
+  local entry root depth
+  for entry in "${PROJECT_ROOTS[@]}"; do
+    root=${entry%:*}; depth=${entry##*:}
+    [ -d "$root" ] || continue
+    # 루트 자신도 저장소면 후보. 그 아래는 depth 까지 .git(디렉토리 또는 worktree 의 파일) 검색
+    [ -e "$root/.git" ] && printf '%s\n' "$root"
+    [ "$depth" -gt 0 ] && find "$root" -mindepth 2 -maxdepth $((depth + 1)) -name .git -prune \
+      2>/dev/null | sed 's|/\.git$||'
+  done
+}
+list_sessions() {
+  tmux list-sessions -F '#{session_path}' 2>/dev/null || true
+}
+candidates() {
+  { list_sessions; list_projects; } | awk '!seen[$0]++'   # 순서 유지하며 중복 제거
+}
+
+# --- 인자 ---------------------------------------------------------------------
+target=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --layout) LAYOUT=$2; shift 2 ;;
+    --list)   candidates; exit 0 ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    *) target=$1; shift ;;
+  esac
+done
+
+# --- 고르기 -------------------------------------------------------------------
+if [ -z "$target" ]; then
+  command -v fzf >/dev/null || { echo "tmux-sessionizer: fzf 가 필요합니다" >&2; exit 1; }
+  target=$(candidates | sed "s|^$HOME/|~/|" | fzf --prompt='project> ' --height=100% --reverse) || exit 0
+  target=${target/#\~/$HOME}
+fi
+[ -d "$target" ] || { echo "tmux-sessionizer: 디렉토리가 아닙니다: $target" >&2; exit 1; }
+target=$(cd "$target" && pwd)
+name=$(basename "$target" | tr '.:' '__')
+
+# --- 세션 만들기 / 전환 -------------------------------------------------------
+if ! tmux has-session -t "=$name" 2>/dev/null; then
+  tmux new-session -d -s "$name" -c "$target"
+  apply_layout "$LAYOUT" "$name" "$target"
+fi
+if [ -n "${TMUX:-}" ]; then
+  tmux switch-client -t "=$name"
+else
+  tmux attach-session -t "=$name"
+fi
