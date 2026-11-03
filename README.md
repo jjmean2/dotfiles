@@ -123,6 +123,8 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
 - **초기값만 제공하는 파일**: `create_` 접두사(빈 파일은 `create_empty_`). 대상에 파일이 없을 때만 만들고 이후에는 건드리지 않는다.
   (예: `git config --global` 이 기록하는 `~/.config/git/config`)
 - **개인 도구**: `home/dot_jongwan/bin/` → `~/.jongwan/bin/`. 저장소 밖에서 넣은 도구와 섞여 있어도 chezmoi 는 관리하는 파일만 건드린다.
+- **tmux 세션 = 프로젝트**: `tmux-sessionizer [경로] [--layout ide|plain]` (tmux 안에서는 `prefix S` 팝업) 가
+  프로젝트 디렉토리 이름의 세션으로 들어가고, 없으면 왼쪽 셸 / 오른쪽 nvim 으로 만든다. 찾는 곳은 스크립트 머리의 `PROJECT_ROOTS`.
 
 ## 자주 쓰는 명령
 

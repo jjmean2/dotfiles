@@ -179,7 +179,13 @@ prefix 는 Ctrl-b (순정) 또는 Ctrl-a. 모든 tmux 조작은 prefix 로 시�
 	prefix ?		tmux 전체 바인딩 목록
 	prefix G		lazygit 팝업
 	prefix H		이 치트시트 팝업
+	prefix S		프로젝트 → 세션 전환기 (없으면 만든다). 세션 = 프로젝트
 	prefix :		명령 입력 (예: set -g popup-style 'bg=#2a2b3d')
+
+세션 = 프로젝트 ~
+	prefix S 로 프로젝트를 고르면 그 이름의 세션으로 간다. 처음이면 세션을 만들고
+	왼쪽 셸(여기서 claude) / 오른쪽 nvim 으로 연다. 열린 세션끼리는 prefix s 로도 간다.
+	셸에서: tmux-sessionizer [경로] [--layout ide|plain]. prefix d 로 분리해도 세션은 남는다.
 
 Claude Code 와 나란히 쓸 때 ~
 	왼쪽 claude, 오른쪽 nvim. Claude 가 파일을 고친 뒤 nvim 패널로 오면 버퍼가
