@@ -69,7 +69,9 @@ conf() { git config --get "tmux-worktree.$1" 2>/dev/null || true; }   # 없으�
 repo_init() {
   COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
     || die "git 저장소가 아닙니다: $(abbrev_home "$PWD")  (워크트리가 아닌 윈도우는 prefix c)"
-  MAIN=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
+  WT_LIST=$(list_worktrees)                              # 워크트리 목록은 한 번만 읽는다
+  WT_PATHS=$(cut -f1 <<< "$WT_LIST")
+  MAIN=${WT_PATHS%%$'\n'*}
   [ -n "$MAIN" ] && [ -d "$MAIN/.git" ] || die "bare 저장소는 지원하지 않습니다"
   NAME=$(conf name); NAME=${NAME:-$(basename "$MAIN")}
 }
@@ -127,12 +129,14 @@ list_worktrees() {  # "<경로>\t<브랜치>\t<플래그>" (메인이 첫 줄)
     esac
   done < <(git worktree list --porcelain; echo)
 }
-# 세션의 윈도우: "<인덱스>\t<id>\t<@worktree>\t<활성 패널 경로>"
-list_windows() { [ -n "$SESSION" ] && tmux list-windows -t "$SESSION" -F $'#{window_index}\t#{window_id}\t#{@worktree}\t#{pane_current_path}' 2>/dev/null || true; }
+# 세션의 윈도우: "<인덱스> US <id> US <@worktree> US <활성 패널 경로>". @worktree 는 비어 있을 수 있어
+# 구분자를 tab 이 아닌 US(0x1f)로 둔다 (bash 의 read 는 tab 같은 공백 IFS 가 연속되면 빈 필드를 합친다).
+US=$'\x1f'
+list_windows() { [ -n "$SESSION" ] && tmux list-windows -t "$SESSION" -F "#{window_index}${US}#{window_id}${US}#{@worktree}${US}#{pane_current_path}" 2>/dev/null || true; }
 # 워크트리 경로 → 그 윈도우 id (없으면 빈 줄). @worktree 가 우선, 메인은 패널 경로로 보완.
 window_for() {
   local want=$1 idx id tag pane fallback="" inside
-  while IFS=$'\t' read -r idx id tag pane; do
+  while IFS=$US read -r idx id tag pane; do
     [ "$tag" = "$want" ] && { echo "$id"; return; }
     if [ "$want" = "$MAIN" ] && [ -z "$tag" ] && [ -z "$fallback" ]; then
       case $pane in "$MAIN"|"$MAIN"/*)
@@ -153,12 +157,13 @@ rows() {  # $1 = all | worktrees
   local has_local=$'\n'   # 로컬 브랜치 이름 목록 (줄바꿈으로 감쌈. macOS bash 3.2 에는 연관 배열이 없다)
   while IFS=$'\t' read -r path branch flags; do
     wt+=("$path|$branch|$flags"); n=${#branch}; [ "$n" -gt "$w" ] && w=$n
-  done < <(list_worktrees)
+  done <<< "$WT_LIST"
   if [ "$mode" = all ]; then
-    while IFS=$'\t' read -r ref path track; do
+    # worktreepath 는 비어 있을 수 있으므로 구분자는 US (git 포맷의 %1f)
+    while IFS=$US read -r ref path track; do
       has_local="$has_local$ref"$'\n'
       [ -z "$path" ] && { br+=("$ref|$track"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n; }
-    done < <(git for-each-ref refs/heads --format=$'%(refname:short)\t%(worktreepath)\t%(upstream:track)')
+    done < <(git for-each-ref refs/heads --format='%(refname:short)%1f%(worktreepath)%1f%(upstream:track)')
     while IFS= read -r ref; do
       case $ref in */HEAD) continue ;; esac       # origin/HEAD 는 브랜치가 아니다
       ref=${ref#refs/remotes/}; branch=${ref#*/}
@@ -167,7 +172,6 @@ rows() {  # $1 = all | worktrees
     done < <(git for-each-ref refs/remotes --format='%(refname)' | sort)
   fi
   [ "$w" -gt 40 ] && w=40
-  WT_PATHS=$(printf '%s\n' "${wt[@]+"${wt[@]}"}" | cut -d'|' -f1)
   # 정렬 키: 0 윈도우 열림, 1 워크트리, 2 브랜치, 3 원격. 같은 키 안에서는 원래 순서(메인 먼저, 나머지 이름순)
   {
     for e in "${wt[@]+"${wt[@]}"}"; do
@@ -262,7 +266,7 @@ resolve_name() {
       case " $flags " in *" prunable "*) KIND=prunable ;; esac
       return
     fi
-  done < <(list_worktrees)
+  done <<< "$WT_LIST"
   if git show-ref -q --verify "refs/heads/$name"; then KIND=branch; BRANCH=$name; TARGET=""; return; fi
   local remotes; remotes=$(git for-each-ref "refs/remotes/*/$name" --format='%(refname:short)')
   if [ -n "$remotes" ] && [ "$(wc -l <<< "$remotes")" -eq 1 ]; then KIND=remote; BRANCH=$name; TARGET=$remotes; return; fi
@@ -274,7 +278,7 @@ resolve_path() {
   local want path branch flags; want=$(cd "$1" && pwd)
   while IFS=$'\t' read -r path branch flags; do
     [ "$path" = "$want" ] && { KIND=worktree; BRANCH=$branch; TARGET=$path; return; }
-  done < <(list_worktrees)
+  done <<< "$WT_LIST"
   die "등록된 워크트리가 아닙니다: $(abbrev_home "$want")"
 }
 run_setup() {  # 새 워크트리 안에서 tmux-worktree.setup 을 한 번
