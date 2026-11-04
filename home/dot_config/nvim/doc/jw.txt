@@ -189,11 +189,12 @@ prefix 는 Ctrl-b (순정) 또는 Ctrl-a. 모든 tmux 조작은 prefix 로 시�
 	왼쪽 셸(여기서 claude) / 오른쪽 nvim 으로 연다. 열린 세션끼리는 prefix s 로도 간다.
 	셸에서: tmux-sessionizer [경로] [--layout ide|plain]. prefix d 로 분리해도 세션은 남는다.
 
-	팝업 안 (헤더에도 적혀 있다). 검색어는 모드를 바꿔도 유지된다.
-	ctrl-p / ctrl-f / ctrl-r	모드: project(목록) / dir(파일시스템 검색) / recent(최근)
+	팝업 안 (헤더에도 적혀 있다). fzf 순정 키(ctrl-p/n 이동, ctrl-a/e 줄 처음/끝)는 그대로.
+	tab / shift-tab		모드 순환: project(목록) → dir(파일시스템 검색) → recent(최근).
+				검색어는 모드를 바꿔도 유지된다
 	Enter			선택. 맞는 후보가 없으면 친 글자를 경로로 (팝업을 띄운 패널 기준)
-	alt-enter		후보가 있어도 친 글자를 경로로. 없는 경로면 만들지 물어봄
-	ctrl-a / ctrl-x / ctrl-e	커서 항목 등록 / 제거 / 목록 파일 편집
+	alt-enter		후보가 있어도 친 글자를 경로로. 없는 경로면 만들지 물어봄 (왼쪽 option)
+	ctrl-t / ctrl-x / ctrl-o	커서 항목 등록 / 제거 / 목록 파일 열어 편집
 	목록 파일: ~/.config/tmux-sessionizer/projects (머신별, 형식은 파일 주석). git
 	저장소는 이름 옆에 브랜치가 붙고, 미리보기에 최근 커밋과 내용이 뜬다.
 
