@@ -1,0 +1,14 @@
+# tmux-sessionizer(prefix S)가 보여줄 프로젝트 목록. 이 파일은 머신마다 다르다.
+# chezmoi 는 처음 한 번만 만들어 주고(create_) 이후에는 덮어쓰지 않으므로 여기서 직접 고친다.
+# 팝업 안에서 ctrl-a(등록) / ctrl-x(제거) / ctrl-e(이 파일 편집)로도 바꿀 수 있다.
+#
+#   <경로>:<깊이>          루트. 깊이만큼 내려가며 .git 이 있는 디렉토리를 자동 수집
+#   <경로>                 고정 항목. git 저장소가 아니어도 된다
+#   !<경로>                자동 수집에서 숨김 (열려 있는 세션은 그대로 보인다)
+#   search <경로>:<깊이>   ctrl-f 디렉토리 검색 범위. 여러 줄 가능 (기본 ~:4)
+#   exclude <이름>...      ctrl-f 가 건너뛸 디렉토리 이름 (기본 .git node_modules Library .Trash .cache)
+
+# ~/dev/<그룹>/<프로젝트> 구조라 dev 는 2, squarelab/work 는 자기 자신과 바로 아래
+~/dev:2
+~/squarelab:1
+~/work:1
