@@ -9,7 +9,7 @@
 # 사용
 #   tmux-sessionizer                  fzf 로 고른다 (tmux 안에서는 prefix S 가 팝업으로 띄움)
 #   tmux-sessionizer <디렉토리>       바로 그 프로젝트로
-#   tmux-sessionizer --layout plain   새 세션을 만들 때 레이아웃 지정 (아래 LAYOUTS)
+#   tmux-sessionizer --layout plain   새 세션을 만들 때 레이아웃 지정 (ide | plain, ~/.jongwan/share/tmux/layout.sh)
 #   tmux-sessionizer --add [디렉토리] 목록에 고정 등록 (생략하면 현재 디렉토리)
 #   tmux-sessionizer --remove <디렉토리>  목록에서 제거 (자동 수집된 것은 숨김으로)
 #   tmux-sessionizer --edit           목록 파일을 $EDITOR 로 열기
@@ -27,6 +27,13 @@
 # 목록 파일: ~/.config/tmux-sessionizer/projects (머신마다 다르다. 형식은 그 파일의 주석 참고)
 # 후보 = 목록 파일의 저장소·고정 항목 + 지금 열려 있는 세션. 세션 이름은 디렉토리 이름이고
 # tmux 가 못 쓰는 . 과 : 은 _ 로 바꾼다. 이미 있는 세션으로 갈 때는 레이아웃을 건드리지 않는다.
+#
+# 워크트리 (tmux-worktree, prefix W 와 짝). 세션 = 저장소, 윈도우 = 워크트리 라는 관례를 지키기 위해
+#   - 자동 수집은 .git 이 파일인 디렉토리(= 워크트리)를 프로젝트로 보지 않는다. 고정 항목은 적은 대로 쓴다.
+#   - 워크트리 경로를 골랐는데 그 이름의 세션이 없고 고정 항목도 아니면, 메인 체크아웃의 세션으로 가서
+#     그 워크트리의 윈도우를 연다 (tmux-worktree 에 넘김). 그 이름의 세션이 이미 있으면 그냥 그 세션으로
+#     간다 (순정 `tmux new -c <워크트리>` 로 만든 세션을 존중).
+#   - 세션을 만들 때 저장소면 첫 윈도우에 사용자 옵션 @worktree <경로> 를 둔다 (tmux-worktree 가 읽는다).
 set -euo pipefail
 
 # --- 설정 --------------------------------------------------------------------
@@ -39,27 +46,12 @@ LAYOUT="${TMUX_SESSIONIZER_LAYOUT:-ide}"
 DEFAULT_SEARCH="$HOME:4"
 DEFAULT_EXCLUDES=".git node_modules Library .Trash .cache"
 SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
+WORKTREE_BIN="$(dirname "$SELF")/tmux-worktree"
 
 # --- 레이아웃 ----------------------------------------------------------------
-# 새 세션을 만든 직후 한 번만 적용한다. 이름을 추가하려면 함수를 하나 더 쓰고 case 에 넣는다.
-# tmux 자체의 패널 배치 프리셋(prefix Space, select-layout)과는 별개로, "어떤 패널에 무엇을
-# 띄우나" 를 정하는 것이다.
-layout_ide() {   # 왼쪽 셸(여기서 claude), 오른쪽 nvim. 포커스는 왼쪽
-  local session=$1 dir=$2
-  tmux split-window -h -t "$session" -c "$dir"
-  tmux send-keys -t "$session:.1" 'nvim' Enter   # 셸 위에서 띄워 nvim 을 닫아도 패널이 남는다
-  tmux select-pane -t "$session:.0"
-}
-layout_plain() { # 셸 하나
-  :
-}
-apply_layout() {
-  case "$1" in
-    ide)   layout_ide "$2" "$3" ;;
-    plain) layout_plain "$2" "$3" ;;
-    *) echo "tmux-sessionizer: 모르는 레이아웃 '$1' (ide, plain)" >&2; return 1 ;;
-  esac
-}
+# 새 세션을 만든 직후 첫 윈도우에 한 번만 적용한다. 함수는 tmux-worktree 와 공유한다 (ide, plain).
+# shellcheck source=../share/tmux/layout.sh
+. "$(dirname "$SELF")/../share/tmux/layout.sh"
 
 # --- 경로 도우미 --------------------------------------------------------------
 expand_tilde() { printf '%s\n' "${1/#\~/$HOME}"; }
@@ -84,6 +76,16 @@ git_branch() {
     "ref: "*)            printf '%s' "${line#ref: }" ;;
     *)                   printf '%s' "${line:0:7}" ;;
   esac
+}
+# 워크트리의 메인 체크아웃. .git 파일의 "gitdir: <메인>/.git/worktrees/<이름>" 에서 역산한다 (git 프로세스 없음).
+# 워크트리가 아니거나 메인을 못 찾으면 빈 문자열.
+worktree_main() {
+  local g=$1/.git line
+  [ -f "$g" ] || return 0
+  IFS= read -r line < "$g" || return 0
+  g=${line#gitdir: }; [[ $g = /* ]] || g=$1/$g
+  case $g in */.git/worktrees/*) g=${g%/.git/worktrees/*}; [ -d "$g/.git" ] && printf '%s' "$g" ;; esac
+  return 0
 }
 
 # --- 목록 파일 ----------------------------------------------------------------
@@ -124,10 +126,11 @@ list_roots() {  # 설정의 루트 아래 git 저장소
     [ -n "$entry" ] || continue
     root=$(expand_tilde "${entry%:*}"); depth=${entry##*:}
     [ -d "$root" ] || continue
-    # 루트 자신도 저장소면 후보. 그 아래는 depth 까지 .git(디렉토리 또는 worktree 의 파일) 검색
+    # 루트 자신은 적은 대로 후보. 그 아래는 depth 까지 .git 디렉토리를 검색한다. .git 이 파일이면
+    # 워크트리라 건너뛴다 (워크트리는 세션이 아니라 메인 저장소 세션의 윈도우. tmux-worktree 참고).
     [ -e "$root/.git" ] && printf '%s\n' "$root"
     [ "$depth" -gt 0 ] && find "$root" -mindepth 2 -maxdepth $((depth + 1)) -name .git -prune \
-      2>/dev/null | sed 's|/\.git$||'
+      2>/dev/null | while IFS= read -r g; do [ -d "$g" ] && printf '%s\n' "${g%/.git}"; done
   done < <(config_roots)
 }
 list_pins() {
@@ -325,10 +328,25 @@ target=$(cd "$target" && pwd)
 name=$(basename "$target" | tr '.:' '__')
 record_history "$target"
 
+# 워크트리를 골랐으면 메인 저장소의 세션으로 바꾸고, 워크트리는 그 세션의 윈도우로 연다 (아래).
+# 예외: 그 이름의 세션이 이미 있거나(순정으로 만든 세션 존중) 목록 파일에 직접 적은 고정 항목이면 적은 대로.
+worktree=""
+if [ -f "$target/.git" ] && ! tmux has-session -t "=$name" 2>/dev/null && ! list_pins | grep -xF "$target" >/dev/null; then
+  main=$(worktree_main "$target")
+  if [ -n "$main" ]; then
+    worktree=$target; target=$main; name=$(basename "$target" | tr '.:' '__')
+  fi
+fi
+
 # --- 세션 만들기 / 전환 -------------------------------------------------------
 if ! tmux has-session -t "=$name" 2>/dev/null; then
-  tmux new-session -d -s "$name" -c "$target"
-  apply_layout "$LAYOUT" "$name" "$target"
+  win=$(tmux new-session -d -s "$name" -c "$target" -P -F '#{window_id}')
+  # 저장소면 첫 윈도우가 "이 체크아웃의 윈도우" 임을 사용자 옵션으로 남긴다 (tmux-worktree 가 읽는다)
+  [ -e "$target/.git" ] && tmux set-option -w -t "$win" @worktree "$target"
+  apply_layout "$LAYOUT" "$win" "$target"
+fi
+if [ -n "$worktree" ]; then
+  "$WORKTREE_BIN" -t "$name" --layout "$LAYOUT" "$worktree"
 fi
 if [ -n "${TMUX:-}" ]; then
   tmux switch-client -t "=$name"

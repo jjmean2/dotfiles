@@ -182,6 +182,7 @@ prefix 는 Ctrl-b (순정) 또는 Ctrl-a. 모든 tmux 조작은 prefix 로 시�
 	prefix G		lazygit 팝업
 	prefix H		이 치트시트 팝업
 	prefix S		프로젝트 → 세션 전환기 (없으면 만든다). 세션 = 프로젝트
+	prefix W		워크트리 → 윈도우 전환기 (없으면 만든다). 윈도우 = 워크트리
 	prefix :		명령 입력 (예: set -g popup-style 'bg=#2a2b3d')
 
 세션 = 프로젝트 ~
@@ -197,6 +198,26 @@ prefix 는 Ctrl-b (순정) 또는 Ctrl-a. 모든 tmux 조작은 prefix 로 시�
 	ctrl-t / ctrl-x / ctrl-o	커서 항목 등록 / 제거 / 목록 파일 열어 편집
 	목록 파일: ~/.config/tmux-sessionizer/projects (머신별, 형식은 파일 주석). git
 	저장소는 이름 옆에 브랜치가 붙고, 미리보기에 최근 커밋과 내용이 뜬다.
+	워크트리 경로를 고르면 메인 저장소의 세션으로 가서 그 워크트리의 윈도우를 연다
+	(그 이름의 세션이 이미 있거나 목록 파일에 직접 적은 항목이면 적은 대로 세션).
+
+윈도우 = 워크트리 ~
+	저장소 세션 안에서 prefix W 로 브랜치를 고르면 그 워크트리의 윈도우로 간다. 윈도우
+	탭(#W)에 브랜치 이름이 나열되어 벌어져 있는 작업이 상태바에 보인다. 이것은 tmux
+	위에 얹는 관례라 prefix c 의 보통 윈도우, 저장소 아닌 세션, 순정 tmux new 는 그대로다.
+	순정 대응: git worktree add -b <브랜치> <경로> main + tmux new-window -n <브랜치> -c <경로>.
+	셸에서: tmux-worktree [브랜치|경로] [--base ref] [--layout ide|plain]. --help 에 전부.
+
+	팝업 안. 한 목록에 워크트리(●N 은 열린 윈도우 번호), 브랜치, 원격 브랜치가 순서대로.
+	tab			all ↔ worktrees(워크트리만) 필터
+	Enter			행의 상태가 동작을 정한다: ●N → 그 윈도우. 워크트리만 → 윈도우 만들기.
+				브랜치만 → 워크트리 만들고 윈도우. 원격 → 추적 브랜치부터.
+				맞는 후보가 없으면 친 글자로 새 브랜치 (로컬 main 에서 분기, 확인 질문)
+	alt-enter		후보가 있어도 친 글자를 새 브랜치 이름으로
+	미리보기: 변경 여부, main 에 없는 커밋 수(머지됨 판정), 최근 커밋.
+	워크트리 위치: ~/dev/worktrees/<저장소>/<브랜치> (git config tmux-worktree.root / .name /
+	.location sibling / .setup. 스크립트 머리말 참고). Claude Code 가 만든 .claude/worktrees/
+	의 워크트리도 git worktree list 에 있으므로 같은 목록에 뜬다.
 
 Claude Code 와 나란히 쓸 때 ~
 	왼쪽 claude, 오른쪽 nvim. Claude 가 파일을 고친 뒤 nvim 패널로 오면 버퍼가
