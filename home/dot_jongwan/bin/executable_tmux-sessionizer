@@ -10,22 +10,33 @@
 #   tmux-sessionizer                  fzf 로 고른다 (tmux 안에서는 prefix S 가 팝업으로 띄움)
 #   tmux-sessionizer <디렉토리>       바로 그 프로젝트로
 #   tmux-sessionizer --layout plain   새 세션을 만들 때 레이아웃 지정 (아래 LAYOUTS)
+#   tmux-sessionizer --add [디렉토리] 목록에 고정 등록 (생략하면 현재 디렉토리)
+#   tmux-sessionizer --remove <디렉토리>  목록에서 제거 (자동 수집된 것은 숨김으로)
+#   tmux-sessionizer --edit           목록 파일을 $EDITOR 로 열기
 #   tmux-sessionizer --list           후보 목록만 출력 (디버그)
 #
-# 후보 = PROJECT_ROOTS 아래의 git 저장소 + 지금 열려 있는 세션. 세션 이름은 디렉토리 이름이고
+# 팝업(fzf) 안에서
+#   ctrl-p / ctrl-f / ctrl-r   모드 전환: project(목록) / dir(파일시스템 검색) / recent(최근 연 곳)
+#                              검색어는 모드를 바꿔도 유지된다
+#   Enter                      선택. 맞는 후보가 없으면 입력한 글자를 경로로 해석한다
+#   alt-enter                  후보가 있어도 입력한 글자를 경로로 쓴다 (없는 경로면 만들지 물어봄)
+#   ctrl-a / ctrl-x / ctrl-e   커서 항목을 목록에 등록 / 목록에서 제거 / 목록 파일 편집
+#
+# 목록 파일: ~/.config/tmux-sessionizer/projects (머신마다 다르다. 형식은 그 파일의 주석 참고)
+# 후보 = 목록 파일의 저장소·고정 항목 + 지금 열려 있는 세션. 세션 이름은 디렉토리 이름이고
 # tmux 가 못 쓰는 . 과 : 은 _ 로 바꾼다. 이미 있는 세션으로 갈 때는 레이아웃을 건드리지 않는다.
 set -euo pipefail
 
 # --- 설정 --------------------------------------------------------------------
-# 프로젝트를 찾을 곳. "경로:깊이" 로, 깊이만큼 내려가며 .git 이 있는 디렉토리를 모은다.
-#   ~/dev/<그룹>/<프로젝트> 구조라 dev 는 2, squarelab/work 는 자기 자신(0)과 바로 아래(1).
-PROJECT_ROOTS=(
-  "$HOME/dev:2"
-  "$HOME/squarelab:1"
-  "$HOME/work:1"
-)
+CONFIG="${TMUX_SESSIONIZER_CONFIG:-$HOME/.config/tmux-sessionizer/projects}"
+HISTORY="${TMUX_SESSIONIZER_HISTORY:-${XDG_STATE_HOME:-$HOME/.local/state}/tmux-sessionizer/history}"
+RECENT_MAX=30
 # 새 세션의 기본 레이아웃 (환경변수로 바꿀 수 있다)
 LAYOUT="${TMUX_SESSIONIZER_LAYOUT:-ide}"
+# dir 모드 기본 범위. 목록 파일의 search / exclude 줄이 있으면 그것으로 대체된다.
+DEFAULT_SEARCH="$HOME:4"
+DEFAULT_EXCLUDES=".git node_modules Library .Trash .cache"
+SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
 
 # --- 레이아웃 ----------------------------------------------------------------
 # 새 세션을 만든 직후 한 번만 적용한다. 이름을 추가하려면 함수를 하나 더 쓰고 case 에 넣는다.
@@ -48,23 +59,233 @@ apply_layout() {
   esac
 }
 
+# --- 경로 도우미 --------------------------------------------------------------
+expand_tilde() { printf '%s\n' "${1/#\~/$HOME}"; }
+abbrev_home()  { case $1 in "$HOME") printf '~\n' ;; "$HOME"/*) printf '~%s\n' "${1#"$HOME"}" ;; *) printf '%s\n' "$1" ;; esac; }
+# 디렉토리를 정규화한 절대 경로로. 존재하지 않으면 빈 줄.
+canon() { [ -d "$1" ] && (cd "$1" 2>/dev/null && pwd) || true; }
+
+# git 브랜치 이름. 후보마다 git 을 띄우면 팝업이 느려지므로 .git/HEAD 를 직접 읽는다.
+# 저장소가 아니면 빈 문자열, detached 면 짧은 해시.
+git_branch() {
+  local g=$1/.git line
+  [ -e "$g" ] || return 0
+  if [ -f "$g" ]; then                       # worktree: "gitdir: <경로>"
+    IFS= read -r line < "$g" || return 0
+    g=${line#gitdir: }
+    [[ $g = /* ]] || g=$1/$g
+  fi
+  [ -f "$g/HEAD" ] || return 0
+  IFS= read -r line < "$g/HEAD" || return 0
+  case $line in
+    "ref: refs/heads/"*) printf '%s' "${line#ref: refs/heads/}" ;;
+    "ref: "*)            printf '%s' "${line#ref: }" ;;
+    *)                   printf '%s' "${line:0:7}" ;;
+  esac
+}
+
+# --- 목록 파일 ----------------------------------------------------------------
+# 형식(한 줄에 하나, # 은 주석):
+#   <경로>:<깊이>      루트. 깊이만큼 내려가며 .git 이 있는 디렉토리를 자동 수집
+#   <경로>             고정 항목. git 저장소가 아니어도 된다
+#   !<경로>            자동 수집에서 숨김 (열려 있는 세션은 그대로 보인다)
+#   search <경로>:<깊이>   dir 모드(ctrl-f)가 뒤지는 범위. 여러 줄 가능
+#   exclude <이름>...  dir 모드에서 건너뛸 디렉토리 이름
+config_lines() {  # 주석·빈 줄을 뺀 설정 줄
+  [ -f "$CONFIG" ] || return 0
+  sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$CONFIG"
+}
+config_roots()    { config_lines | grep -E '^[^!s][^[:space:]]*:[0-9]+$' || true; }
+config_pins()     { config_lines | grep -vE '^(!|search |exclude )' | grep -vE ':[0-9]+$' || true; }
+config_hidden()   { config_lines | sed -n 's/^!//p'; }
+config_search()   { local s; s=$(config_lines | sed -n 's/^search[[:space:]]\{1,\}//p'); printf '%s\n' "${s:-$DEFAULT_SEARCH}"; }
+config_excludes() { local e; e=$(config_lines | sed -n 's/^exclude[[:space:]]\{1,\}//p' | tr '\n' ' '); printf '%s\n' "${e:-$DEFAULT_EXCLUDES}"; }
+
+ensure_config() {
+  [ -f "$CONFIG" ] && return 0
+  mkdir -p "$(dirname "$CONFIG")"
+  cat > "$CONFIG" <<'EOF'
+# tmux-sessionizer 가 prefix S 팝업에 보여줄 프로젝트 목록. 이 파일은 머신마다 다르다.
+#   <경로>:<깊이>    루트. 깊이만큼 내려가며 .git 이 있는 디렉토리를 자동 수집
+#   <경로>           고정 항목 (git 저장소가 아니어도 됨)
+#   !<경로>          자동 수집에서 숨김
+#   search <경로>:<깊이>   ctrl-f 검색 범위 (기본 ~:4)
+#   exclude <이름>...      ctrl-f 가 건너뛸 디렉토리 이름
+~/dev:2
+EOF
+}
+
 # --- 후보 수집 ----------------------------------------------------------------
-list_projects() {
+list_roots() {  # 설정의 루트 아래 git 저장소
   local entry root depth
-  for entry in "${PROJECT_ROOTS[@]}"; do
-    root=${entry%:*}; depth=${entry##*:}
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    root=$(expand_tilde "${entry%:*}"); depth=${entry##*:}
     [ -d "$root" ] || continue
     # 루트 자신도 저장소면 후보. 그 아래는 depth 까지 .git(디렉토리 또는 worktree 의 파일) 검색
     [ -e "$root/.git" ] && printf '%s\n' "$root"
     [ "$depth" -gt 0 ] && find "$root" -mindepth 2 -maxdepth $((depth + 1)) -name .git -prune \
       2>/dev/null | sed 's|/\.git$||'
-  done
+  done < <(config_roots)
+}
+list_pins() {
+  local p; while IFS= read -r p; do [ -n "$p" ] && canon "$(expand_tilde "$p")"; done < <(config_pins)
+}
+list_hidden() {
+  local p; while IFS= read -r p; do [ -n "$p" ] && canon "$(expand_tilde "$p")"; done < <(config_hidden)
 }
 list_sessions() {
   tmux list-sessions -F '#{session_path}' 2>/dev/null || true
 }
-candidates() {
-  { list_sessions; list_projects; } | awk '!seen[$0]++'   # 순서 유지하며 중복 제거
+# 표시용 줄로 바꾼다: "<~경로> [<브랜치>]<TAB><절대경로>". fzf 는 TAB 앞만 보여주고 뒤를 돌려준다.
+annotate() {
+  local p b rows=() w=0 n
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    b=$(git_branch "$p")
+    rows+=("$(abbrev_home "$p")|$b|$p")
+    n=$(abbrev_home "$p"); n=${#n}; [ "$n" -gt "$w" ] && w=$n
+  done
+  [ "$w" -gt 60 ] && w=60
+  for p in "${rows[@]+"${rows[@]}"}"; do
+    local disp=${p%%|*} rest=${p#*|} br abs
+    br=${rest%%|*}; abs=${rest#*|}
+    if [ -n "$br" ]; then
+      printf '%-*s \033[2;36m%s\033[0m\t%s\n' "$w" "$disp" "$br" "$abs"
+    else
+      printf '%s\t%s\n' "$disp" "$abs"
+    fi
+  done
+}
+plain_rows() {  # 브랜치 없이 "<~경로><TAB><절대경로>" (dir 모드: 후보가 많아 git 조회를 생략)
+  local p; while IFS= read -r p; do [ -n "$p" ] && printf '%s\t%s\n' "$(abbrev_home "$p")" "$p"; done
+}
+registered() {  # 설정으로 들어온 항목 (고정 + 자동 수집, 숨김 제외). 열려 있는 세션은 포함하지 않는다
+  local hidden; hidden=$(list_hidden)
+  { list_pins; list_roots | grep -vxF -f <(printf '%s\n' "$hidden"; echo '//none//'); } | awk '!seen[$0]++'
+}
+candidates() {  # project 모드 = 열려 있는 세션 + 설정 항목. 순서 유지하며 경로로 중복 제거
+  { list_sessions; registered; } | awk '!seen[$0]++' | annotate
+}
+list_dirs() {   # dir 모드. search 범위를 fd 로 평탄하게 뒤진다 (없으면 find)
+  local entry root depth ex args=()
+  for ex in $(config_excludes); do args+=(--exclude "$ex"); done
+  while IFS= read -r entry; do
+    root=$(expand_tilde "${entry%:*}"); depth=${entry##*:}
+    [ -d "$root" ] || continue
+    if command -v fd >/dev/null; then
+      fd --type d --hidden --max-depth "$depth" "${args[@]+"${args[@]}"}" --absolute-path . "$root" 2>/dev/null
+    else
+      find "$root" -mindepth 1 -maxdepth "$depth" -type d 2>/dev/null
+    fi
+  done < <(config_search) | sed 's|/$||' | plain_rows
+}
+list_recent() { # recent 모드. 최근 연 순서, 중복 제거, 사라진 디렉토리 제외
+  [ -f "$HISTORY" ] || return 0
+  tail -r "$HISTORY" 2>/dev/null || tac "$HISTORY"
+}
+recent_rows() {
+  list_recent | awk '!seen[$0]++' | while IFS= read -r p; do [ -d "$p" ] && printf '%s\n' "$p"; done \
+    | head -n "$RECENT_MAX" | annotate
+}
+record_history() {
+  mkdir -p "$(dirname "$HISTORY")"
+  printf '%s\n' "$1" >> "$HISTORY"
+}
+
+# --- 목록 편집 ----------------------------------------------------------------
+# 설정에서 내용이 $1 또는 $2 와 같은 줄을 지운다 (뒤따르는 주석·공백은 무시). 정규식을 쓰지 않는다.
+delete_lines() {
+  local tmp; tmp=$(mktemp "$CONFIG.XXXXXX")
+  awk -v a="$1" -v b="$2" '{ l=$0; sub(/[ \t]*#.*$/, "", l); sub(/[ \t]+$/, "", l); if (l==a || l==b) next; print }' \
+    "$CONFIG" > "$tmp" && mv "$tmp" "$CONFIG"
+}
+add_entry() {
+  local dir; dir=$(canon "${1:-$PWD}")
+  [ -n "$dir" ] || { echo "tmux-sessionizer: 디렉토리가 아닙니다: ${1:-$PWD}" >&2; return 1; }
+  ensure_config
+  local short; short=$(abbrev_home "$dir")
+  # 숨김 줄이 있으면 그것을 지우는 것으로 충분하다 (다시 자동 수집된다)
+  if config_hidden | grep -qxF -e "$short" -e "$dir"; then
+    delete_lines "!$short" "!$dir"
+    return 0
+  fi
+  registered | grep -qxF "$dir" && return 0   # 이미 설정에 있음 (열려 있는 세션일 뿐이면 등록한다)
+  printf '%s\n' "$short" >> "$CONFIG"
+}
+remove_entry() {
+  local dir; dir=$(canon "$1")
+  [ -n "$dir" ] || { echo "tmux-sessionizer: 디렉토리가 아닙니다: $1" >&2; return 1; }
+  ensure_config
+  local short; short=$(abbrev_home "$dir")
+  if config_pins | grep -qxF -e "$short" -e "$dir"; then        # 고정 항목이면 줄을 지운다
+    delete_lines "$short" "$dir"
+  elif registered | grep -qxF "$dir"; then                       # 자동 수집 항목이면 숨김 줄 추가
+    printf '!%s\n' "$short" >> "$CONFIG"
+  fi                                                             # 열려 있는 세션일 뿐이면 할 일 없음
+}
+edit_config() { ensure_config; "${EDITOR:-nvim}" "$CONFIG"; }
+
+# --- fzf ------------------------------------------------------------------------
+B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'
+header_for() {  # 모드 탭 + 키 안내. 현재 모드만 굵게
+  local p="project" f="dir" r="recent"
+  case "$1" in project) p="$B[project]$R" ;; dir) f="$B[dir]$R" ;; recent) r="$B[recent]$R" ;; esac
+  printf '%s   %s   %s\n%s\n%s\n' "$p" "$f" "$r" \
+    "${D}ctrl-p/f/r 모드 전환   enter 선택 (후보 없으면 친 글자가 경로)   alt-enter 친 글자 강제${R}" \
+    "${D}ctrl-a 등록   ctrl-x 제거   ctrl-e 목록 파일 편집${R}"
+}
+source_for() {
+  case "$1" in project) echo "$SELF --list" ;; dir) echo "$SELF --list-dirs" ;; recent) echo "$SELF --list-recent" ;; esac
+}
+# transform 액션에서 호출된다. $FZF_PROMPT 로 현재 모드를 알아내 그 모드의 목록을 다시 읽는다.
+mode_from_prompt() {
+  case "${FZF_PROMPT:-}" in dir*) echo dir ;; recent*) echo recent ;; *) echo project ;; esac
+}
+action_switch() {  # $1 = 바꿀 모드
+  printf 'reload(%s)+change-prompt(%s> )+change-header(%s)\n' "$(source_for "$1")" "$1" "$(header_for "$1")"
+}
+action_after_edit() {  # 목록을 고친 뒤: 지금 모드 그대로 다시 읽기
+  printf 'reload(%s)\n' "$(source_for "$(mode_from_prompt)")"
+}
+preview() {
+  local d=$1
+  [ -d "$d" ] || return 0
+  if [ -e "$d/.git" ]; then
+    printf '\033[1m%s\033[0m\n\n' "$(git_branch "$d")"
+    git -C "$d" log --oneline --color=always -8 2>/dev/null; echo
+  fi
+  ls -1Ap "$d" 2>/dev/null | head -40
+}
+
+pick() {
+  command -v fzf >/dev/null || { echo "tmux-sessionizer: fzf 가 필요합니다" >&2; exit 1; }
+  local out rc=0 query key sel
+  out=$(candidates | fzf --ansi --delimiter=$'\t' --with-nth=1 --nth=1 --scheme=path \
+      --prompt='project> ' --header="$(header_for project)" --height=100% --reverse \
+      --print-query --expect=alt-enter \
+      --preview="$SELF --preview {2}" --preview-window='right,45%,border-left,<110(down,40%,border-top)' \
+      --bind "ctrl-p:transform($SELF --action switch project)" \
+      --bind "ctrl-f:transform($SELF --action switch dir)" \
+      --bind "ctrl-r:transform($SELF --action switch recent)" \
+      --bind "ctrl-a:execute-silent($SELF --add {2})+transform($SELF --action refresh)" \
+      --bind "ctrl-x:execute-silent($SELF --remove {2})+transform($SELF --action refresh)" \
+      --bind "ctrl-e:execute($SELF --edit)+transform($SELF --action refresh)") || rc=$?
+  # 종료 코드: 0 선택, 1 후보 없음(입력을 경로로), 130 취소
+  [ "$rc" -eq 130 ] && exit 0
+  [ "$rc" -gt 1 ] && exit "$rc"
+  { IFS= read -r query; IFS= read -r key; IFS= read -r sel; } <<< "$out" || true
+  if [ -n "${sel:-}" ] && [ -z "$key" ]; then
+    target=${sel##*$'\t'}
+  else
+    target=$(expand_tilde "$query")
+    [ -n "$target" ] || exit 0
+    [[ $target = /* ]] || target=$PWD/$target   # 팝업은 pane 의 디렉토리에서 열린다 (display-popup -d)
+    if [ ! -d "$target" ]; then
+      printf '%s 가 없습니다. 만들까요? [y/N] ' "$(abbrev_home "$target")"
+      IFS= read -r ans; case $ans in y|Y) mkdir -p "$target" ;; *) exit 0 ;; esac
+    fi
+  fi
 }
 
 # --- 인자 ---------------------------------------------------------------------
@@ -72,21 +293,25 @@ target=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --layout) LAYOUT=$2; shift 2 ;;
-    --list)   candidates; exit 0 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    --list)        candidates;  exit 0 ;;
+    --list-dirs)   list_dirs;   exit 0 ;;
+    --list-recent) recent_rows; exit 0 ;;
+    --add)    add_entry "${2:-}";    exit $? ;;
+    --remove) remove_entry "${2:?--remove 에는 디렉토리가 필요합니다}"; exit $? ;;
+    --edit)   edit_config; exit $? ;;
+    --preview) preview "${2:-}"; exit 0 ;;
+    --action) case "$2" in switch) action_switch "$3" ;; refresh) action_after_edit ;; esac; exit 0 ;;
+    -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) target=$1; shift ;;
   esac
 done
 
 # --- 고르기 -------------------------------------------------------------------
-if [ -z "$target" ]; then
-  command -v fzf >/dev/null || { echo "tmux-sessionizer: fzf 가 필요합니다" >&2; exit 1; }
-  target=$(candidates | sed "s|^$HOME/|~/|" | fzf --prompt='project> ' --height=100% --reverse) || exit 0
-  target=${target/#\~/$HOME}
-fi
+[ -z "$target" ] && pick
 [ -d "$target" ] || { echo "tmux-sessionizer: 디렉토리가 아닙니다: $target" >&2; exit 1; }
 target=$(cd "$target" && pwd)
 name=$(basename "$target" | tr '.:' '__')
+record_history "$target"
 
 # --- 세션 만들기 / 전환 -------------------------------------------------------
 if ! tmux has-session -t "=$name" 2>/dev/null; then

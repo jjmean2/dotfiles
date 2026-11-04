@@ -131,7 +131,9 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
   끄려면 Karabiner 설정 창 Complex Modifications 탭에서 규칙을 끄거나 메뉴바에서 Quit. 설정 창에서 뭔가 바꾸면 Karabiner 가
   `karabiner.json` 을 다시 써서 `chezmoi status` 에 차이가 생기므로, 유지할 변경은 `chezmoi re-add` 로 가져온다.
 - **tmux 세션 = 프로젝트**: `tmux-sessionizer [경로] [--layout ide|plain]` (tmux 안에서는 `prefix S` 팝업) 가
-  프로젝트 디렉토리 이름의 세션으로 들어가고, 없으면 왼쪽 셸 / 오른쪽 nvim 으로 만든다. 찾는 곳은 스크립트 머리의 `PROJECT_ROOTS`.
+  프로젝트 디렉토리 이름의 세션으로 들어가고, 없으면 왼쪽 셸 / 오른쪽 nvim 으로 만든다. 목록은 머신별 파일
+  `~/.config/tmux-sessionizer/projects` (chezmoi 가 처음 한 번만 만든다). 팝업에서 ctrl-f 로 파일시스템 검색,
+  ctrl-r 로 최근 연 곳, 후보가 없으면 친 글자가 경로. `--add/--remove/--edit` 또는 팝업의 ctrl-a/x/e 로 목록을 고친다.
 
 ## 자주 쓰는 명령
 
