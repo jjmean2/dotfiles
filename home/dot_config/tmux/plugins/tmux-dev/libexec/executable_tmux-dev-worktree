@@ -27,11 +27,19 @@
 #                       브랜치만 있음 → 워크트리 만들고 윈도우.  원격 브랜치 → 추적 브랜치 + 워크트리 + 윈도우.
 #                     맞는 후보가 없으면 친 글자를 새 브랜치 이름으로 쓴다 (베이스에서 분기)
 #   alt-enter         후보가 있어도 친 글자를 브랜치 이름으로 쓴다 (macOS Ghostty: 왼쪽 option)
-#   ctrl-x            커서 항목 정리. 워크트리 → git worktree remove (변경이 있으면 거절) + 그 윈도우 닫기,
-#                     브랜치가 베이스에 모두 들어 있으면 물어보고 git branch -D. 브랜치 행 → 머지됐을 때만 -D.
-#                     prunable 행 → git worktree prune. 메인 체크아웃과 원격 브랜치는 건드리지 않는다.
+#   ctrl-x            커서 항목 정리 (매 단계 y/N, 입력이 끊기면 취소).
+#                       워크트리 행 → 변경이 있으면 거절. git worktree remove + 그 윈도우 닫기 + 브랜치 삭제 질문
+#                       브랜치 행    → 브랜치 삭제 질문.  prunable 행 → git worktree prune + 브랜치 삭제 질문
+#                       브랜치 삭제는 항상 refs/archive/<날짜>/<브랜치> 에 먼저 보관한다. 머지됐으면 그냥 묻고, 베이스에
+#                       없는 커밋이 있으면 그 수를 보여 주고 "보관하고 지울까요?" 로 묻는다 (복구: --archived 참고)
+#                       정리가 끝나면 메인 체크아웃을 업스트림에 맞출지 묻는다 (fetch --prune, ff-only. 변경 있으면 안 함)
+#                       메인 체크아웃과 원격 브랜치는 건드리지 않는다
 #   행 마커           ●N 열린 윈도우 번호 · dirty 커밋 안 된 변경 · merged 베이스에 모두 들어 있음(rebase 머지도
-#                     git cherry 가 패치 내용으로 잡는다) · [ahead n, behind m] 업스트림 대비 · prunable · locked
+#                     git cherry 가 패치 내용으로 잡는다) · [ahead n, behind m] 업스트림 대비(메인 행의 behind 는
+#                     fetch 뒤에만 정확하다) · prunable · locked
+#
+#   tmux-dev worktree --archived         보관된 브랜치 목록. 복구는 git branch <이름> refs/archive/<날짜>/<이름>.
+#                                        원격 백업을 원하면 git push origin 'refs/archive/*:refs/archive/*'
 #
 # 워크트리 위치 (git config. 전역 --global 과 저장소별 값이 한 메커니즘. 스크립트가 tmux 밖에서도 돌아야 해서
 # tmux 옵션이 아니라 git config 에 둔다)
@@ -159,15 +167,17 @@ rows() {  # $1 = all | worktrees
   local mode=${1:-all} path branch flags ref track w=12 n
   local -a wt=() br=() rm=()
   local has_local=$'\n'   # 로컬 브랜치 이름 목록 (줄바꿈으로 감쌈. macOS bash 3.2 에는 연관 배열이 없다)
+  local tracks=$'\n'      # "<브랜치> US <업스트림 대비>" 줄들. 워크트리 행에도 [ahead n, behind m] 을 붙이기 위해
   while IFS=$'\t' read -r path branch flags; do
     wt+=("$path|$branch|$flags"); n=${#branch}; [ "$n" -gt "$w" ] && w=$n
   done <<< "$WT_LIST"
+  # worktreepath 는 비어 있을 수 있으므로 구분자는 US (git 포맷의 %1f)
+  while IFS=$US read -r ref path track; do
+    has_local="$has_local$ref"$'\n'; tracks="$tracks$ref$US$track"$'\n'
+    [ "$mode" = all ] && [ -z "$path" ] && { br+=("$ref|$track"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n; }
+  done < <(git for-each-ref refs/heads --format='%(refname:short)%1f%(worktreepath)%1f%(upstream:track)')
+  track_of() { local rest=${tracks#*$'\n'"$1"$US}; [ "$rest" = "$tracks" ] || printf '%s' "${rest%%$'\n'*}"; }
   if [ "$mode" = all ]; then
-    # worktreepath 는 비어 있을 수 있으므로 구분자는 US (git 포맷의 %1f)
-    while IFS=$US read -r ref path track; do
-      has_local="$has_local$ref"$'\n'
-      [ -z "$path" ] && { br+=("$ref|$track"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n; }
-    done < <(git for-each-ref refs/heads --format='%(refname:short)%1f%(worktreepath)%1f%(upstream:track)')
     while IFS= read -r ref; do
       case $ref in */HEAD) continue ;; esac       # origin/HEAD 는 브랜치가 아니다
       ref=${ref#refs/remotes/}; branch=${ref#*/}
@@ -201,7 +211,9 @@ rows() {  # $1 = all | worktrees
       case " $flags " in *" prunable "*) kind=prunable; mark="${Y}prunable${R}" ;; esac
       case " $flags " in *" locked "*) mark="$mark ${D}locked${R}" ;; esac
       mark="$mark $(cat "$tmp/w$i")"; i=$((i + 1))
-      printf '%s\t%-*s  %s%s%s  %s\t%s\t%s\t%s\n' "$key" "$w" "$branch" "$D" "$(abbrev_home "$path")" "$R" "${mark# }" "$kind" "$branch" "$path"
+      track=$(track_of "$branch"); [ -n "$track" ] && mark="$mark ${D}$track${R}"
+      mark=$(printf '%s' "$mark" | tr -s ' '); mark=${mark# }   # 빈 마커 자리의 공백 겹침 제거
+      printf '%s\t%-*s  %s%s%s  %s\t%s\t%s\t%s\n' "$key" "$w" "$branch" "$D" "$(abbrev_home "$path")" "$R" "$mark" "$kind" "$branch" "$path"
     done
     i=0; for e in "${br[@]+"${br[@]}"}"; do
       ref=${e%%|*}; track=${e#*|}
@@ -348,25 +360,49 @@ close_windows() {  # 이 워크트리의 윈도우를 닫는다. 세션의 마�
     else tmux kill-window -t "$id"; fi
   done < <(tmux list-windows -t "$SESSION" -F "#{window_id}${US}#{@worktree}" 2>/dev/null)
 }
-delete_branch_if_merged() {  # $1 브랜치. 베이스에 모두 들어 있을 때만 물어보고 지운다
-  local b; b=$(base)
+# 브랜치를 지우기 전에 refs/archive/<날짜>/<브랜치> 로 남긴다. refs/heads 밖이라 브랜치 목록에는 안 뜨고
+# git log --all 과 for-each-ref refs/archive 에는 보인다. 날짜 경로라 같은 이름을 다시 써도 겹치지 않는다.
+archive_branch() {
+  local ref; ref="refs/archive/$(date +%Y-%m-%d)/$1"
+  git update-ref "$ref" "refs/heads/$1" && echo "보관: $ref ($(git rev-parse --short "$ref"))"
+}
+list_archived() {
+  git for-each-ref refs/archive --sort=-refname --format='%(refname:short)  %(objectname:short)  %(committerdate:short)  %(contents:subject)'
+  echo
+  echo "복구: git branch <이름> refs/archive/<날짜>/<이름>    삭제: git update-ref -d refs/archive/<날짜>/<이름>"
+}
+delete_branch() {  # $1 브랜치. 보관한 뒤 지운다. 머지 안 됐으면 그 사실을 보여 주고 묻는다
+  local b n; b=$(base)
   case $1 in "(detached "*|"$b") return 0 ;; esac
   git show-ref -q --verify "refs/heads/$1" || return 0   # 브랜치가 이미 없으면 할 일 없음
   if is_merged "$1"; then
-    confirm "브랜치 ${B}$1${R} 도 지울까요? ($b 에 모두 들어 있음) [y/N]" && git branch -D "$1" || true
+    confirm "브랜치 ${B}$1${R} 도 지울까요? ($b 에 모두 들어 있음. refs/archive 에 보관) [y/N]" || return 0
   else
-    echo "브랜치 $1 는 $b 에 없는 커밋이 있어 남겨 둔다 (지우려면 git branch -D $1)"
+    n=$(git cherry "$b" "$1" 2>/dev/null | grep -c '^+' || true)
+    confirm "브랜치 ${B}$1${R} 는 ${Y}$b 에 없는 커밋이 ${n:-?} 개${R} 있다. refs/archive 에 보관하고 지울까요? [y/N]" || return 0
   fi
+  archive_branch "$1" && git branch -D "$1"
+}
+# 정리가 끝난 뒤: 메인 체크아웃을 업스트림에 맞출지 묻는다 (fetch --prune + ff-only). 변경이 있거나 ff 가 안 되면 손대지 않는다.
+offer_sync_main() {
+  local up cur out
+  up=$(git -C "$MAIN" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null) || return 0
+  cur=$(git -C "$MAIN" rev-parse --abbrev-ref HEAD 2>/dev/null) || return 0
+  confirm "메인 ${B}$cur${R} 을 $up 에 맞출까요? (fetch --prune, ff-only) [y/N]" || return 0
+  out=$(git -C "$MAIN" fetch --prune 2>&1) || { echo "fetch 실패: $out"; return 0; }
+  [ -n "$(git -C "$MAIN" status --porcelain 2>/dev/null | head -1)" ] && { echo "메인에 커밋 안 된 변경이 있어 당기지 않는다"; return 0; }
+  if out=$(git -C "$MAIN" merge --ff-only '@{u}' 2>&1); then printf '%s\n' "$out" | tail -1
+  else echo "ff 로 맞출 수 없다 (메인에 업스트림에 없는 커밋이 있다): $(printf '%s' "$out" | tail -1)"; fi
 }
 remove_target() {  # $1 종류 $2 브랜치 $3 경로
   local kind=$1 branch=$2 path=$3 st out
   cd "$MAIN"   # 지우려는 워크트리 안에서 불렸을 수 있다
   case $kind in
     remote)   pause "원격 브랜치는 여기서 지우지 않는다 (git push origin --delete $branch)" ;;
-    branch)   delete_branch_if_merged "$branch"; pause ;;
+    branch)   delete_branch "$branch"; offer_sync_main; pause ;;
     prunable)
       if confirm "사라진 워크트리의 등록을 지울까요? (git worktree prune) [y/N]"; then
-        git worktree prune; delete_branch_if_merged "$branch"
+        git worktree prune; delete_branch "$branch"; offer_sync_main
       fi; pause ;;
     worktree)
       [ "$path" = "$MAIN" ] && { pause "메인 체크아웃은 지울 수 없다"; return 0; }
@@ -376,7 +412,7 @@ remove_target() {  # $1 종류 $2 브랜치 $3 경로
       out=$(git worktree remove "$path" 2>&1) || { pause "$out"; return 0; }   # locked 등은 git 이 거절한다
       close_windows "$path"
       echo "지웠다: $(abbrev_home "$path")"
-      delete_branch_if_merged "$branch"; pause ;;
+      delete_branch "$branch"; offer_sync_main; pause ;;
   esac
 }
 
@@ -413,6 +449,7 @@ while [ $# -gt 0 ]; do
     --preview) repo_init; preview "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
     --action)  repo_init; case "${2:-}" in toggle) action_toggle ;; refresh) action_refresh ;; esac; exit 0 ;;
     --path)    repo_init; wt_dir "${2:?--path 에는 브랜치가 필요합니다}"; exit 0 ;;
+    --archived) repo_init; list_archived; exit 0 ;;
     -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "모르는 옵션: $1" ;;
     *) arg=$1; shift ;;
