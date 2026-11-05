@@ -1,5 +1,13 @@
 # .chezmoiscripts/run_onchange_before_10-install-packages-*.sh.tmpl 에서 읽는 설치 목록.
 # 목록이 바뀌면 스크립트 내용도 바뀌므로, 다음 chezmoi apply 때 설치 스크립트가 다시 실행된다.
+#
+# 세 층으로 나뉜다.
+#   필수      packages.<os>.brews / casks / tools      그 OS 의 모든 머신에 설치
+#   OS 별     packages.darwin / packages.linux         위 키가 OS 아래에 있는 것 자체
+#   머신 선택 packages.<os>.features.<이름>             이 머신의 스위치 features.<이름> 이 켜졌을 때만
+# 스위치 값은 저장소가 아니라 머신의 ~/.config/chezmoi/chezmoi.toml 에 있다
+# (.chezmoi.toml.tmpl 이 init 때 묻는다). 기능 하나 = 패키지 + 그 설정 파일 + 후처리이고,
+# 설정 파일은 .chezmoiignore 가 같은 스위치로 뺀다. 스위치를 꺼도 설치된 것은 지우지 않는다.
 packages:
   darwin:
     # brew bundle 로 설치한다. 이미 설치된 formula 의 버전 업그레이드는 하지 않는다.
@@ -25,9 +33,15 @@ packages:
       - ghostty
       # ghostty 의 한글 fallback 폰트 (config.ghostty 의 font-family)
       - font-d2coding
+    # 머신마다 켜고 끄는 기능. 키 이름이 스위치 이름(features.<이름>)이고, 각 묶음은 brews / casks 를 가질 수 있다.
+    # 새 기능을 추가하면 .chezmoi.toml.tmpl 에 그 스위치를 묻는 줄도 함께 추가한다.
+    features:
       # 키 리매퍼. 한글 입력 상태에서 tmux prefix/Esc 를 누르면 영문으로 바꾼다 (dot_config/private_karabiner/private_karabiner.json).
       # 설치 후 System Settings 에서 백그라운드 항목·드라이버 확장·손쉬운 사용 권한을 한 번 승인해야 동작한다.
-      - karabiner-elements
+      # 가상 HID 드라이버 확장을 설치하므로 보안 소프트웨어가 관리하는 머신에서는 끈다.
+      karabiner:
+        casks:
+          - karabiner-elements
     # 언어 런타임은 여기가 아니라 dot_config/mise/conf.d/shared.toml 에 선언한다.
     # 설치 스크립트가 mise install 로 그 파일을 읽어 설치한다.
   linux:

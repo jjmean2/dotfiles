@@ -1,8 +1,20 @@
 {{- /* chezmoi init 시 ~/.config/chezmoi/chezmoi.toml 을 생성하는 템플릿 */ -}}
 {{- $email := promptStringOnce . "email" "Email address" -}}
 
+{{- /* 머신별 기능 스위치. 목록(무엇을 설치하는지)은 .chezmoidata/packages.yaml 의 packages.<os>.features 에
+       있고, 여기서는 이 머신이 그 기능을 쓰는지만 정한다. *Once 라서 이미 값이 있으면 다시 묻지 않는다.
+       값을 바꾸려면 ~/.config/chezmoi/chezmoi.toml 의 [data.features] 를 고치고 chezmoi apply.
+       해당 OS 가 아니면 묻지 않고 false 다 (Linux dev container 의 init 이 여기서 멈추지 않게). */ -}}
+{{- $karabiner := false -}}
+{{- if eq .chezmoi.os "darwin" -}}
+{{-   $karabiner = promptBoolOnce . "features.karabiner" "Karabiner-Elements 설치 (보안 소프트웨어가 관리하는 머신이면 n)" true -}}
+{{- end -}}
+
 {{- /* 기본 위치(~/.local/share/chezmoi)가 아닌 곳의 저장소로 init 한 경우에도 그 위치를 유지한다. */ -}}
 sourceDir = {{ .chezmoi.workingTree | quote }}
 
 [data]
   email = {{ $email | quote }}
+
+[data.features]
+  karabiner = {{ $karabiner }}
