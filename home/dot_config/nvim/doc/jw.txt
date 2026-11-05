@@ -225,12 +225,14 @@ tmux-dev: 세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할 ~
 	alt-enter		후보가 있어도 친 글자를 새 브랜치 이름으로
 	ctrl-x			커서 항목 정리. 매 단계 y/N. 워크트리 → 제거(변경 있으면 거절) + 그 윈도우
 				닫기 + 브랜치 삭제 질문. 브랜치 행 → 삭제 질문. prunable 행 → prune.
-				브랜치는 지우기 전에 항상 refs/archive/<날짜>/<브랜치> 에 보관한다. main 에
-				없는 커밋이 있으면 그 수를 보여 주고 "보관하고 지울까요?". 정리 뒤에는 main
-				을 origin 에 맞출지(fetch --prune, ff-only) 묻는다. 메인 체크아웃·원격은 안 건드림.
-	행 마커: ●N 열린 윈도우, dirty 커밋 안 된 변경, merged main 에 모두 들어 있음(rebase
-	머지도 git cherry 로 잡음), [ahead n, behind m] 업스트림 대비(main 행의 behind 는 fetch
-	뒤에만 정확). 미리보기에 변경 목록과 최근 커밋.
+				먼저 main 을 origin 에 맞출지(fetch --prune, ff-only) 묻는다. 머지 판정이 로컬
+				main 기준이라 PR 로 머지한 뒤에는 이게 먼저다(로컬 머지면 "이미 최신"). 브랜치는
+				지우기 전에 항상 refs/archive/<날짜>/<브랜치> 에 보관한다. main 에 없는 커밋이
+				있으면 그 수를 보여 주고 "보관하고 지울까요?". 메인 체크아웃·원격은 안 건드림.
+	행 마커: ●N 열린 윈도우, dirty 커밋 안 된 변경, merged main 에 모두 들어 있음(ff·merge
+	commit·rebase 머지는 git cherry, squash 머지는 merge-base 위 임시 단일 커밋으로 판정),
+	[ahead n, behind m] 업스트림 대비(main 행의 behind 는 fetch 뒤에만 정확). 미리보기에
+	변경 목록과 최근 커밋.
 	보관 목록: tmux-dev worktree --archived. 복구: git branch <이름> refs/archive/<날짜>/<이름>
 	워크트리 위치: ~/.local/share/tmux-dev/worktrees/<저장소>/<브랜치>. 도구가 관장하는 데이터
 	자리라 ls 로는 안 보이고 이 팝업이 창이다. 바꾸려면 git config tmux-dev.worktree.root /

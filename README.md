@@ -141,10 +141,11 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
     후보가 없으면 친 글자가 경로, ctrl-t/x/o 로 목록 편집. 워크트리 경로를 고르면 메인 저장소 세션의 윈도우로 간다.
   - `prefix W` (`tmux-dev worktree [브랜치|경로]`): 저장소의 워크트리·브랜치·원격 브랜치를 한 목록에서 고르면 그 워크트리의
     윈도우로, 없으면 `git worktree add` 와 윈도우를 만든다. 없는 이름을 치면 로컬 main 에서 새 브랜치. 행에 `●N`(열린
-    윈도우), `dirty`, `merged`(rebase 머지도 `git cherry` 로 판정), `[ahead n, behind m]` 마커가 붙고, ctrl-x 가 워크트리
-    제거(변경 있으면 거절) + 윈도우 닫기 + 브랜치 삭제를 매번 확인하며 한다. 브랜치는 지우기 전에 항상 `refs/archive/<날짜>/<브랜치>`
-    에 보관하므로 머지 안 된 것도 "보관하고 삭제" 를 고를 수 있고(`--archived` 로 목록·복구), 정리 뒤에는 main 을 origin 에
-    맞출지 묻는다. 워크트리가 숨은 경로에 있으니 정리는 이 팝업에서 한다.
+    윈도우), `dirty`, `merged`(ff·merge commit·rebase 머지는 `git cherry`, squash 머지는 merge-base 위 임시 단일 커밋으로 판정),
+    `[ahead n, behind m]` 마커가 붙고, ctrl-x 가 먼저 main 을 origin 에 맞출지 물은 뒤(판정이 로컬 main 기준이라 PR 머지 뒤엔
+    이게 먼저) 워크트리 제거(변경 있으면 거절) + 윈도우 닫기 + 브랜치 삭제를 매번 확인하며 한다. 브랜치는 지우기 전에 항상
+    `refs/archive/<날짜>/<브랜치>` 에 보관하므로 머지 안 된 것도 "보관하고 삭제" 를 고를 수 있다(`--archived` 로 목록·복구).
+    로컬 머지와 PR 머지 어느 쪽이든 같은 ctrl-x 로 닫는다. 워크트리가 숨은 경로에 있으니 정리는 이 팝업에서 한다.
   - 파일은 XDG 세 디렉토리에 종류별로: 설정 `~/.config/tmux-dev/`, 상태 `~/.local/state/tmux-dev/`, 데이터(워크트리)
     `~/.local/share/tmux-dev/worktrees/<저장소>/<브랜치>`. 워크트리 위치·셋업 훅은 `git config tmux-dev.worktree.*`.
   - Claude Code 와 함께 쓰는 흐름(워크트리를 먼저 만들고 그 안에서 `claude`), `WorktreeCreate/Remove` 훅으로 에이전트가 만드는
