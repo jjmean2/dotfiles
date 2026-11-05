@@ -48,7 +48,8 @@ WORKTREE_BIN="$(dirname "$SELF")/tmux-dev-worktree"
 CONFIG=$TMUX_DEV_CONFIG
 HISTORY=$TMUX_DEV_HISTORY
 LAYOUT=$TMUX_DEV_LAYOUT
-RECENT_MAX=30
+RECENT_MAX=30          # recent 모드에 보여 줄 수
+HISTORY_MAX=500        # 히스토리 파일 상한 (줄). 무한정 쌓지 않는다
 # dir 모드 기본 범위. 목록 파일의 search / exclude 줄이 있으면 그것으로 대체된다.
 DEFAULT_SEARCH="$HOME:4"
 DEFAULT_EXCLUDES=".git node_modules Library .Trash .cache"
@@ -188,9 +189,10 @@ recent_rows() {
   list_recent | awk '!seen[$0]++' | while IFS= read -r p; do [ -d "$p" ] && printf '%s\n' "$p"; done \
     | head -n "$RECENT_MAX" | annotate
 }
-record_history() {
+record_history() {  # 최근 순. 같은 경로는 최신 하나만 남기고, 파일은 HISTORY_MAX 줄로 자른다 (fzf --history, 에디터 최근 파일과 같은 관행)
   mkdir -p "$(dirname "$HISTORY")"
-  printf '%s\n' "$1" >> "$HISTORY"
+  local tmp; tmp=$(mktemp "$HISTORY.XXXXXX")
+  { [ -f "$HISTORY" ] && grep -vxF -- "$1" "$HISTORY" || true; printf '%s\n' "$1"; } | tail -n "$HISTORY_MAX" > "$tmp" && mv -f "$tmp" "$HISTORY"
 }
 
 # --- 목록 편집 ----------------------------------------------------------------

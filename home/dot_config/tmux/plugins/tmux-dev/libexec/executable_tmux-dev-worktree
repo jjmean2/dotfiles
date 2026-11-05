@@ -19,7 +19,8 @@
 #   tmux-dev worktree --path <브랜치>    그 브랜치의 워크트리가 만들어질 경로만 출력
 #   tmux-dev worktree --list [all|worktrees] [--marks]   후보 목록만 출력 (디버그). --marks 가 있어야 dirty/merged 를 계산한다
 #                                        팝업은 마커 없는 목록을 먼저 띄우고 fzf 의 load 이벤트에서 --marks 로 바꿔 끼운다.
-#                                        머지 판정은 (브랜치 커밋, main 커밋) 쌍으로 ~/.cache/tmux-dev/merged/ 에 캐시한다
+#                                        머지 판정은 ~/.cache/tmux-dev/ 에 캐시한다 (merged/<브랜치 커밋>, patchids/<main 커밋>).
+#                                        행 작업은 코어 수만큼만 동시에 (TMUX_DEV_JOBS 로 조절)
 #   tmux 밖에서 실행하면 워크트리만 만들고(있으면 그대로) 경로를 출력한다.
 #
 # 팝업(fzf) 안에서 (fzf 기본 키와 겹치지 않는 키만 썼다)
@@ -37,8 +38,8 @@
 #                       브랜치 삭제는 항상 refs/archive/<날짜>/<브랜치> 에 먼저 보관한다. 머지됐으면 그냥 묻고, 베이스에
 #                       없는 커밋이 있으면 그 수를 보여 주고 "보관하고 지울까요?" 로 묻는다 (복구: --archived 참고)
 #                       메인 체크아웃과 원격 브랜치는 건드리지 않는다
-#   행 마커           ●N 열린 윈도우 번호 · dirty 커밋 안 된 변경 · merged 베이스에 모두 들어 있음 (ff·merge commit·
-#                     rebase 머지는 git cherry 로, squash 머지는 merge-base 위 임시 단일 커밋으로 판정. is_merged 참고)
+#   행 마커           ●N 열린 윈도우 번호 · dirty 커밋 안 된 변경 · merged 베이스에 모두 들어 있음 (ff·merge commit 은
+#                     for-each-ref --merged 로 한 번에, rebase·squash 머지는 베이스 커밋들의 patch-id 집합과 비교. is_merged 참고)
 #                     · [ahead n, behind m] 업스트림 대비(메인 행의 behind 는 fetch 뒤에만 정확하다) · prunable · locked
 #
 #   tmux-dev worktree --archived         보관된 브랜치 목록. 복구는 git branch <이름> refs/archive/<날짜>/<이름>.
@@ -201,22 +202,29 @@ rows() {  # $1 = all | worktrees   $2 = --marks 면 dirty/merged 마커까지 (�
     done < <(git for-each-ref refs/remotes --format='%(refname)' | sort)
   fi
   [ "$w" -gt 40 ] && w=40
-  # 행 마커(dirty, merged)는 행마다 git 을 띄워야 해서 비용이 크다 (dotfiles 기준 status 25ms ×20, cherry 80ms ×22).
+  # 행 마커(dirty, merged)는 행마다 git 을 띄워야 해서 비용이 크다 (dotfiles 기준 status 25ms ×20).
   # 그래서 (1) 팝업은 마커 없는 목록을 먼저 띄우고 fzf 의 load 이벤트에서 --marks 로 다시 읽으며(pick 참고),
-  # (2) --marks 때는 병렬로 계산하고 머지 판정은 캐시한다 (is_merged). 결과는 임시 파일에 받아 순서대로 읽는다.
+  # (2) --marks 때는 베이스 쪽 계산을 한 번만 하고(merge_prepare) 행마다는 작은 일만 남기며, 그것도 캐시한다(is_merged),
+  # (3) 행 작업은 코어 수만큼만 동시에 띄운다 (워크트리가 늘어도 한 번에 뜨는 프로세스 수는 같다). 결과는 임시 파일로.
+  # 지난 실행이 reload 로 끊겨 trap 이 못 돈 임시 디렉토리가 있으면 1시간 뒤 치운다 (보험).
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmux-dev.*' -type d -mmin +60 -exec /bin/rm -rf {} + 2>/dev/null || true
   local tmp b bsha i; tmp=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev.XXXXXX")
   # shellcheck disable=SC2064  # 지금 값의 tmp 를 지우는 것이 맞다
   trap "/bin/rm -rf '$tmp'" EXIT
   if [ "$marks" = --marks ]; then
     b=$(base); bsha=$(git rev-parse -q --verify "$b^{commit}" 2>/dev/null || true)
+    [ -n "$bsha" ] && merge_prepare "$bsha"     # 자식들이 상속받도록 fork 전에
+    local jobs running=0; jobs=${TMUX_DEV_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8)}
     i=0; for e in "${wt[@]+"${wt[@]}"}"; do
       path=${e%%|*}; branch=${e#*|}; branch=${branch%%|*}
       sha=""; find_branch "$branch" && sha=${shas[$IDX]}
       ( marks_for "$path" "$branch" "$b" "$sha" "$bsha" > "$tmp/w$i" ) & i=$((i + 1))
+      running=$((running + 1)); [ "$running" -ge "$jobs" ] && { wait; running=0; }
     done
     i=0; for e in "${br[@]+"${br[@]}"}"; do
       sha=""; find_branch "${e%%|*}" && sha=${shas[$IDX]}
       ( marks_for "" "${e%%|*}" "$b" "$sha" "$bsha" > "$tmp/b$i" ) & i=$((i + 1))
+      running=$((running + 1)); [ "$running" -ge "$jobs" ] && { wait; running=0; }
     done
     wait
     cache_prune
@@ -259,39 +267,56 @@ marks_for() {
   case $2 in "(detached "*|"$3") ;; *) is_merged "$2" "$3" "${4:-}" "${5:-}" && m="$m ${G}merged${R}" ;; esac
   printf '%s' "${m# }"
 }
-# 머지 판정 캐시. 판정은 (브랜치 커밋, 베이스 커밋) 이 같으면 바뀌지 않으므로 그 쌍을 파일 이름으로 둔다 (내용 1/0).
-# 병렬 계산이 동시에 써도 파일 단위라 안전하다. 캐시라서 지워도 다시 계산된다. 60일 지난 항목은 목록을 그릴 때 치운다.
-cache_file()  { printf '%s/merged/%s-%s' "$TMUX_DEV_CACHE" "$1" "$2"; }
-cache_get()   { local f; f=$(cache_file "$1" "$2"); [ -f "$f" ] && IFS= read -r CACHED < "$f"; }
-cache_put()   { local f; f=$(cache_file "$1" "$2"); mkdir -p "${f%/*}"; printf '%s\n' "$3" > "$f.$$" && mv -f "$f.$$" "$f"; }
+# --- 머지 판정 ------------------------------------------------------------------------
+# 비싼 계산을 "베이스 쪽은 한 번, 브랜치 쪽은 작게" 로 나눈다. git cherry 는 호출마다 베이스 쪽 커밋 전부의 patch-id 를
+# 다시 계산해서(dotfiles 의 뒤처진 브랜치는 80~90ms) 브랜치 수만큼 비쌌다. 같은 일을 한 번만 한다.
+#   MERGED_SET  `for-each-ref --merged <베이스>`: 조상 관계로 들어간 브랜치(ff·merge commit) 전부를 프로세스 하나로
+#   PATCHIDS    베이스 커밋들의 patch-id 집합 (모든 브랜치와의 공통 조상 이후). 베이스 커밋당 한 번 계산해 캐시 파일로
+#   브랜치별    고유 커밋(보통 1~5개)의 patch-id 가 모두 집합에 있으면 GitHub "Rebase and merge"(새 SHA) 로 들어간 것.
+#               아니면 squash: merge-base 와 브랜치 트리의 diff 하나의 patch-id 가 집합에 있으면 squash 머지.
+#               (임시 커밋을 만들지 않으므로 떠다니는 객체도 안 생긴다)
+#               한계: squash 될 때 베이스가 merge-base 보다 앞서 있어 diff 문맥이 달라졌으면 못 잡는다 (git-delete-squashed 류와 같다)
+#   캐시        ~/.cache/tmux-dev/merged/<브랜치 커밋> 에 "<베이스 커밋> <0|1>". 파일 수가 브랜치 수로 묶인다.
+#               병렬로 써도 파일 단위라 안전. 지워도 다시 계산된다. 60일 지난 항목은 목록을 그릴 때 치운다
+#   판정은 로컬 베이스 기준이므로 PR 머지 뒤에는 main 을 먼저 맞춰야 한다 (ctrl-x 가 시작할 때 묻는다).
+MERGE_READY=""; MERGED_SET=""; PATCHIDS=""
+merge_prepare() {  # $1 베이스 커밋. 한 번만. 행 작업을 fork 하기 전에 불러 자식이 결과를 상속받게 한다
+  [ "$MERGE_READY" = "$1" ] && return 0
+  MERGE_READY=$1
+  MERGED_SET=$(git for-each-ref --merged "$1" refs/heads --format='%(refname:short)' 2>/dev/null || true)
+  PATCHIDS="$TMUX_DEV_CACHE/patchids/$1"
+  [ -s "$PATCHIDS" ] && return 0
+  mkdir -p "${PATCHIDS%/*}"
+  local mb; mb=$(git for-each-ref refs/heads --format='%(objectname)' | xargs git merge-base --octopus "$1" 2>/dev/null) || mb=""
+  { if [ -n "$mb" ]; then git log -p --format=%H "$1" --not "$mb"; else git log -p --format=%H --max-count=2000 "$1"; fi; } 2>/dev/null \
+    | git patch-id --stable | cut -d' ' -f1 > "$PATCHIDS.$$" && mv -f "$PATCHIDS.$$" "$PATCHIDS"
+  find "${PATCHIDS%/*}" -type f ! -name "$1" -delete 2>/dev/null || true   # 다른 베이스 커밋의 집합은 더 안 쓴다
+}
+in_merged_set() { local x; while IFS= read -r x; do [ "$x" = "$1" ] && return 0; done <<< "$MERGED_SET"; return 1; }
+cache_file()  { printf '%s/merged/%s' "$TMUX_DEV_CACHE" "$1"; }
+cache_get()   { local f; f=$(cache_file "$1"); CACHED=""; [ -f "$f" ] && IFS= read -r CACHED < "$f"; }
+cache_put()   { local f; f=$(cache_file "$1"); mkdir -p "${f%/*}"; printf '%s\n' "$2" > "$f.$$" && mv -f "$f.$$" "$f"; }
 cache_prune() { [ -d "$TMUX_DEV_CACHE/merged" ] && find "$TMUX_DEV_CACHE/merged" -type f -mtime +60 -delete 2>/dev/null || true; }
 # 브랜치 $1 이 베이스($2, 생략하면 base)에 모두 들어 있나. $3 $4 는 두 커밋 (생략하면 구한다). 로컬 머지든 PR 머지든 같은 판정.
-#   0) merge-base --is-ancestor: ff·merge commit 으로 들어간 브랜치는 조상이라 바로 끝난다 (ms 단위)
-#   1) git cherry: 커밋을 패치 내용으로 비교한다. GitHub "Rebase and merge"(새 SHA)를 잡는다. merge-base 이후 베이스 쪽
-#      커밋 전부의 patch-id 를 계산해 비싸다 (dotfiles 의 뒤처진 브랜치는 80~90ms) → 결과를 캐시한다
-#   2) squash 머지: 여러 커밋이 하나로 합쳐져 1) 이 못 잡는다. 브랜치의 최종 트리를 merge-base 위에 임시 커밋 하나로
-#      만들어(commit-tree. 참조가 없어 gc 가 지운다) 다시 cherry 에 넣으면 squash 커밋과 패치 내용이 같아 잡힌다.
-#      한계: squash 될 때 베이스가 merge-base 보다 앞서 있어 diff 의 문맥 줄이 달라졌으면 못 잡는다 (git-delete-squashed 류와 같은 한계).
-#   판정은 로컬 베이스 기준이므로 PR 머지 뒤에는 main 을 먼저 맞춰야 한다 (ctrl-x 가 시작할 때 묻는다).
 is_merged() {
-  local ref=$1 b=${2:-} rsha=${3:-} bsha=${4:-} out mb tree probe result
+  local ref=$1 b=${2:-} rsha=${3:-} bsha=${4:-} ids id mb result=0
   [ -n "$b" ] || b=$(base)
-  [ -n "$rsha" ] || rsha=$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null) || return 1
   [ -n "$bsha" ] || bsha=$(git rev-parse -q --verify "$b^{commit}" 2>/dev/null) || return 1
-  if git merge-base --is-ancestor "$rsha" "$bsha" 2>/dev/null; then return 0; fi
-  CACHED=""; if cache_get "$rsha" "$bsha"; then [ "$CACHED" = 1 ]; return; fi
-  result=0
-  if out=$(git cherry "$bsha" "$rsha" 2>/dev/null); then
-    if ! grep -q '^+' <<< "$out"; then result=1
-    elif mb=$(git merge-base "$bsha" "$rsha" 2>/dev/null) && tree=$(git rev-parse "$rsha^{tree}" 2>/dev/null); then
-      if [ "$tree" = "$(git rev-parse "$mb^{tree}")" ]; then result=1            # 베이스와 트리가 같다 (빈 커밋만 있는 브랜치)
-      elif probe=$(git commit-tree "$tree" -p "$mb" -m "tmux-dev squash probe" 2>/dev/null) \
-        && out=$(git cherry "$bsha" "$probe" 2>/dev/null) && ! grep -q '^+' <<< "$out"; then result=1; fi
+  merge_prepare "$bsha"
+  in_merged_set "$ref" && return 0
+  [ -n "$rsha" ] || rsha=$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null) || return 1
+  if cache_get "$rsha" && [ "${CACHED%% *}" = "$bsha" ]; then [ "${CACHED##* }" = 1 ]; return; fi
+  if [ -s "$PATCHIDS" ]; then
+    # 1) rebase 머지: 고유 커밋의 patch-id 가 모두 베이스 집합에 있나 (내용 없는 커밋은 patch-id 가 안 나와 빠진다)
+    ids=$(git log -p --format=%H "$rsha" --not "$bsha" 2>/dev/null | git patch-id --stable | cut -d' ' -f1)
+    if [ -n "$ids" ] && [ -z "$(grep -vxF -f "$PATCHIDS" <<< "$ids")" ]; then result=1; fi
+    # 2) squash 머지: 브랜치 전체 변경 하나의 patch-id. diff 가 비면(트리가 베이스와 같다) 잃을 것이 없으니 머지로 본다
+    if [ "$result" = 0 ] && mb=$(git merge-base "$bsha" "$rsha" 2>/dev/null); then
+      id=$(git diff "$mb" "$rsha" 2>/dev/null | git patch-id --stable | cut -d' ' -f1)
+      if [ -z "$id" ] || grep -qxF "$id" "$PATCHIDS"; then result=1; fi
     fi
-  else
-    return 1   # cherry 가 실패하면(없는 ref 등) 판정하지 않고 캐시도 하지 않는다
   fi
-  cache_put "$rsha" "$bsha" "$result"
+  cache_put "$rsha" "$bsha $result"
   [ "$result" = 1 ]
 }
 
