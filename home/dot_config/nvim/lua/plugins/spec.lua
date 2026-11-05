@@ -30,6 +30,11 @@ return {
         -- 행동으로 본다 (규칙 2). 기본값은 :lcd 라 트리 창만 바뀌므로 :cd 로 바꾼다.
         actions = {
           change_dir = { global = true },
+          -- 기본값 true 는 파일을 열 때(<CR>, o, <Tab>)마다 트리 너비를 view.width(30)로
+          -- 되돌린다. VS Code·JetBrains 처럼 직접 조절한 너비를 유지한다.
+          -- 트리를 닫았다 다시 열면 여전히 view.width 로 돌아간다 (위키 레시피
+          -- "Remember nvim-tree window size per tab" 으로 해결 가능, 아직 안 씀).
+          open_file = { resize_window = false },
         },
 
         -- 파일 → 트리 (VS Code 의 explorer.autoReveal). 버퍼에 들어갈 때(BufEnter) 그 파일이
