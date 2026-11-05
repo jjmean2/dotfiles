@@ -232,8 +232,9 @@ tmux-dev: 세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할 ~
 	행 마커: ●N 열린 윈도우, dirty 커밋 안 된 변경, merged main 에 모두 들어 있음(ff·merge
 	commit·rebase 머지는 git cherry, squash 머지는 merge-base 위 임시 단일 커밋으로 판정),
 	[ahead n, behind m] 업스트림 대비(main 행의 behind 는 fetch 뒤에만 정확). 목록이 먼저
-	뜨고 마커는 잠시 뒤 얹힌다(fzf load 이벤트에서 두 번째 읽기). 머지 판정은 커밋 쌍으로
-	~/.cache/tmux-dev/merged/ 에 캐시한다(지워도 됨). 미리보기에 변경 목록과 최근 커밋.
+	뜨고 마커는 잠시 뒤 얹힌다(fzf load 이벤트에서 두 번째 읽기). 머지 판정은 main 커밋들의
+	patch-id 집합과 비교하고 ~/.cache/tmux-dev/ 에 캐시한다(지워도 됨). 미리보기에 변경 목록과
+	최근 커밋.
 	보관 목록: tmux-dev worktree --archived. 복구: git branch <이름> refs/archive/<날짜>/<이름>
 	워크트리 위치: ~/.local/share/tmux-dev/worktrees/<저장소>/<브랜치>. 도구가 관장하는 데이터
 	자리라 ls 로는 안 보이고 이 팝업이 창이다. 바꾸려면 git config tmux-dev.worktree.root /
