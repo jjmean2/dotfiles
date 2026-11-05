@@ -41,6 +41,12 @@
 #   tmux-dev worktree --archived         보관된 브랜치 목록. 복구는 git branch <이름> refs/archive/<날짜>/<이름>.
 #                                        원격 백업을 원하면 git push origin 'refs/archive/*:refs/archive/*'
 #
+# Claude Code 훅 (에이전트가 만드는 워크트리도 같은 위치·이름·베이스로. 설치 방법은 claude-code.md)
+#   tmux-dev worktree --hook-create      WorktreeCreate 훅. stdin JSON 의 name·cwd 로 워크트리를 만들고(있으면 그대로)
+#                                        경로 한 줄만 stdout 에 쓴다. 질문 없음. 브랜치는 name 그대로, 베이스는 로컬 main
+#   tmux-dev worktree --hook-remove      WorktreeRemove 훅. stdin JSON 의 worktree_path 를 보관 → 제거 → 브랜치 삭제.
+#                                        tmux 윈도우는 건드리지 않는다 (사람의 셸이 거기 있을 수 있다)
+#
 # 워크트리 위치 (git config. 전역 --global 과 저장소별 값이 한 메커니즘. 스크립트가 tmux 밖에서도 돌아야 해서
 # tmux 옵션이 아니라 git config 에 둔다)
 #   tmux-dev.worktree.location  central(기본) | sibling
@@ -416,6 +422,51 @@ remove_target() {  # $1 종류 $2 브랜치 $3 경로
   esac
 }
 
+# --- Claude Code 훅 --------------------------------------------------------------------
+# WorktreeCreate 는 Claude 의 기본 생성(git worktree add)을 통째로 대체한다. 비대화형: 질문 없고, 멱등이며,
+# stdout 의 마지막 비어 있지 않은 줄이 경로다 (나머지 출력은 stderr). 실패는 비정상 종료.
+hook_json() { command -v jq >/dev/null || die "훅에는 jq 가 필요합니다"; HOOK_IN=$(cat); }
+hook_field() { printf '%s' "$HOOK_IN" | jq -r --arg k "$1" '.[$k] // empty'; }
+hook_create() {
+  hook_json
+  local name cwd; name=$(hook_field name); cwd=$(hook_field cwd)
+  [ -n "$name" ] || die "WorktreeCreate: name 이 없습니다"
+  [ -d "$cwd" ] && cd "$cwd"
+  repo_init
+  {
+    echo "tmux-dev: WorktreeCreate name=$name repo=$(abbrev_home "$MAIN")"
+    resolve_name "$name"
+    case $KIND in
+      prunable) git worktree prune; KIND=branch ;;
+    esac
+    case $KIND in
+      worktree) ;;
+      branch)   add_worktree "$BRANCH" ;;
+      remote)   add_worktree --track -b "$BRANCH" "$TARGET" ;;
+      new)      add_worktree -b "$BRANCH" "$(base)" ;;
+    esac
+  } >&2
+  printf '%s\n' "$TARGET"
+}
+# WorktreeRemove: Claude 가 (사용자 확인을 거쳐) 지우기로 한 뒤 불린다. 보관 → 강제 제거 → 브랜치 삭제. 윈도우는 그대로.
+hook_remove() {
+  hook_json
+  local path branch common; path=$(hook_field worktree_path)
+  [ -n "$path" ] || die "WorktreeRemove: worktree_path 가 없습니다"
+  if [ ! -d "$path" ]; then echo "tmux-dev: 이미 없다: $path" >&2; exit 0; fi
+  common=$(git -C "$path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || die "git 워크트리가 아닙니다: $path"
+  branch=$(git -C "$path" symbolic-ref -q --short HEAD 2>/dev/null || true)
+  cd "${common%/.git}"
+  repo_init
+  {
+    echo "tmux-dev: WorktreeRemove $(abbrev_home "$path") (${branch:-detached})"
+    git worktree remove --force "$path"
+    if [ -n "$branch" ] && [ "$branch" != "$(base)" ] && git show-ref -q --verify "refs/heads/$branch"; then
+      archive_branch "$branch" && git branch -D "$branch"
+    fi
+  } >&2
+}
+
 open_target() {
   case $KIND in
     prunable)
@@ -450,6 +501,8 @@ while [ $# -gt 0 ]; do
     --action)  repo_init; case "${2:-}" in toggle) action_toggle ;; refresh) action_refresh ;; esac; exit 0 ;;
     --path)    repo_init; wt_dir "${2:?--path 에는 브랜치가 필요합니다}"; exit 0 ;;
     --archived) repo_init; list_archived; exit 0 ;;
+    --hook-create) hook_create; exit 0 ;;
+    --hook-remove) hook_remove; exit 0 ;;
     -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "모르는 옵션: $1" ;;
     *) arg=$1; shift ;;
