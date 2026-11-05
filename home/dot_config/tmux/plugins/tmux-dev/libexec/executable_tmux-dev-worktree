@@ -27,6 +27,11 @@
 #                       브랜치만 있음 → 워크트리 만들고 윈도우.  원격 브랜치 → 추적 브랜치 + 워크트리 + 윈도우.
 #                     맞는 후보가 없으면 친 글자를 새 브랜치 이름으로 쓴다 (베이스에서 분기)
 #   alt-enter         후보가 있어도 친 글자를 브랜치 이름으로 쓴다 (macOS Ghostty: 왼쪽 option)
+#   ctrl-x            커서 항목 정리. 워크트리 → git worktree remove (변경이 있으면 거절) + 그 윈도우 닫기,
+#                     브랜치가 베이스에 모두 들어 있으면 물어보고 git branch -D. 브랜치 행 → 머지됐을 때만 -D.
+#                     prunable 행 → git worktree prune. 메인 체크아웃과 원격 브랜치는 건드리지 않는다.
+#   행 마커           ●N 열린 윈도우 번호 · dirty 커밋 안 된 변경 · merged 베이스에 모두 들어 있음(rebase 머지도
+#                     git cherry 가 패치 내용으로 잡는다) · [ahead n, behind m] 업스트림 대비 · prunable · locked
 #
 # 워크트리 위치 (git config. 전역 --global 과 저장소별 값이 한 메커니즘. 스크립트가 tmux 밖에서도 돌아야 해서
 # tmux 옵션이 아니라 git config 에 둔다)
@@ -130,8 +135,11 @@ list_worktrees() {  # "<경로>\t<브랜치>\t<플래그>" (메인이 첫 줄. �
 list_windows() { [ -n "$SESSION" ] && tmux list-windows -t "$SESSION" -F "#{window_index}${US}#{window_id}${US}#{@worktree}${US}#{pane_current_path}" 2>/dev/null || true; }
 # 워크트리 경로 → 그 윈도우 id (없으면 빈 줄). @worktree 가 우선, 메인은 패널 경로로 보완
 # (메인 안이되 다른 워크트리 안은 아닌 패널을 가진, 옵션 없는 가장 앞 윈도우).
+# 윈도우 목록은 한 번만 읽어 둔다 (행마다 tmux 를 부르면 워크트리 19개에 ~100ms).
+WIN_LIST=""; WIN_LIST_READY=""
 window_for() {
   local want=$1 idx id tag pane fallback="" inside
+  [ -n "$WIN_LIST_READY" ] || { WIN_LIST=$(list_windows); WIN_LIST_READY=1; }
   while IFS=$US read -r idx id tag pane; do
     [ "$tag" = "$want" ] && { echo "$id"; return; }
     if [ "$want" = "$MAIN" ] && [ -z "$tag" ] && [ -z "$fallback" ]; then
@@ -144,7 +152,7 @@ window_for() {
         [ "$inside" = 0 ] && fallback=$id ;;
       esac
     fi
-  done < <(list_windows)
+  done <<< "$WIN_LIST"
   echo "$fallback"
 }
 rows() {  # $1 = all | worktrees
@@ -168,9 +176,20 @@ rows() {  # $1 = all | worktrees
     done < <(git for-each-ref refs/remotes --format='%(refname)' | sort)
   fi
   [ "$w" -gt 40 ] && w=40
+  # 행 마커(dirty, merged)는 행마다 git 을 띄워야 해서 병렬로 계산한다. dotfiles(워크트리 19, 브랜치 21) 기준
+  # 직렬이면 ~700ms 가 더 걸려 첫 화면이 늦는다. 결과는 임시 파일에 받아 순서대로 읽는다.
+  local tmp b i; tmp=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev.XXXXXX"); b=$(base)
+  i=0; for e in "${wt[@]+"${wt[@]}"}"; do
+    path=${e%%|*}; branch=${e#*|}; branch=${branch%%|*}
+    ( marks_for "$path" "$branch" "$b" > "$tmp/w$i" ) & i=$((i + 1))
+  done
+  i=0; for e in "${br[@]+"${br[@]}"}"; do
+    ( marks_for "" "${e%%|*}" "$b" > "$tmp/b$i" ) & i=$((i + 1))
+  done
+  wait
   # 정렬 키: 0 윈도우 열림, 1 워크트리, 2 브랜치, 3 원격. 같은 키 안에서는 원래 순서(메인 먼저, 나머지 경로순)
   {
-    for e in "${wt[@]+"${wt[@]}"}"; do
+    i=0; for e in "${wt[@]+"${wt[@]}"}"; do
       path=${e%%|*}; branch=${e#*|}; flags=${branch#*|}; branch=${branch%%|*}
       local win; win=$(window_for "$path"); local mark="" key=1 kind=worktree
       if [ -n "$win" ]; then
@@ -179,23 +198,37 @@ rows() {  # $1 = all | worktrees
       fi
       case " $flags " in *" prunable "*) kind=prunable; mark="${Y}prunable${R}" ;; esac
       case " $flags " in *" locked "*) mark="$mark ${D}locked${R}" ;; esac
-      printf '%s\t%-*s  %s%s%s  %s\t%s\t%s\t%s\n' "$key" "$w" "$branch" "$D" "$(abbrev_home "$path")" "$R" "$mark" "$kind" "$branch" "$path"
+      mark="$mark $(cat "$tmp/w$i")"; i=$((i + 1))
+      printf '%s\t%-*s  %s%s%s  %s\t%s\t%s\t%s\n' "$key" "$w" "$branch" "$D" "$(abbrev_home "$path")" "$R" "${mark# }" "$kind" "$branch" "$path"
     done
-    for e in "${br[@]+"${br[@]}"}"; do
+    i=0; for e in "${br[@]+"${br[@]}"}"; do
       ref=${e%%|*}; track=${e#*|}
-      printf '2\t%-*s  %s%s%s\tbranch\t%s\t\n' "$w" "$ref" "$D" "$track" "$R" "$ref"
+      printf '2\t%-*s  %s %s%s%s\tbranch\t%s\t\n' "$w" "$ref" "$(cat "$tmp/b$i")" "$D" "$track" "$R" "$ref"; i=$((i + 1))
     done | sort -s -t$'\t' -k2,2
     for ref in "${rm[@]+"${rm[@]}"}"; do
       printf '3\t%s%-*s%s  %s원격%s\tremote\t%s\t%s\n' "$D" "$w" "$ref" "$R" "$D" "$R" "${ref#*/}" "$ref"
     done
   } | sort -s -t$'\t' -k1,1n | cut -f2-
+  /bin/rm -rf "$tmp"
 }
+# 행 마커. $1 워크트리 경로(비면 브랜치만 본다) $2 브랜치 $3 베이스
+#   dirty  커밋 안 된 변경(untracked 포함)이 있다
+#   merged 베이스에 없는 커밋이 없다 (git cherry: 패치 내용 비교라 GitHub 의 rebase 머지도 잡는다)
+marks_for() {
+  local m="" out
+  if [ -n "$1" ] && [ -d "$1" ] && [ -n "$(git -C "$1" status --porcelain 2>/dev/null | head -1)" ]; then m="${Y}dirty${R}"; fi
+  case $2 in "(detached "*|"$3") ;; *)
+    if out=$(git cherry "$3" "$2" 2>/dev/null) && ! grep -q '^+' <<< "$out"; then m="$m ${G}merged${R}"; fi ;;
+  esac
+  printf '%s' "${m# }"
+}
+is_merged() { local out; out=$(git cherry "$(base)" "$1" 2>/dev/null) && ! grep -q '^+' <<< "$out"; }
 
 # --- fzf ----------------------------------------------------------------------------
 header_for() {
   local a="all" o="worktrees"
   case "$1" in all) a="${B}[all]${R}" ;; worktrees) o="${B}[worktrees]${R}" ;; esac
-  printf '%s   %s   %stab 필터%s\n%s\n%s\n' "$a" "$o" "$D" "$R" \
+  printf '%s   %s   %stab 필터   ctrl-x 정리(워크트리 제거·머지된 브랜치 삭제)%s\n%s\n%s\n' "$a" "$o" "$D" "$R" \
     "${D}enter: ●N 윈도우로 · 워크트리 → 윈도우 · 브랜치 → 워크트리+윈도우${R}" \
     "${D}없는 이름 enter · alt-enter: 새 브랜치 (베이스 $(base))${R}"
 }
@@ -204,6 +237,7 @@ action_toggle() {
   local mode; case $(mode_from_prompt) in all) mode=worktrees ;; *) mode=all ;; esac
   printf 'reload(%s --list %s)+change-prompt(%s> )+change-header(%s)\n' "$SELF" "$mode" "$mode" "$(header_for "$mode")"
 }
+action_refresh() { printf 'reload(%s --list %s)\n' "$SELF" "$(mode_from_prompt)"; }   # 정리 뒤 같은 모드로 다시 읽기
 cherry_summary() {  # $1 = ref. 베이스에 없는 커밋 수 (git cherry 는 패치 내용으로 비교해 rebase 머지도 잡는다)
   local b n; b=$(base)
   [ "$1" = "$b" ] && return 0
@@ -240,6 +274,7 @@ pick() {
       --preview="$SELF --preview {2} {3} {4}" --preview-window='right,45%,border-left,<60(down,40%,border-top)' \
       --bind "tab:transform($SELF --action toggle)" \
       --bind "shift-tab:transform($SELF --action toggle)" \
+      --bind "ctrl-x:execute($SELF --remove {2} {3} {4})+transform($SELF --action refresh)" \
       < <(rows all)) || rc=$?
   [ "$rc" -eq 130 ] && exit 0          # 취소
   [ "$rc" -gt 1 ] && exit "$rc"        # 1 = 후보 없음 (입력을 브랜치 이름으로)
@@ -298,17 +333,62 @@ ensure_window() {  # 워크트리 $TARGET(브랜치 $BRANCH)의 윈도우로. �
   tmux set-option -w -t "$win" @worktree "$TARGET"
   apply_layout "$LAYOUT" "$win" "$TARGET"
 }
+# --- 정리 (ctrl-x) -------------------------------------------------------------------
+# fzf 의 execute 로 불린다. 끝나면 바로 팝업으로 돌아가 출력이 사라지므로 메시지 뒤에 Enter 를 기다린다.
+pause()   { [ $# -gt 0 ] && printf '%s\n' "$*"; printf '%s(enter)%s ' "$D" "$R"; IFS= read -r _ || true; }
+confirm() { printf '%s ' "$1"; local a; IFS= read -r a || true; case $a in y|Y) return 0 ;; *) return 1 ;; esac; }
+close_windows() {  # 이 워크트리의 윈도우를 닫는다. 세션의 마지막 윈도우면 세션(과 이 팝업)이 죽으므로 남긴다
+  [ -n "$SESSION" ] || return 0
+  local id tag
+  while IFS=$US read -r id tag; do
+    [ "$tag" = "$1" ] || continue
+    if [ "$(tmux list-windows -t "$SESSION" | wc -l)" -le 1 ]; then echo "세션의 마지막 윈도우라 닫지 않는다"
+    else tmux kill-window -t "$id"; fi
+  done < <(tmux list-windows -t "$SESSION" -F "#{window_id}${US}#{@worktree}" 2>/dev/null)
+}
+delete_branch_if_merged() {  # $1 브랜치. 베이스에 모두 들어 있을 때만 물어보고 지운다
+  local b; b=$(base)
+  case $1 in "(detached "*|"$b") return 0 ;; esac
+  git show-ref -q --verify "refs/heads/$1" || return 0   # 브랜치가 이미 없으면 할 일 없음
+  if is_merged "$1"; then
+    confirm "브랜치 ${B}$1${R} 도 지울까요? ($b 에 모두 들어 있음) [y/N]" && git branch -D "$1" || true
+  else
+    echo "브랜치 $1 는 $b 에 없는 커밋이 있어 남겨 둔다 (지우려면 git branch -D $1)"
+  fi
+}
+remove_target() {  # $1 종류 $2 브랜치 $3 경로
+  local kind=$1 branch=$2 path=$3 st out
+  cd "$MAIN"   # 지우려는 워크트리 안에서 불렸을 수 있다
+  case $kind in
+    remote)   pause "원격 브랜치는 여기서 지우지 않는다 (git push origin --delete $branch)" ;;
+    branch)   delete_branch_if_merged "$branch"; pause ;;
+    prunable)
+      if confirm "사라진 워크트리의 등록을 지울까요? (git worktree prune) [y/N]"; then
+        git worktree prune; delete_branch_if_merged "$branch"
+      fi; pause ;;
+    worktree)
+      [ "$path" = "$MAIN" ] && { pause "메인 체크아웃은 지울 수 없다"; return 0; }
+      st=$(git -C "$path" status --porcelain 2>/dev/null | head -8)
+      [ -n "$st" ] && { printf '%s\n' "$st"; pause "변경이 있어 지우지 않는다. 커밋하거나 되돌린 뒤 다시"; return 0; }
+      confirm "워크트리 ${B}$(abbrev_home "$path")${R} 를 지울까요? [y/N]" || return 0
+      out=$(git worktree remove "$path" 2>&1) || { pause "$out"; return 0; }   # locked 등은 git 이 거절한다
+      close_windows "$path"
+      echo "지웠다: $(abbrev_home "$path")"
+      delete_branch_if_merged "$branch"; pause ;;
+  esac
+}
+
 open_target() {
   case $KIND in
     prunable)
       printf '%s 의 디렉토리가 없습니다. 등록을 지우고(git worktree prune) 다시 만들까요? [y/N] ' "$(abbrev_home "$TARGET")"
-      IFS= read -r ans; case $ans in y|Y) ;; *) exit 0 ;; esac
+      IFS= read -r ans || exit 0; case $ans in y|Y) ;; *) exit 0 ;; esac   # 입력이 끊기면(EOF) 취소
       git worktree prune
       case $BRANCH in "(detached "*) exit 0 ;; esac
       KIND=branch ;;
     new)
       printf '새 브랜치 %s%s%s 를 %s 에서 만들까요? → %s [Y/n] ' "$B" "$BRANCH" "$R" "$(base)" "$(abbrev_home "$(wt_dir "$BRANCH")")"
-      IFS= read -r ans; case $ans in n|N) exit 0 ;; esac ;;
+      IFS= read -r ans || exit 0; case $ans in n|N) exit 0 ;; esac ;;   # 입력이 끊기면(EOF) 취소
   esac
   case $KIND in
     worktree) ;;
@@ -327,8 +407,9 @@ while [ $# -gt 0 ]; do
     --layout) LAYOUT=$2; shift 2 ;;
     -t)       SESSION=$2; shift 2 ;;
     --list)    repo_init; SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; rows "${2:-all}"; exit 0 ;;
+    --remove)  repo_init; SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; remove_target "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
     --preview) repo_init; preview "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
-    --action)  repo_init; case "${2:-}" in toggle) action_toggle ;; esac; exit 0 ;;
+    --action)  repo_init; case "${2:-}" in toggle) action_toggle ;; refresh) action_refresh ;; esac; exit 0 ;;
     --path)    repo_init; wt_dir "${2:?--path 에는 브랜치가 필요합니다}"; exit 0 ;;
     -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "모르는 옵션: $1" ;;
