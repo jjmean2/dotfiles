@@ -17,7 +17,9 @@
 #   tmux-dev worktree --layout plain     새 윈도우의 레이아웃 (ide | plain)
 #   tmux-dev worktree -t <세션>          윈도우를 만들 세션 (기본: 지금 클라이언트의 세션)
 #   tmux-dev worktree --path <브랜치>    그 브랜치의 워크트리가 만들어질 경로만 출력
-#   tmux-dev worktree --list             후보 목록만 출력 (디버그)
+#   tmux-dev worktree --list [all|worktrees] [--marks]   후보 목록만 출력 (디버그). --marks 가 있어야 dirty/merged 를 계산한다
+#                                        팝업은 마커 없는 목록을 먼저 띄우고 fzf 의 load 이벤트에서 --marks 로 바꿔 끼운다.
+#                                        머지 판정은 (브랜치 커밋, main 커밋) 쌍으로 ~/.cache/tmux-dev/merged/ 에 캐시한다
 #   tmux 밖에서 실행하면 워크트리만 만들고(있으면 그대로) 경로를 출력한다.
 #
 # 팝업(fzf) 안에서 (fzf 기본 키와 겹치지 않는 키만 썼다)
@@ -148,83 +150,99 @@ list_worktrees() {  # "<경로>\t<브랜치>\t<플래그>" (메인이 첫 줄. �
 }
 # 세션의 윈도우: "<인덱스> US <id> US <@worktree> US <활성 패널 경로>" (@worktree 는 비어 있을 수 있다)
 list_windows() { [ -n "$SESSION" ] && tmux list-windows -t "$SESSION" -F "#{window_index}${US}#{window_id}${US}#{@worktree}${US}#{pane_current_path}" 2>/dev/null || true; }
-# 워크트리 경로 → 그 윈도우 id (없으면 빈 줄). @worktree 가 우선, 메인은 패널 경로로 보완
-# (메인 안이되 다른 워크트리 안은 아닌 패널을 가진, 옵션 없는 가장 앞 윈도우).
-# 윈도우 목록은 한 번만 읽어 둔다 (행마다 tmux 를 부르면 워크트리 19개에 ~100ms).
-WIN_LIST=""; WIN_LIST_READY=""
+# 워크트리 경로 → 그 윈도우. 결과는 WIN(id, 없으면 빈 문자열)과 WIN_IDX(인덱스)에 둔다 (행마다 $(...) 서브셸을 띄우지
+# 않기 위해 echo 대신 전역). @worktree 가 우선, 메인은 패널 경로로 보완(메인 안이되 다른 워크트리 안은 아닌 패널을 가진,
+# 옵션 없는 가장 앞 윈도우). 윈도우 목록은 한 번만 읽어 둔다 (행마다 tmux 를 부르면 워크트리 19개에 ~100ms).
+WIN_LIST=""; WIN_LIST_READY=""; WIN=""; WIN_IDX=""
 window_for() {
-  local want=$1 idx id tag pane fallback="" inside
+  local want=$1 idx id tag pane inside
+  WIN=""; WIN_IDX=""
   [ -n "$WIN_LIST_READY" ] || { WIN_LIST=$(list_windows); WIN_LIST_READY=1; }
   while IFS=$US read -r idx id tag pane; do
-    [ "$tag" = "$want" ] && { echo "$id"; return; }
-    if [ "$want" = "$MAIN" ] && [ -z "$tag" ] && [ -z "$fallback" ]; then
+    [ "$tag" = "$want" ] && { WIN=$id; WIN_IDX=$idx; return 0; }
+    if [ "$want" = "$MAIN" ] && [ -z "$tag" ] && [ -z "$WIN" ]; then
       case $pane in "$MAIN"|"$MAIN"/*)
         inside=0
         while IFS= read -r other; do
           [ -z "$other" ] || [ "$other" = "$MAIN" ] && continue
           case $pane in "$other"|"$other"/*) inside=1; break ;; esac
         done <<< "$WT_PATHS"
-        [ "$inside" = 0 ] && fallback=$id ;;
+        [ "$inside" = 0 ] && { WIN=$id; WIN_IDX=$idx; } ;;
       esac
     fi
   done <<< "$WIN_LIST"
-  echo "$fallback"
+  [ -n "$WIN" ]
 }
-rows() {  # $1 = all | worktrees
-  local mode=${1:-all} path branch flags ref track w=12 n
+rows() {  # $1 = all | worktrees   $2 = --marks 면 dirty/merged 마커까지 (없으면 빠른 목록)
+  local mode=${1:-all} marks=${2:-} path branch flags ref track sha w=12 n
   local -a wt=() br=() rm=()
-  local has_local=$'\n'   # 로컬 브랜치 이름 목록 (줄바꿈으로 감쌈. macOS bash 3.2 에는 연관 배열이 없다)
-  local tracks=$'\n'      # "<브랜치> US <업스트림 대비>" 줄들. 워크트리 행에도 [ahead n, behind m] 을 붙이기 위해
+  # 로컬 브랜치 표: 같은 인덱스의 세 배열 (이름, 업스트림 대비, 커밋). macOS bash 3.2 에는 연관 배열이 없고, 긴 문자열에
+  # ${var#*패턴} 글로브 매칭을 하면 멀티바이트 로케일에서 아주 느리므로(행마다 수 ms) 배열을 단순 비교로 훑는다.
+  local -a names=() trks=() shas=()
   while IFS=$'\t' read -r path branch flags; do
     wt+=("$path|$branch|$flags"); n=${#branch}; [ "$n" -gt "$w" ] && w=$n
   done <<< "$WT_LIST"
   # worktreepath 는 비어 있을 수 있으므로 구분자는 US (git 포맷의 %1f)
-  while IFS=$US read -r ref path track; do
-    has_local="$has_local$ref"$'\n'; tracks="$tracks$ref$US$track"$'\n'
+  while IFS=$US read -r ref path track sha; do
+    names+=("$ref"); trks+=("$track"); shas+=("$sha")
     [ "$mode" = all ] && [ -z "$path" ] && { br+=("$ref|$track"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n; }
-  done < <(git for-each-ref refs/heads --format='%(refname:short)%1f%(worktreepath)%1f%(upstream:track)')
-  track_of() { local rest=${tracks#*$'\n'"$1"$US}; [ "$rest" = "$tracks" ] || printf '%s' "${rest%%$'\n'*}"; }
+  done < <(git for-each-ref refs/heads --format='%(refname:short)%1f%(worktreepath)%1f%(upstream:track)%1f%(objectname)')
+  find_branch() {  # 이름 → IDX (없으면 -1). 서브셸 없이 전역에 둔다
+    local i; IDX=-1
+    for ((i = 0; i < ${#names[@]}; i++)); do [ "${names[$i]}" = "$1" ] && { IDX=$i; return 0; }; done
+    return 1
+  }
   if [ "$mode" = all ]; then
     while IFS= read -r ref; do
       case $ref in */HEAD) continue ;; esac       # origin/HEAD 는 브랜치가 아니다
       ref=${ref#refs/remotes/}; branch=${ref#*/}
-      case $has_local in *$'\n'"$branch"$'\n'*) continue ;; esac
+      find_branch "$branch" && continue           # 같은 이름의 로컬 브랜치가 있으면 그쪽 행이 대표한다
       rm+=("$ref"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n
     done < <(git for-each-ref refs/remotes --format='%(refname)' | sort)
   fi
   [ "$w" -gt 40 ] && w=40
-  # 행 마커(dirty, merged)는 행마다 git 을 띄워야 해서 병렬로 계산한다. dotfiles(워크트리 19, 브랜치 21) 기준
-  # 직렬이면 ~700ms 가 더 걸려 첫 화면이 늦는다. 결과는 임시 파일에 받아 순서대로 읽는다.
-  local tmp b i; tmp=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev.XXXXXX"); b=$(base)
+  # 행 마커(dirty, merged)는 행마다 git 을 띄워야 해서 비용이 크다 (dotfiles 기준 status 25ms ×20, cherry 80ms ×22).
+  # 그래서 (1) 팝업은 마커 없는 목록을 먼저 띄우고 fzf 의 load 이벤트에서 --marks 로 다시 읽으며(pick 참고),
+  # (2) --marks 때는 병렬로 계산하고 머지 판정은 캐시한다 (is_merged). 결과는 임시 파일에 받아 순서대로 읽는다.
+  local tmp b bsha i; tmp=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev.XXXXXX")
   # shellcheck disable=SC2064  # 지금 값의 tmp 를 지우는 것이 맞다
   trap "/bin/rm -rf '$tmp'" EXIT
-  i=0; for e in "${wt[@]+"${wt[@]}"}"; do
-    path=${e%%|*}; branch=${e#*|}; branch=${branch%%|*}
-    ( marks_for "$path" "$branch" "$b" > "$tmp/w$i" ) & i=$((i + 1))
-  done
-  i=0; for e in "${br[@]+"${br[@]}"}"; do
-    ( marks_for "" "${e%%|*}" "$b" > "$tmp/b$i" ) & i=$((i + 1))
-  done
-  wait
+  if [ "$marks" = --marks ]; then
+    b=$(base); bsha=$(git rev-parse -q --verify "$b^{commit}" 2>/dev/null || true)
+    i=0; for e in "${wt[@]+"${wt[@]}"}"; do
+      path=${e%%|*}; branch=${e#*|}; branch=${branch%%|*}
+      sha=""; find_branch "$branch" && sha=${shas[$IDX]}
+      ( marks_for "$path" "$branch" "$b" "$sha" "$bsha" > "$tmp/w$i" ) & i=$((i + 1))
+    done
+    i=0; for e in "${br[@]+"${br[@]}"}"; do
+      sha=""; find_branch "${e%%|*}" && sha=${shas[$IDX]}
+      ( marks_for "" "${e%%|*}" "$b" "$sha" "$bsha" > "$tmp/b$i" ) & i=$((i + 1))
+    done
+    wait
+    cache_prune
+  else
+    i=0; for e in "${wt[@]+"${wt[@]}"}"; do : > "$tmp/w$i"; i=$((i + 1)); done
+    i=0; for e in "${br[@]+"${br[@]}"}"; do : > "$tmp/b$i"; i=$((i + 1)); done
+  fi
   # 정렬 키: 0 윈도우 열림, 1 워크트리, 2 브랜치, 3 원격. 같은 키 안에서는 원래 순서(메인 먼저, 나머지 경로순)
   {
     i=0; for e in "${wt[@]+"${wt[@]}"}"; do
       path=${e%%|*}; branch=${e#*|}; flags=${branch#*|}; branch=${branch%%|*}
-      local win; win=$(window_for "$path"); local mark="" key=1 kind=worktree
-      if [ -n "$win" ]; then
-        local idx; idx=$(tmux display-message -p -t "$win" '#{window_index}' 2>/dev/null || true)
-        mark="${G}●${idx}${R}"; key=0
-      fi
-      case " $flags " in *" prunable "*) kind=prunable; mark="${Y}prunable${R}" ;; esac
-      case " $flags " in *" locked "*) mark="$mark ${D}locked${R}" ;; esac
-      mark="$mark $(cat "$tmp/w$i")"; i=$((i + 1))
-      track=$(track_of "$branch"); [ -n "$track" ] && mark="$mark ${D}$track${R}"
-      mark=$(printf '%s' "$mark" | tr -s ' '); mark=${mark# }   # 빈 마커 자리의 공백 겹침 제거
-      printf '%s\t%-*s  %s%s%s  %s\t%s\t%s\t%s\n' "$key" "$w" "$branch" "$D" "$(abbrev_home "$path")" "$R" "$mark" "$kind" "$branch" "$path"
+      # 행마다 $(...) 를 띄우지 않는다 (bash 서브셸 fork 가 행당 수 ms. 워크트리 20개면 체감된다)
+      local key=1 kind=worktree disp m
+      local -a parts=()
+      if window_for "$path"; then parts+=("${G}●${WIN_IDX}${R}"); key=0; fi
+      case " $flags " in *" prunable "*) kind=prunable; parts=("${Y}prunable${R}") ;; esac
+      case " $flags " in *" locked "*) parts+=("${D}locked${R}") ;; esac
+      m=""; [ "$marks" = --marks ] && { IFS= read -r m < "$tmp/w$i" || true; }; [ -n "$m" ] && parts+=("$m"); i=$((i + 1))
+      track=""; find_branch "$branch" && track=${trks[$IDX]}; [ -n "$track" ] && parts+=("${D}$track${R}")
+      case $path in "$HOME") disp='~' ;; "$HOME"/*) disp="~${path#"$HOME"}" ;; *) disp=$path ;; esac
+      printf '%s\t%-*s  %s%s%s  %s\t%s\t%s\t%s\n' "$key" "$w" "$branch" "$D" "$disp" "$R" "${parts[*]+"${parts[*]}"}" "$kind" "$branch" "$path"
     done
     i=0; for e in "${br[@]+"${br[@]}"}"; do
       ref=${e%%|*}; track=${e#*|}
-      printf '2\t%-*s  %s %s%s%s\tbranch\t%s\t\n' "$w" "$ref" "$(cat "$tmp/b$i")" "$D" "$track" "$R" "$ref"; i=$((i + 1))
+      m=""; [ "$marks" = --marks ] && { IFS= read -r m < "$tmp/b$i" || true; }; i=$((i + 1))
+      printf '2\t%-*s  %s %s%s%s\tbranch\t%s\t\n' "$w" "$ref" "$m" "$D" "$track" "$R" "$ref"
     done | sort -s -t$'\t' -k2,2
     for ref in "${rm[@]+"${rm[@]}"}"; do
       printf '3\t%s%-*s%s  %s원격%s\tremote\t%s\t%s\n' "$D" "$w" "$ref" "$R" "$D" "$R" "${ref#*/}" "$ref"
@@ -232,32 +250,49 @@ rows() {  # $1 = all | worktrees
   } | sort -s -t$'\t' -k1,1n | cut -f2-
   /bin/rm -rf "$tmp"
 }
-# 행 마커. $1 워크트리 경로(비면 브랜치만 본다) $2 브랜치 $3 베이스
+# 행 마커. $1 워크트리 경로(비면 브랜치만 본다) $2 브랜치 $3 베이스 $4 브랜치 커밋 $5 베이스 커밋 (캐시 키. 없으면 구한다)
 #   dirty  커밋 안 된 변경(untracked 포함)이 있다
 #   merged 베이스에 모두 들어 있다 (is_merged)
 marks_for() {
   local m=""
   if [ -n "$1" ] && [ -d "$1" ] && [ -n "$(git -C "$1" status --porcelain 2>/dev/null | head -1)" ]; then m="${Y}dirty${R}"; fi
-  case $2 in "(detached "*|"$3") ;; *) is_merged "$2" "$3" && m="$m ${G}merged${R}" ;; esac
+  case $2 in "(detached "*|"$3") ;; *) is_merged "$2" "$3" "${4:-}" "${5:-}" && m="$m ${G}merged${R}" ;; esac
   printf '%s' "${m# }"
 }
-# 브랜치 $1 이 베이스($2, 생략하면 base)에 모두 들어 있나. 로컬 머지든 PR 머지든 같은 판정이다.
-#   1) git cherry: 커밋을 패치 내용으로 비교한다. ff·merge commit 은 물론 GitHub "Rebase and merge"(새 SHA)도 잡는다.
+# 머지 판정 캐시. 판정은 (브랜치 커밋, 베이스 커밋) 이 같으면 바뀌지 않으므로 그 쌍을 파일 이름으로 둔다 (내용 1/0).
+# 병렬 계산이 동시에 써도 파일 단위라 안전하다. 캐시라서 지워도 다시 계산된다. 60일 지난 항목은 목록을 그릴 때 치운다.
+cache_file()  { printf '%s/merged/%s-%s' "$TMUX_DEV_CACHE" "$1" "$2"; }
+cache_get()   { local f; f=$(cache_file "$1" "$2"); [ -f "$f" ] && IFS= read -r CACHED < "$f"; }
+cache_put()   { local f; f=$(cache_file "$1" "$2"); mkdir -p "${f%/*}"; printf '%s\n' "$3" > "$f.$$" && mv -f "$f.$$" "$f"; }
+cache_prune() { [ -d "$TMUX_DEV_CACHE/merged" ] && find "$TMUX_DEV_CACHE/merged" -type f -mtime +60 -delete 2>/dev/null || true; }
+# 브랜치 $1 이 베이스($2, 생략하면 base)에 모두 들어 있나. $3 $4 는 두 커밋 (생략하면 구한다). 로컬 머지든 PR 머지든 같은 판정.
+#   0) merge-base --is-ancestor: ff·merge commit 으로 들어간 브랜치는 조상이라 바로 끝난다 (ms 단위)
+#   1) git cherry: 커밋을 패치 내용으로 비교한다. GitHub "Rebase and merge"(새 SHA)를 잡는다. merge-base 이후 베이스 쪽
+#      커밋 전부의 patch-id 를 계산해 비싸다 (dotfiles 의 뒤처진 브랜치는 80~90ms) → 결과를 캐시한다
 #   2) squash 머지: 여러 커밋이 하나로 합쳐져 1) 이 못 잡는다. 브랜치의 최종 트리를 merge-base 위에 임시 커밋 하나로
 #      만들어(commit-tree. 참조가 없어 gc 가 지운다) 다시 cherry 에 넣으면 squash 커밋과 패치 내용이 같아 잡힌다.
 #      한계: squash 될 때 베이스가 merge-base 보다 앞서 있어 diff 의 문맥 줄이 달라졌으면 못 잡는다 (git-delete-squashed 류와 같은 한계).
 #   판정은 로컬 베이스 기준이므로 PR 머지 뒤에는 main 을 먼저 맞춰야 한다 (ctrl-x 가 시작할 때 묻는다).
 is_merged() {
-  local ref=$1 b=${2:-} out mb tree probe
+  local ref=$1 b=${2:-} rsha=${3:-} bsha=${4:-} out mb tree probe result
   [ -n "$b" ] || b=$(base)
-  out=$(git cherry "$b" "$ref" 2>/dev/null) || return 1
-  grep -q '^+' <<< "$out" || return 0
-  mb=$(git merge-base "$b" "$ref" 2>/dev/null) || return 1
-  tree=$(git rev-parse "$ref^{tree}" 2>/dev/null) || return 1
-  [ "$tree" = "$(git rev-parse "$mb^{tree}")" ] && return 0            # 베이스와 트리가 같다 (빈 커밋만 있는 브랜치)
-  probe=$(git commit-tree "$tree" -p "$mb" -m "tmux-dev squash probe" 2>/dev/null) || return 1
-  out=$(git cherry "$b" "$probe" 2>/dev/null) || return 1
-  ! grep -q '^+' <<< "$out"
+  [ -n "$rsha" ] || rsha=$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null) || return 1
+  [ -n "$bsha" ] || bsha=$(git rev-parse -q --verify "$b^{commit}" 2>/dev/null) || return 1
+  if git merge-base --is-ancestor "$rsha" "$bsha" 2>/dev/null; then return 0; fi
+  CACHED=""; if cache_get "$rsha" "$bsha"; then [ "$CACHED" = 1 ]; return; fi
+  result=0
+  if out=$(git cherry "$bsha" "$rsha" 2>/dev/null); then
+    if ! grep -q '^+' <<< "$out"; then result=1
+    elif mb=$(git merge-base "$bsha" "$rsha" 2>/dev/null) && tree=$(git rev-parse "$rsha^{tree}" 2>/dev/null); then
+      if [ "$tree" = "$(git rev-parse "$mb^{tree}")" ]; then result=1            # 베이스와 트리가 같다 (빈 커밋만 있는 브랜치)
+      elif probe=$(git commit-tree "$tree" -p "$mb" -m "tmux-dev squash probe" 2>/dev/null) \
+        && out=$(git cherry "$bsha" "$probe" 2>/dev/null) && ! grep -q '^+' <<< "$out"; then result=1; fi
+    fi
+  else
+    return 1   # cherry 가 실패하면(없는 ref 등) 판정하지 않고 캐시도 하지 않는다
+  fi
+  cache_put "$rsha" "$bsha" "$result"
+  [ "$result" = 1 ]
 }
 
 # --- fzf ----------------------------------------------------------------------------
@@ -269,11 +304,15 @@ header_for() {
     "${D}없는 이름 enter · alt-enter: 새 브랜치 (베이스 $(base))${R}"
 }
 mode_from_prompt() { case "${FZF_PROMPT:-}" in worktrees*) echo worktrees ;; *) echo all ;; esac; }
+# 두 번 읽기: 목록을 바꾸는 액션은 마커 없는 빠른 목록을 reload 하고 load 이벤트를 다시 묶는다. load 가 나면
+# (= 빠른 목록이 그려지면) action_marks 가 같은 모드를 --marks 로 reload-sync 해 바꿔 끼운다. 그 사이 입력·이동은 된다.
+# load 는 먼저 unbind 해서 두 번째 로드가 또 load 를 울리는 순환을 끊는다 (man fzf 의 'load:reload-sync(...)+unbind(load)' 예).
 action_toggle() {
   local mode; case $(mode_from_prompt) in all) mode=worktrees ;; *) mode=all ;; esac
-  printf 'reload(%s --list %s)+change-prompt(%s> )+change-header(%s)\n' "$SELF" "$mode" "$mode" "$(header_for "$mode")"
+  printf 'rebind(load)+reload(%s --list %s)+change-prompt(%s> )+change-header(%s)\n' "$SELF" "$mode" "$mode" "$(header_for "$mode")"
 }
-action_refresh() { printf 'reload(%s --list %s)\n' "$SELF" "$(mode_from_prompt)"; }   # 정리 뒤 같은 모드로 다시 읽기
+action_refresh() { printf 'rebind(load)+reload(%s --list %s)\n' "$SELF" "$(mode_from_prompt)"; }   # 정리 뒤 같은 모드로 다시 읽기
+action_marks()   { printf 'reload-sync(%s --list %s --marks)\n' "$SELF" "$(mode_from_prompt)"; }
 cherry_summary() {  # $1 = ref. 머지됐는지(is_merged), 아니면 베이스에 없는 커밋 수
   local b n; b=$(base)
   [ "$1" = "$b" ] && return 0
@@ -309,6 +348,7 @@ pick() {
       --prompt='all> ' --header="$(header_for all)" --height=100% --reverse \
       --print-query --expect=alt-enter \
       --preview="$SELF --preview {2} {3} {4}" --preview-window='right,45%,border-left,<60(down,40%,border-top)' \
+      --bind "load:unbind(load)+transform($SELF --action marks)" \
       --bind "tab:transform($SELF --action toggle)" \
       --bind "shift-tab:transform($SELF --action toggle)" \
       --bind "ctrl-x:execute($SELF --remove {2} {3} {4})+transform($SELF --action refresh)" \
@@ -364,8 +404,8 @@ add_worktree() {  # $@ = git worktree add 의 인자 (경로 뒤)
   run_setup
 }
 ensure_window() {  # 워크트리 $TARGET(브랜치 $BRANCH)의 윈도우로. 없으면 만들고 레이아웃
-  local win; win=$(window_for "$TARGET")
-  if [ -n "$win" ]; then tmux select-window -t "$win"; return; fi
+  local win
+  if window_for "$TARGET"; then tmux select-window -t "$WIN"; return; fi
   win=$(tmux new-window -P -F '#{window_id}' -t "$SESSION:" -n "$BRANCH" -c "$TARGET")
   tmux set-option -w -t "$win" @worktree "$TARGET"
   apply_layout "$LAYOUT" "$win" "$TARGET"
@@ -519,10 +559,10 @@ while [ $# -gt 0 ]; do
     --base)   BASE=$2; shift 2 ;;
     --layout) LAYOUT=$2; shift 2 ;;
     -t)       SESSION=$2; shift 2 ;;
-    --list)    repo_init; SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; rows "${2:-all}"; exit 0 ;;
+    --list)    repo_init; SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; rows "${2:-all}" "${3:-}"; exit 0 ;;
     --remove)  repo_init; SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; remove_target "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
     --preview) repo_init; preview "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
-    --action)  repo_init; case "${2:-}" in toggle) action_toggle ;; refresh) action_refresh ;; esac; exit 0 ;;
+    --action)  repo_init; case "${2:-}" in toggle) action_toggle ;; refresh) action_refresh ;; marks) action_marks ;; esac; exit 0 ;;
     --path)    repo_init; wt_dir "${2:?--path 에는 브랜치가 필요합니다}"; exit 0 ;;
     --archived) repo_init; list_archived; exit 0 ;;
     --hook-create) hook_create; exit 0 ;;

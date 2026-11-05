@@ -4,11 +4,13 @@
 #   설정   $XDG_CONFIG_HOME/tmux-dev/projects          prefix S 가 보여줄 프로젝트 목록 (머신별)
 #   상태   $XDG_STATE_HOME/tmux-dev/history            최근 연 곳
 #   데이터 $XDG_DATA_HOME/tmux-dev/worktrees/<저장소>/<브랜치>   tmux-dev worktree 가 만드는 워크트리
+#   캐시   $XDG_CACHE_HOME/tmux-dev/merged/              머지 판정 결과 (지워도 다시 계산된다)
 # 워크트리는 저장소에서 파생된 체크아웃이고 영속적인 것은 브랜치라, 도구가 관장하는 데이터 자리에 둔다.
 # 저장소별로 바꾸려면 git config tmux-dev.worktree.root (tmux-dev worktree --help).
 TMUX_DEV_CONFIG="${TMUX_DEV_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/tmux-dev/projects}"
 TMUX_DEV_HISTORY="${TMUX_DEV_HISTORY:-${XDG_STATE_HOME:-$HOME/.local/state}/tmux-dev/history}"
 TMUX_DEV_WORKTREES="${TMUX_DEV_WORKTREES:-${XDG_DATA_HOME:-$HOME/.local/share}/tmux-dev/worktrees}"
+TMUX_DEV_CACHE="${TMUX_DEV_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/tmux-dev}"
 # 새 윈도우의 레이아웃 (lib/layout.sh). 진입 스크립트가 @tmux-dev-layout 을 --layout 으로 넘긴다.
 TMUX_DEV_LAYOUT="${TMUX_DEV_LAYOUT:-ide}"
 
