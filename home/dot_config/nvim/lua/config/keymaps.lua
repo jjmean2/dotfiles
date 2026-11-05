@@ -18,6 +18,7 @@
 --   <leader><leader> 파일 찾기 별칭 (VS Code 의 Cmd+P 자리)
 --   <leader>g       git 목록·도구 (snacks 피커, lazygit). hunk 조작은 <leader>gh 아래 (LazyVim 배치)
 --   <leader>t       토글 (toggle)
+--   <leader>y       경로 복사 (yank path): 상대/절대/이름/경로:줄
 --   <leader>?       개인 치트시트 (:h jw, doc/jw.txt)
 --
 -- 어떤 키가 어디서 정의됐는지 볼 때:  :verbose map <키>
@@ -213,6 +214,51 @@ map("n", "<leader>gl", function() Snacks.lazygit.log() end, { desc = "git log (l
 map("n", "<leader>gf", function() Snacks.lazygit.log_file() end, { desc = "현재 파일 히스토리 (lazygit)" })
 map("n", "<leader>gg", function() Snacks.lazygit() end, { desc = "lazygit" })
 map("n", "<leader>gb", function() require("gitsigns").blame_line({ full = true }) end, { desc = "현재 줄 blame" })
+
+-- --------------------------------------------------
+-- <leader>y  경로 복사 (yank path)
+-- --------------------------------------------------
+-- VS Code 의 Copy Path / Copy Relative Path. 시스템 클립보드(+ 레지스터)에 넣는다.
+-- 상대 경로의 기준은 cwd = 워크스페이스 루트다 (:h jw-cwd). cwd 밖 파일이면 %:. 이
+-- 절대 경로를 돌려준다(순정 동작).
+--
+--   키            | 결과 예                       | 순정 대응
+--   <leader>yp    | lua/config/keymaps.lua        | :let @+ = expand('%:.')
+--   <leader>yP    | /Users/.../keymaps.lua        | :let @+ = expand('%:p')
+--   <leader>yn    | keymaps.lua                   | :let @+ = expand('%:t')
+--   <leader>yl    | lua/config/keymaps.lua:42     | (없음)
+--   <leader>yL    | /Users/.../keymaps.lua:42     | (없음)
+--   비주얼 yl/yL  | lua/config/keymaps.lua:42-50  | (없음)  한 줄만 고르면 :42
+-- nvim-tree 안에서는 트리 기본 키 y(이름) Y(상대) gy(절대)를 쓴다.
+
+-- mod: filename-modifiers (:h filename-modifiers). with_line: 줄 번호(비주얼이면 범위)를 붙인다.
+local function yank_path(mod, with_line)
+  return function()
+    local buf = vim.api.nvim_get_current_buf()
+    if vim.bo[buf].buftype ~= "" or vim.api.nvim_buf_get_name(buf) == "" then
+      vim.notify("파일 버퍼가 아니다", vim.log.levels.WARN)
+      return
+    end
+    local visual = vim.fn.mode():find("^[vV\22]") ~= nil -- v, V, Ctrl-V
+    local s = vim.fn.expand(mod)
+    if with_line then
+      local a, b = vim.fn.line("."), vim.fn.line(".")
+      if visual then a = vim.fn.line("v") end
+      if a > b then a, b = b, a end
+      s = s .. ":" .. a .. (a ~= b and ("-" .. b) or "")
+    end
+    vim.fn.setreg("+", s)
+    if visual then
+      vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "n", false)
+    end
+    vim.notify("복사: " .. s)
+  end
+end
+map("n", "<leader>yp", yank_path("%:."), { desc = "상대 경로 복사 (워크스페이스 기준)" })
+map("n", "<leader>yP", yank_path("%:p"), { desc = "절대 경로 복사" })
+map("n", "<leader>yn", yank_path("%:t"), { desc = "파일 이름 복사" })
+map({ "n", "x" }, "<leader>yl", yank_path("%:.", true), { desc = "상대 경로:줄 복사 (비주얼: 범위)" })
+map({ "n", "x" }, "<leader>yL", yank_path("%:p", true), { desc = "절대 경로:줄 복사 (비주얼: 범위)" })
 
 -- --------------------------------------------------
 -- <leader>t  토글

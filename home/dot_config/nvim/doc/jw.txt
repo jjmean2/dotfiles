@@ -113,6 +113,16 @@ cwd (|jw-cwd|) ~							*jw-cwd*
 	밖 파일(:h, ~/.zshrc, gd 로 들어간 라이브러리)은 트리를 그대로 둔다.
 	탭마다 다른 프로젝트를 쓰지 않는다 (:tcd/:lcd 없음). 프로젝트가 둘이면 nvim 도 둘.
 
+경로 복사 (|jw-yank-path|) ~						*jw-yank-path*
+	시스템 클립보드로. 상대 경로는 cwd(워크스페이스 루트) 기준.
+	<leader>yp	상대 경로		순정: :let @+ = expand('%:.')
+	<leader>yP	절대 경로		순정: :let @+ = expand('%:p')
+	<leader>yn	파일 이름		순정: :let @+ = expand('%:t')
+	<leader>yl	상대 경로:줄		비주얼이면 경로:시작-끝
+	<leader>yL	절대 경로:줄		비주얼이면 경로:시작-끝
+	nvim-tree 안: y 이름, Y 상대 경로, gy 절대 경로 (트리 기본 키)
+	화면에 보기만: 1 Ctrl-G. 입력 중 붙여넣기: Ctrl-R %
+
 ==============================================================================
 3. 피커 (snacks.picker)						*jw-picker*
 

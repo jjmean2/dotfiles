@@ -19,6 +19,7 @@ return {
         { "<leader>gh", group = "hunks" },
         { "<leader>c", group = "code" },
         { "<leader>t", group = "toggle" },
+        { "<leader>y", group = "yank path", mode = { "n", "x" } },
         { "]", group = "next" },
         { "[", group = "prev" },
       },
