@@ -44,3 +44,47 @@ vim.api.nvim_create_autocmd("FileType", {
     vim.bo[ev.buf].autocomplete = false
   end,
 })
+
+-- --------------------------------------------------
+-- 워크스페이스(W = 전역 cwd) 규칙. 전체 모델은 plugins/spec.lua 의 nvim-tree 주석, :h jw-cwd
+-- --------------------------------------------------
+
+--- path 가 속한 프로젝트 루트. .git 이 있는 가장 가까운 상위 디렉토리(worktree 포함),
+--- 없으면 path 의 디렉토리.
+---@param path string 파일 경로
+---@return string
+function JwVim.project_root(path)
+  path = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+  return vim.fs.root(path, ".git") or vim.fs.dirname(path)
+end
+
+--- 시작할 때 한 번만 W 를 정한다 (VS Code 에는 없는, 터미널 에디터만의 예외).
+---   nvim / nvim .        → 셸 cwd 그대로
+---   nvim dir             → nvim-tree 가 dir 로 :cd (hijack_directories)
+---   nvim file (cwd 안)   → 셸 cwd 그대로. 셸에서 서 있던 곳이 의도다.
+---   nvim file (cwd 밖)   → 그 파일의 프로젝트 루트로 :cd. 셸이 ~ 일 때
+---                          `nvim ~/proj/a.ts` 로 피커가 홈 전체를 훑는 일을 막는다.
+--- 시작 이후에는 파일을 연다고 W 가 바뀌지 않는다.
+if not vim.g.vscode then
+  vim.api.nvim_create_autocmd("VimEnter", {
+    group = JwVim.augroup("StartupWorkspace"),
+    once = true,
+    callback = function()
+      if vim.fn.argc() == 0 then return end
+      local arg = vim.fn.argv(0) --[[@as string]]
+      if arg:match("^%a[%w+.-]*://") then return end -- scp://, oil:// 같은 URL
+      local file = vim.fs.normalize(vim.fn.fnamemodify(arg, ":p"))
+      if vim.fn.isdirectory(file) == 1 then return end
+
+      local real = function(p) return vim.uv.fs_realpath(p) or p end
+      local cwd = real(vim.fn.getcwd(-1, -1))
+      -- 새 파일이면 realpath 가 없으니 디렉토리 기준으로 판정한다.
+      if vim.fs.relpath(cwd, real(vim.fs.dirname(file))) then return end
+
+      local root = JwVim.project_root(file)
+      if vim.fn.isdirectory(root) == 1 then
+        vim.cmd("cd " .. vim.fn.fnameescape(root))
+      end
+    end,
+  })
+end

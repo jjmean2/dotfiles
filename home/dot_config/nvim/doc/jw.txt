@@ -102,10 +102,16 @@ statusline (맨 아래 한 줄, 순정 포맷 문자열) ~
 	:verbose map {키}	그 키가 어디서 정의됐나
 
 cwd (|jw-cwd|) ~							*jw-cwd*
-	전제: nvim 하나 = 프로젝트 하나 = cwd. 피커, :grep, :find, LSP 가 전부 cwd 를 본다.
+	전제: nvim 하나 = 프로젝트 하나 = 전역 cwd (VS Code 의 창 하나 = 워크스페이스 하나).
+	피커, :grep, :find, LSP, nvim-tree 루트가 전부 cwd 를 본다.
 	:pwd / :cd {dir} / :cd -	확인 / 이동 / 직전으로
 	<leader>fp			최근 프로젝트 피커 (cwd 변경)
-	nvim-tree 는 cwd 와 양방향 동기화돼 있다 (- 로 상위, Ctrl-] 로 루트 변경도 :cd).
+	<leader>fP			현재 파일의 프로젝트로 (git root, cwd 변경)
+	cwd 는 명시적으로만 바뀐다: 위 명령들, 트리의 - / Ctrl-], 시작할 때 한 번.
+	  nvim file	파일이 셸 cwd 밖이면 그 파일의 프로젝트 루트로 시작
+	파일을 여는 것은 cwd 를 바꾸지 않는다. cwd 안 파일은 트리에서 펼쳐 보이고,
+	밖 파일(:h, ~/.zshrc, gd 로 들어간 라이브러리)은 트리를 그대로 둔다.
+	탭마다 다른 프로젝트를 쓰지 않는다 (:tcd/:lcd 없음). 프로젝트가 둘이면 nvim 도 둘.
 
 ==============================================================================
 3. 피커 (snacks.picker)						*jw-picker*
@@ -124,6 +130,7 @@ quickfix 로 들어가는 입구이고, 결과를 쌓아 돌아다니는 건 여
 	<leader>fh			도움말				:h
 	<leader>fk			키맵				:map
 	<leader>fp			프로젝트 전환 (cwd)		:cd
+	<leader>fP			현재 파일의 프로젝트로		:cd %:h
 	<leader>fR			마지막 피커 다시
 
 시작 포커스 (picker.lua 의 sources) ~
