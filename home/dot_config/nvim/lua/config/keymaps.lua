@@ -89,6 +89,7 @@ end, { desc = "포맷 (버퍼 또는 선택 영역)" })
 --   <leader>fh   | 도움말 태그                 | :h 이름
 --   <leader>fk   | 키맵 목록                   | :map
 --   <leader>fp   | 프로젝트 전환 (cwd 변경)    | :cd 경로
+--   <leader>fP   | 현재 파일의 프로젝트로 전환 | :cd %:h (git root 우선)
 --   <leader>fR   | 마지막 피커 다시 열기       | (없음)
 --
 -- 피커 안에서
@@ -117,6 +118,23 @@ map("n", "<leader>fh", pick("help"), { desc = "도움말" })
 map("n", "<leader>fk", pick("keymaps"), { desc = "키맵" })
 map("n", "<leader>fp", pick("projects"), { desc = "프로젝트 전환 (cwd 변경)" })
 map("n", "<leader>fR", pick("resume"), { desc = "마지막 피커 다시" })
+
+-- 현재 파일의 프로젝트로 전환 (VS Code 의 "Open Folder" 를 파일 기준으로).
+-- 파일을 여는 것만으로는 cwd 가 바뀌지 않으므로(:h jw-cwd), W 밖 파일을 보다가 그
+-- 프로젝트에서 일하고 싶을 때 이 키로 명시적으로 옮긴다. 루트 = .git 이 있는 상위, 없으면
+-- 파일 디렉토리. 트리가 열려 있으면 루트가 따라오고 그 파일을 펼쳐 보여준다.
+map("n", "<leader>fP", function()
+  local buf = vim.api.nvim_get_current_buf()
+  local file = vim.api.nvim_buf_get_name(buf)
+  if vim.bo[buf].buftype ~= "" or file == "" then
+    vim.notify("파일 버퍼가 아니다", vim.log.levels.WARN)
+    return
+  end
+  local root = JwVim.project_root(file)
+  vim.cmd("cd " .. vim.fn.fnameescape(root))
+  vim.notify("cwd: " .. vim.fn.fnamemodify(root, ":~"))
+  require("nvim-tree.api").tree.find_file({ buf = buf })
+end, { desc = "현재 파일의 프로젝트로 전환 (cwd 변경)" })
 
 -- --------------------------------------------------
 -- <leader>g  git  (배치는 LazyVim 과 같다)
