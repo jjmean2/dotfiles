@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# tmux-sessionizer: 프로젝트 디렉토리를 골라 그 이름의 tmux 세션으로 들어간다 (없으면 만든다).
+# tmux-dev project: 프로젝트 디렉토리를 골라 그 이름의 tmux 세션으로 들어간다 (없으면 만든다).
 #
 # 멘탈 모델: 세션 = 프로젝트. 세션에 프로젝트 이름을 붙이고 그 디렉토리에서 시작하면 세션 전환이
 # 곧 프로젝트 전환이다. 분리(prefix d)해도 세션은 살아 있어 Claude, 셸 히스토리, nvim 버퍼가
 # 프로젝트별로 보존된다. 순정 대응은 `tmux new -s 이름 -c 경로` + `prefix s` 이고, 이 스크립트는
-# "없으면 만들어 준다" 와 "기본 레이아웃" 만 보탠다.
+# "없으면 만들어 준다" 와 "기본 레이아웃" 만 보탠다. 프로젝트는 git 저장소가 아니어도 된다.
 #
 # 사용
-#   tmux-sessionizer                  fzf 로 고른다 (tmux 안에서는 prefix S 가 팝업으로 띄움)
-#   tmux-sessionizer <디렉토리>       바로 그 프로젝트로
-#   tmux-sessionizer --layout plain   새 세션을 만들 때 레이아웃 지정 (ide | plain, ~/.jongwan/share/tmux/layout.sh)
-#   tmux-sessionizer --add [디렉토리] 목록에 고정 등록 (생략하면 현재 디렉토리)
-#   tmux-sessionizer --remove <디렉토리>  목록에서 제거 (자동 수집된 것은 숨김으로)
-#   tmux-sessionizer --edit           목록 파일을 $EDITOR 로 열기
-#   tmux-sessionizer --list           후보 목록만 출력 (디버그)
+#   tmux-dev project                  fzf 로 고른다 (tmux 안에서는 prefix S 가 팝업으로 띄움)
+#   tmux-dev project <디렉토리>       바로 그 프로젝트로
+#   tmux-dev project --layout plain   새 세션을 만들 때 레이아웃 지정 (ide | plain, lib/layout.sh)
+#   tmux-dev project --add [디렉토리] 목록에 고정 등록 (생략하면 현재 디렉토리)
+#   tmux-dev project --remove <디렉토리>  목록에서 제거 (자동 수집된 것은 숨김으로)
+#   tmux-dev project --edit           목록 파일을 $EDITOR 로 열기
+#   tmux-dev project --list           후보 목록만 출력 (디버그)
 #
 # 팝업(fzf) 안에서 (fzf 기본 키와 겹치지 않는 키만 썼다. ctrl-p/n, ctrl-a/e 등은 순정 그대로)
 #   tab / shift-tab            모드 순환: project(목록) → dir(파일시스템 검색) → recent(최근 연 곳)
@@ -24,41 +24,36 @@
 #   ctrl-t / ctrl-x / ctrl-o   커서 항목을 목록에 등록 / 목록에서 제거 / 목록 파일 열어 편집
 #                              (후보가 비어 있을 때 ctrl-t 는 팝업을 띄운 패널의 디렉토리를 등록)
 #
-# 목록 파일: ~/.config/tmux-sessionizer/projects (머신마다 다르다. 형식은 그 파일의 주석 참고)
+# 목록 파일: ~/.config/tmux-dev/projects (머신마다 다르다. 형식은 그 파일의 주석 참고)
 # 후보 = 목록 파일의 저장소·고정 항목 + 지금 열려 있는 세션. 세션 이름은 디렉토리 이름이고
 # tmux 가 못 쓰는 . 과 : 은 _ 로 바꾼다. 이미 있는 세션으로 갈 때는 레이아웃을 건드리지 않는다.
 #
-# 워크트리 (tmux-worktree, prefix W 와 짝). 세션 = 저장소, 윈도우 = 워크트리 라는 관례를 지키기 위해
+# 워크트리 (tmux-dev worktree, prefix W 와 짝). 세션 = 저장소, 윈도우 = 워크트리 라는 관례를 지키기 위해
 #   - 자동 수집은 .git 이 파일인 디렉토리(= 워크트리)를 프로젝트로 보지 않는다. 고정 항목은 적은 대로 쓴다.
 #   - 워크트리 경로를 골랐는데 그 이름의 세션이 없고 고정 항목도 아니면, 메인 체크아웃의 세션으로 가서
-#     그 워크트리의 윈도우를 연다 (tmux-worktree 에 넘김). 그 이름의 세션이 이미 있으면 그냥 그 세션으로
+#     그 워크트리의 윈도우를 연다 (worktree 에 넘김). 그 이름의 세션이 이미 있으면 그냥 그 세션으로
 #     간다 (순정 `tmux new -c <워크트리>` 로 만든 세션을 존중).
-#   - 세션을 만들 때 저장소면 첫 윈도우에 사용자 옵션 @worktree <경로> 를 둔다 (tmux-worktree 가 읽는다).
+#   - 세션을 만들 때 저장소면 첫 윈도우에 사용자 옵션 @worktree <경로> 를 둔다 (worktree 가 읽는다).
 set -euo pipefail
 
+SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
+LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
+# shellcheck source=../lib/common.sh
+. "$LIB/common.sh"
+# shellcheck source=../lib/layout.sh
+. "$LIB/layout.sh"           # 새 세션의 첫 윈도우에 한 번 적용. worktree 와 공유 (ide, plain)
+WORKTREE_BIN="$(dirname "$SELF")/tmux-dev-worktree"
+
 # --- 설정 --------------------------------------------------------------------
-CONFIG="${TMUX_SESSIONIZER_CONFIG:-$HOME/.config/tmux-sessionizer/projects}"
-HISTORY="${TMUX_SESSIONIZER_HISTORY:-${XDG_STATE_HOME:-$HOME/.local/state}/tmux-sessionizer/history}"
+CONFIG=$TMUX_DEV_CONFIG
+HISTORY=$TMUX_DEV_HISTORY
+LAYOUT=$TMUX_DEV_LAYOUT
 RECENT_MAX=30
-# 새 세션의 기본 레이아웃 (환경변수로 바꿀 수 있다)
-LAYOUT="${TMUX_SESSIONIZER_LAYOUT:-ide}"
 # dir 모드 기본 범위. 목록 파일의 search / exclude 줄이 있으면 그것으로 대체된다.
 DEFAULT_SEARCH="$HOME:4"
 DEFAULT_EXCLUDES=".git node_modules Library .Trash .cache"
-SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
-WORKTREE_BIN="$(dirname "$SELF")/tmux-worktree"
 
-# --- 레이아웃 ----------------------------------------------------------------
-# 새 세션을 만든 직후 첫 윈도우에 한 번만 적용한다. 함수는 tmux-worktree 와 공유한다 (ide, plain).
-# shellcheck source=../share/tmux/layout.sh
-. "$(dirname "$SELF")/../share/tmux/layout.sh"
-
-# --- 경로 도우미 --------------------------------------------------------------
-expand_tilde() { printf '%s\n' "${1/#\~/$HOME}"; }
-abbrev_home()  { case $1 in "$HOME") printf '~\n' ;; "$HOME"/*) printf '~%s\n' "${1#"$HOME"}" ;; *) printf '%s\n' "$1" ;; esac; }
-# 디렉토리를 정규화한 절대 경로로. 존재하지 않으면 빈 줄.
-canon() { [ -d "$1" ] && (cd "$1" 2>/dev/null && pwd) || true; }
-
+# --- git 도우미 ----------------------------------------------------------------
 # git 브랜치 이름. 후보마다 git 을 띄우면 팝업이 느려지므로 .git/HEAD 를 직접 읽는다.
 # 저장소가 아니면 빈 문자열, detached 면 짧은 해시.
 git_branch() {
@@ -93,7 +88,7 @@ worktree_main() {
 #   <경로>:<깊이>      루트. 깊이만큼 내려가며 .git 이 있는 디렉토리를 자동 수집
 #   <경로>             고정 항목. git 저장소가 아니어도 된다
 #   !<경로>            자동 수집에서 숨김 (열려 있는 세션은 그대로 보인다)
-#   search <경로>:<깊이>   dir 모드(ctrl-f)가 뒤지는 범위. 여러 줄 가능
+#   search <경로>:<깊이>   dir 모드가 뒤지는 범위. 여러 줄 가능
 #   exclude <이름>...  dir 모드에서 건너뛸 디렉토리 이름
 config_lines() {  # 주석·빈 줄을 뺀 설정 줄
   [ -f "$CONFIG" ] || return 0
@@ -109,12 +104,12 @@ ensure_config() {
   [ -f "$CONFIG" ] && return 0
   mkdir -p "$(dirname "$CONFIG")"
   cat > "$CONFIG" <<'EOF'
-# tmux-sessionizer 가 prefix S 팝업에 보여줄 프로젝트 목록. 이 파일은 머신마다 다르다.
-#   <경로>:<깊이>    루트. 깊이만큼 내려가며 .git 이 있는 디렉토리를 자동 수집
+# tmux-dev project (prefix S) 가 팝업에 보여줄 프로젝트 목록. 이 파일은 머신마다 다르다.
+#   <경로>:<깊이>    루트. 깊이만큼 내려가며 .git 이 있는 디렉토리를 자동 수집 (워크트리는 제외)
 #   <경로>           고정 항목 (git 저장소가 아니어도 됨)
 #   !<경로>          자동 수집에서 숨김
-#   search <경로>:<깊이>   ctrl-f 검색 범위 (기본 ~:4)
-#   exclude <이름>...      ctrl-f 가 건너뛸 디렉토리 이름
+#   search <경로>:<깊이>   dir 모드 검색 범위 (기본 ~:4)
+#   exclude <이름>...      dir 모드가 건너뛸 디렉토리 이름
 ~/dev:2
 EOF
 }
@@ -127,7 +122,7 @@ list_roots() {  # 설정의 루트 아래 git 저장소
     root=$(expand_tilde "${entry%:*}"); depth=${entry##*:}
     [ -d "$root" ] || continue
     # 루트 자신은 적은 대로 후보. 그 아래는 depth 까지 .git 디렉토리를 검색한다. .git 이 파일이면
-    # 워크트리라 건너뛴다 (워크트리는 세션이 아니라 메인 저장소 세션의 윈도우. tmux-worktree 참고).
+    # 워크트리라 건너뛴다 (워크트리는 세션이 아니라 메인 저장소 세션의 윈도우. tmux-dev worktree 참고).
     [ -e "$root/.git" ] && printf '%s\n' "$root"
     [ "$depth" -gt 0 ] && find "$root" -mindepth 2 -maxdepth $((depth + 1)) -name .git -prune \
       2>/dev/null | while IFS= read -r g; do [ -d "$g" ] && printf '%s\n' "${g%/.git}"; done
@@ -207,35 +202,34 @@ delete_lines() {
 }
 add_entry() {
   local dir; dir=$(canon "${1:-$PWD}")
-  [ -n "$dir" ] || { echo "tmux-sessionizer: 디렉토리가 아닙니다: ${1:-$PWD}" >&2; return 1; }
+  [ -n "$dir" ] || die "디렉토리가 아닙니다: ${1:-$PWD}"
   ensure_config
   local short; short=$(abbrev_home "$dir")
   # 숨김 줄이 있으면 그것을 지우는 것으로 충분하다 (다시 자동 수집된다)
-  if config_hidden | grep -qxF -e "$short" -e "$dir"; then
+  if config_hidden | grep -xF -e "$short" -e "$dir" >/dev/null; then
     delete_lines "!$short" "!$dir"
     return 0
   fi
-  registered | grep -qxF "$dir" && return 0   # 이미 설정에 있음 (열려 있는 세션일 뿐이면 등록한다)
+  registered | grep -xF "$dir" >/dev/null && return 0   # 이미 설정에 있음 (열려 있는 세션일 뿐이면 등록한다)
   printf '%s\n' "$short" >> "$CONFIG"
 }
 remove_entry() {
   local dir; dir=$(canon "$1")
-  [ -n "$dir" ] || { echo "tmux-sessionizer: 디렉토리가 아닙니다: $1" >&2; return 1; }
+  [ -n "$dir" ] || die "디렉토리가 아닙니다: $1"
   ensure_config
   local short; short=$(abbrev_home "$dir")
-  if config_pins | grep -qxF -e "$short" -e "$dir"; then        # 고정 항목이면 줄을 지운다
+  if config_pins | grep -xF -e "$short" -e "$dir" >/dev/null; then   # 고정 항목이면 줄을 지운다
     delete_lines "$short" "$dir"
-  elif registered | grep -qxF "$dir"; then                       # 자동 수집 항목이면 숨김 줄 추가
+  elif registered | grep -xF "$dir" >/dev/null; then                  # 자동 수집 항목이면 숨김 줄 추가
     printf '!%s\n' "$short" >> "$CONFIG"
-  fi                                                             # 열려 있는 세션일 뿐이면 할 일 없음
+  fi                                                                  # 열려 있는 세션일 뿐이면 할 일 없음
 }
 edit_config() { ensure_config; "${EDITOR:-nvim}" "$CONFIG"; }
 
 # --- fzf ------------------------------------------------------------------------
-B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'
 header_for() {  # 모드 탭 + 키 안내. 현재 모드만 굵게
   local p="project" f="dir" r="recent"
-  case "$1" in project) p="$B[project]$R" ;; dir) f="$B[dir]$R" ;; recent) r="$B[recent]$R" ;; esac
+  case "$1" in project) p="${B}[project]${R}" ;; dir) f="${B}[dir]${R}" ;; recent) r="${B}[recent]${R}" ;; esac
   printf '%s   %s   %s\n%s\n%s\n' "$p" "$f" "$r" \
     "${D}tab/shift-tab 모드 순환   enter 선택 (후보 없으면 친 글자가 경로)   alt-enter 친 글자 강제${R}" \
     "${D}ctrl-t 등록   ctrl-x 제거   ctrl-o 목록 파일 편집${R}"
@@ -266,14 +260,14 @@ preview() {
   local d=$1
   [ -d "$d" ] || return 0
   if [ -e "$d/.git" ]; then
-    printf '\033[1m%s\033[0m\n\n' "$(git_branch "$d")"
+    printf '%s%s%s\n\n' "$B" "$(git_branch "$d")" "$R"
     git -C "$d" log --oneline --color=always -8 2>/dev/null; echo
   fi
   ls -1Ap "$d" 2>/dev/null | head -40
 }
 
 pick() {
-  command -v fzf >/dev/null || { echo "tmux-sessionizer: fzf 가 필요합니다" >&2; exit 1; }
+  command -v fzf >/dev/null || die "fzf 가 필요합니다"
   local out rc=0 query key sel
   # 후보는 < <(...) 로 넣는다. 파이프로 넣으면 pipefail 때문에 candidates 의 종료 코드가 fzf 의 것을 가릴 수 있다.
   out=$(fzf --ansi --delimiter=$'\t' --with-nth=1 --nth=1 --scheme=path \
@@ -317,13 +311,14 @@ while [ $# -gt 0 ]; do
     --preview) preview "${2:-}"; exit 0 ;;
     --action) case "$2" in switch) action_switch "$3" ;; refresh) action_after_edit ;; esac; exit 0 ;;
     -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*) die "모르는 옵션: $1" ;;
     *) target=$1; shift ;;
   esac
 done
 
 # --- 고르기 -------------------------------------------------------------------
 [ -z "$target" ] && pick
-[ -d "$target" ] || { echo "tmux-sessionizer: 디렉토리가 아닙니다: $target" >&2; exit 1; }
+[ -d "$target" ] || die "디렉토리가 아닙니다: $target"
 target=$(cd "$target" && pwd)
 name=$(basename "$target" | tr '.:' '__')
 record_history "$target"
@@ -341,7 +336,7 @@ fi
 # --- 세션 만들기 / 전환 -------------------------------------------------------
 if ! tmux has-session -t "=$name" 2>/dev/null; then
   win=$(tmux new-session -d -s "$name" -c "$target" -P -F '#{window_id}')
-  # 저장소면 첫 윈도우가 "이 체크아웃의 윈도우" 임을 사용자 옵션으로 남긴다 (tmux-worktree 가 읽는다)
+  # 저장소면 첫 윈도우가 "이 체크아웃의 윈도우" 임을 사용자 옵션으로 남긴다 (worktree 가 읽는다)
   [ -e "$target/.git" ] && tmux set-option -w -t "$win" @worktree "$target"
   apply_layout "$LAYOUT" "$win" "$target"
 fi

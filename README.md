@@ -130,16 +130,19 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
   뒤따르는 키는 영문 상태에서 들어간다. 부작용은 zsh/nvim 에서 `ctrl+b` 를 눌러도 영문으로 바뀌는 것 하나다.
   끄려면 Karabiner 설정 창 Complex Modifications 탭에서 규칙을 끄거나 메뉴바에서 Quit. 설정 창에서 뭔가 바꾸면 Karabiner 가
   `karabiner.json` 을 다시 써서 `chezmoi status` 에 차이가 생기므로, 유지할 변경은 `chezmoi re-add` 로 가져온다.
-- **tmux 세션 = 프로젝트**: `tmux-sessionizer [경로] [--layout ide|plain]` (tmux 안에서는 `prefix S` 팝업) 가
-  프로젝트 디렉토리 이름의 세션으로 들어가고, 없으면 왼쪽 셸 / 오른쪽 nvim 으로 만든다. 목록은 머신별 파일
-  `~/.config/tmux-sessionizer/projects` (chezmoi 가 처음 한 번만 만든다). 팝업에서 tab 으로 project → dir(파일시스템
-  검색) → recent(최근 연 곳) 모드 순환, 후보가 없으면 친 글자가 경로. `--add/--remove/--edit` 또는 팝업의 ctrl-t/x/o 로 목록을 고친다.
-- **tmux 윈도우 = 워크트리**: 저장소 세션 안에서 `prefix W` (셸에서는 `tmux-worktree [브랜치|경로]`) 로 워크트리·브랜치를
-  한 목록에서 고르면 그 워크트리의 윈도우로 가고, 없으면 `git worktree add` 와 윈도우(왼쪽 셸 / 오른쪽 nvim)를 만든다.
-  없는 이름을 치면 로컬 main 에서 새 브랜치. 워크트리는 `~/dev/worktrees/<저장소>/<브랜치>` 에 모이고 (`git config
-  tmux-worktree.root/.name/.location/.setup`), sessionizer 에서 워크트리 경로를 고르면 메인 저장소 세션의 윈도우로 정규화한다.
-  둘 다 tmux 세션·윈도우 위에 얹는 관례라 보통 윈도우(`prefix c`)나 저장소 아닌 세션은 그대로다. 공용 레이아웃은
-  `~/.jongwan/share/tmux/layout.sh`.
+- **tmux-dev (세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할)**: `home/dot_config/tmux/plugins/tmux-dev/` →
+  `~/.config/tmux/plugins/tmux-dev/`. tmux 계층을 개발 계층에 대응시키는 확장이며 tmux 의 세션·윈도우를 대체하지 않고
+  얹는다(`prefix c` 의 보통 윈도우, 저장소 아닌 세션은 그대로). "플러그인" 의 실체는 tmux.conf 의 `run-shell` 한 줄이
+  진입 스크립트 `tmux-dev.tmux` 를 돌리고 그 스크립트가 `bind-key` 를 부르는 것이다(TPM 은 그 위의 설치기일 뿐).
+  키·팝업 크기·레이아웃은 `@tmux-dev-*` 사용자 옵션으로 `run-shell` 앞에서 바꾼다. 셸에서는 `tmux-dev project|worktree`
+  (bin 이 PATH 에 들어 있다, `--help`).
+  - `prefix S` (`tmux-dev project [경로]`): 프로젝트 디렉토리 이름의 세션으로, 없으면 왼쪽 셸 / 오른쪽 nvim 으로 만든다.
+    목록은 머신별 `~/.config/tmux-dev/projects` (chezmoi 가 처음 한 번만 만든다). tab 으로 project → dir → recent 순환,
+    후보가 없으면 친 글자가 경로, ctrl-t/x/o 로 목록 편집. 워크트리 경로를 고르면 메인 저장소 세션의 윈도우로 간다.
+  - `prefix W` (`tmux-dev worktree [브랜치|경로]`): 저장소의 워크트리·브랜치·원격 브랜치를 한 목록에서 고르면 그 워크트리의
+    윈도우로, 없으면 `git worktree add` 와 윈도우를 만든다. 없는 이름을 치면 로컬 main 에서 새 브랜치.
+  - 파일은 XDG 세 디렉토리에 종류별로: 설정 `~/.config/tmux-dev/`, 상태 `~/.local/state/tmux-dev/`, 데이터(워크트리)
+    `~/.local/share/tmux-dev/worktrees/<저장소>/<브랜치>`. 워크트리 위치·셋업 훅은 `git config tmux-dev.worktree.*`.
 
 ## 자주 쓰는 명령
 

@@ -179,7 +179,8 @@ fi
 # 비대화형 스크립트에서는 표준 도구를 주로 사용할 것이므로 이 부분이 필요 없을 수도 있지만,
 # 일단은 추가해 놓는다. 우선 순위를 최대한 높이기 위해 interactive 여부에 따라
 # PATH 설정의 가장 마지막 단계에 실행되도록 양쪽에 다 추가함
+# tmux-dev 플러그인(~/.config/tmux/plugins/tmux-dev)의 명령도 셸에서 쓸 수 있게 bin 을 함께 넣는다
 case $- in
 *i*) ;;
-*) PATH="$HOME/.jongwan/bin:$PATH" ;;
+*) PATH="$HOME/.jongwan/bin:$HOME/.config/tmux/plugins/tmux-dev/bin:$PATH" ;;
 esac

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# tmux-dev: tmux 계층(세션·윈도우·패널)을 개발 계층(프로젝트·워크트리·역할)에 대응시키는 확장.
+#
+#   세션   = 프로젝트 (디렉토리)        tmux-dev project    prefix S
+#   윈도우 = 워크트리 (브랜치)          tmux-dev worktree   prefix W
+#   패널   = 역할 (왼쪽 셸, 오른쪽 nvim) lib/layout.sh
+#
+# tmux 의 세션·윈도우를 대체하지 않고 그 위에 얹는 관례다. prefix c 의 보통 윈도우, 저장소 아닌
+# 세션, 순정 `tmux new -c <워크트리>` 는 모두 그대로 정상이다.
+#
+# 사용
+#   tmux-dev project  [...]    프로젝트 → 세션 (자세히: tmux-dev project --help)
+#   tmux-dev worktree [...]    워크트리 → 윈도우 (자세히: tmux-dev worktree --help)
+#   tmux-dev help
+#
+# 설치: tmux.conf 에 `run-shell ~/.config/tmux/plugins/tmux-dev/tmux-dev.tmux` 한 줄. 셸에서 쓰려면
+# 이 bin/ 을 PATH 에. 설정은 tmux 사용자 옵션(@tmux-dev-*, tmux-dev.tmux 머리말)과 git config
+# (tmux-dev.worktree.*, worktree --help). 파일은 XDG 에 종류별로: lib/common.sh 머리말.
+set -euo pipefail
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+
+cmd=${1:-help}; [ $# -gt 0 ] && shift
+case $cmd in
+  project|worktree) exec "$ROOT/libexec/tmux-dev-$cmd" "$@" ;;
+  help|-h|--help)   sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) echo "tmux-dev: 모르는 서브커맨드 '$cmd' (project, worktree, help)" >&2; exit 1 ;;
+esac
