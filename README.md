@@ -142,7 +142,8 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
   - `prefix W` (`tmux-dev worktree [브랜치|경로]`): 저장소의 워크트리·브랜치·원격 브랜치를 한 목록에서 고르면 그 워크트리의
     윈도우로, 없으면 `git worktree add` 와 윈도우를 만든다. 없는 이름을 치면 로컬 main 에서 새 브랜치. 행에 `●N`(열린
     윈도우), `dirty`, `merged`(ff·merge commit·rebase 머지는 `git cherry`, squash 머지는 merge-base 위 임시 단일 커밋으로 판정),
-    `[ahead n, behind m]` 마커가 붙고, ctrl-x 가 먼저 main 을 origin 에 맞출지 물은 뒤(판정이 로컬 main 기준이라 PR 머지 뒤엔
+    `[ahead n, behind m]` 마커가 붙는다(목록을 먼저 띄우고 fzf 의 load 이벤트에서 마커를 얹는 두 번 읽기. 머지 판정은
+    `~/.cache/tmux-dev/merged/` 에 커밋 쌍으로 캐시). ctrl-x 가 먼저 main 을 origin 에 맞출지 물은 뒤(판정이 로컬 main 기준이라 PR 머지 뒤엔
     이게 먼저) 워크트리 제거(변경 있으면 거절) + 윈도우 닫기 + 브랜치 삭제를 매번 확인하며 한다. 브랜치는 지우기 전에 항상
     `refs/archive/<날짜>/<브랜치>` 에 보관하므로 머지 안 된 것도 "보관하고 삭제" 를 고를 수 있다(`--archived` 로 목록·복구).
     로컬 머지와 PR 머지 어느 쪽이든 같은 ctrl-x 로 닫는다. 워크트리가 숨은 경로에 있으니 정리는 이 팝업에서 한다.
