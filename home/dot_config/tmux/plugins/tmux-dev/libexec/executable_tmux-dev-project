@@ -253,7 +253,7 @@ next_mode() {  # $1 = next | prev
 action_switch() {  # $1 = 바꿀 모드 (next / prev 는 지금 모드 기준으로 순환)
   local mode=$1
   case "$mode" in next|prev) mode=$(next_mode "$mode") ;; esac
-  printf 'reload(%s)+change-prompt(%s> )+change-header(%s)\n' "$(source_for "$mode")" "$mode" "$(header_for "$mode")"
+  printf 'reload(%s)+first+change-prompt(%s> )+change-header(%s)\n' "$(source_for "$mode")" "$mode" "$(header_for "$mode")"
 }
 action_after_edit() {  # 목록을 고친 뒤: 지금 모드 그대로 다시 읽기
   printf 'reload(%s)\n' "$(source_for "$(mode_from_prompt)")"
@@ -272,9 +272,11 @@ pick() {
   command -v fzf >/dev/null || die "fzf 가 필요합니다"
   local out rc=0 query key sel
   # 후보는 < <(...) 로 넣는다. 파이프로 넣으면 pipefail 때문에 candidates 의 종료 코드가 fzf 의 것을 가릴 수 있다.
+  # change:first — 검색어가 바뀌면 커서를 맨 위(가장 잘 맞는 후보)로. fzf 기본은 커서 줄 위치를 유지한다 (man fzf 의 change 이벤트 예).
   out=$(fzf --ansi --delimiter=$'\t' --with-nth=1 --nth=1 --scheme=path \
       --prompt='project> ' --header="$(header_for project)" --height=100% --reverse \
       --print-query --expect=alt-enter \
+      --bind 'change:first' \
       --preview="$SELF --preview {2}" --preview-window='right,45%,border-left,<60(down,40%,border-top)' \
       --bind "tab:transform($SELF --action switch next)" \
       --bind "shift-tab:transform($SELF --action switch prev)" \

@@ -334,7 +334,7 @@ mode_from_prompt() { case "${FZF_PROMPT:-}" in worktrees*) echo worktrees ;; *) 
 # load 는 먼저 unbind 해서 두 번째 로드가 또 load 를 울리는 순환을 끊는다 (man fzf 의 'load:reload-sync(...)+unbind(load)' 예).
 action_toggle() {
   local mode; case $(mode_from_prompt) in all) mode=worktrees ;; *) mode=all ;; esac
-  printf 'rebind(load)+reload(%s --list %s)+change-prompt(%s> )+change-header(%s)\n' "$SELF" "$mode" "$mode" "$(header_for "$mode")"
+  printf 'rebind(load)+reload(%s --list %s)+first+change-prompt(%s> )+change-header(%s)\n' "$SELF" "$mode" "$mode" "$(header_for "$mode")"
 }
 action_refresh() { printf 'rebind(load)+reload(%s --list %s)\n' "$SELF" "$(mode_from_prompt)"; }   # 정리 뒤 같은 모드로 다시 읽기
 action_marks()   { printf 'reload-sync(%s --list %s --marks)\n' "$SELF" "$(mode_from_prompt)"; }
@@ -369,9 +369,11 @@ preview() {  # $1 종류 $2 브랜치 $3 경로
 pick() {
   command -v fzf >/dev/null || die "fzf 가 필요합니다"
   local out rc=0 query key sel
+  # change:first — 검색어가 바뀌면 커서를 맨 위(가장 잘 맞는 후보)로. fzf 기본은 커서 줄 위치를 유지한다 (man fzf 의 change 이벤트 예).
   out=$(fzf --ansi --delimiter=$'\t' --with-nth=1 --nth=1 \
       --prompt='all> ' --header="$(header_for all)" --height=100% --reverse \
       --print-query --expect=alt-enter \
+      --bind 'change:first' \
       --preview="$SELF --preview {2} {3} {4}" --preview-window='right,45%,border-left,<60(down,40%,border-top)' \
       --bind "load:unbind(load)+transform($SELF --action marks)" \
       --bind "tab:transform($SELF --action toggle)" \
