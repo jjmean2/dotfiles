@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# tmux 설정이 바뀌면 살아 있는 tmux 서버에 다시 읽힌다.
+#
+# 왜: chezmoi apply 는 파일만 바꾸고 tmux 서버는 시작할 때 읽은 설정을 계속 쓴다. 바인딩이 가리키는
+# 파일을 옮긴 뒤(예: tmux-dev 로 재구성) 서버를 다시 읽히지 않으면 prefix S 가 지워진 경로를 실행해
+# 팝업이 떴다가 바로 사라진다 (2026-11-05). 순정 대응은 `prefix : source-file ~/.config/tmux/tmux.conf`
+# 이고, 이 스크립트는 그것을 apply 뒤에 자동으로 보내는 것뿐이다.
+#
+# run_onchange_ 스크립트라서 내용이 바뀔 때만 실행된다. 설정 파일과 tmux-dev 진입 스크립트(키를
+# 등록하는 쪽)의 해시를 박아 두어 그 파일들이 바뀌면 함께 다시 실행된다.
+# tmux.conf hash:     {{ include "dot_config/tmux/tmux.conf" | sha256sum }}
+# tmux-dev.tmux hash: {{ include "dot_config/tmux/plugins/tmux-dev/executable_tmux-dev.tmux" | sha256sum }}
+
+command -v tmux >/dev/null 2>&1 || exit 0
+# 서버가 없으면 할 일이 없다 (다음에 시작할 때 새 설정을 읽는다). 서버 옵션(default-terminal 등)은
+# source-file 로는 완전히 적용되지 않으므로 그런 변경은 tmux.conf 머리말대로 재접속이 필요하다.
+tmux list-sessions >/dev/null 2>&1 || { echo "tmux: 실행 중인 서버가 없어 건너뜀"; exit 0; }
+
+if tmux source-file "$HOME/.config/tmux/tmux.conf"; then
+  tmux display-message -d 3000 "tmux.conf 다시 읽음 (chezmoi apply)" 2>/dev/null || true
+  echo "tmux: 서버에 tmux.conf 를 다시 읽혔다"
+else
+  echo "tmux: source-file 실패. prefix : source-file ~/.config/tmux/tmux.conf 로 오류를 확인할 것" >&2
+fi
