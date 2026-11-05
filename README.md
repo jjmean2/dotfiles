@@ -7,7 +7,7 @@
 | 경로 | 내용 |
 |---|---|
 | `home/` | chezmoi 소스 상태 (`.chezmoiroot` 로 지정). 홈 디렉토리에 배포된다 |
-| `home/.chezmoidata/packages.yaml` | OS 별 설치 패키지 목록 |
+| `home/.chezmoidata/packages.yaml` | 설치 패키지 목록 (필수 / OS 별 / 머신별 기능) |
 | `home/.chezmoiscripts/` | 패키지/도구 설치 스크립트. `run_onchange_` 라서 내용이 바뀔 때만 다시 실행된다 |
 | `docos/<project>/docker-compose.yml` | 로컬에서 띄우는 docker compose 서비스. `doco <project> up` 으로 실행 |
 | `snippets/` | 기억해 두고 싶은 코드 스니펫 |
@@ -87,7 +87,7 @@ Stow 로 관리하던 머신은 `stow -D <패키지>` 로 링크를 먼저 걷�
 
 ### 첫 apply 에서 일어나는 일
 
-1. `.chezmoi.toml.tmpl` 이 이메일을 묻고 `~/.config/chezmoi/chezmoi.toml` 을 만든다 (한 번만 묻는다).
+1. `.chezmoi.toml.tmpl` 이 이메일과 머신별 기능 스위치(macOS: Karabiner 를 쓸지)를 묻고 `~/.config/chezmoi/chezmoi.toml` 을 만든다 (한 번만 묻는다).
 2. `run_onchange_before_*`: Homebrew 설치, `packages.yaml` 의 brew/cask 설치 (macOS) 또는 배포판 패키지와 mise 본체 설치 (Linux). 몇 분 걸린다.
 3. `home/` 의 파일이 홈에 배포된다.
 4. `run_onchange_after_*`: `mise install` 로 `conf.d/shared.toml` 의 런타임과 포맷터(stylua, prettier) 설치, fasd, (macOS) tmux/ghostty terminfo.
@@ -97,7 +97,7 @@ Stow 로 관리하던 머신은 `stow -D <패키지>` 로 링크를 먼저 걷�
 
 ```sh
 chezmoi doctor        # source-dir, config-file 이 기대한 위치인지
-chezmoi data          # email 이 맞는지
+chezmoi data          # email 과 features 가 맞는지
 chezmoi status        # 비어 있어야 정상
 exec $SHELL -l        # 새 셸 (PATH, LG_CONFIG_FILE 등)
 nvim                  # 첫 실행에서 lazy.nvim 이 플러그인을 lazy-lock.json 에 적힌 commit 으로, mason 이 LSP 서버를 받는다. :checkhealth
@@ -111,6 +111,9 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
 ### 자주 하는 조정
 
 - 이메일을 바꾸려면: `chezmoi init --prompt` (다시 묻는다). 옵션 없이 `chezmoi init` 을 다시 실행하면 기존 값을 유지한다.
+- 기능 스위치를 바꾸려면: `~/.config/chezmoi/chezmoi.toml` 의 `[data.features]` 값을 고치고 `chezmoi apply`
+  (또는 `chezmoi init --prompt` 로 전부 다시 답한다). 아래 "머신별 기능" 규칙 참고.
+- `config file template has changed` 경고가 나오면 `chezmoi init` 을 실행한다. 새로 생긴 질문만 묻고 기존 답은 유지한다.
 - 스크립트를 강제로 다시 돌리려면 내용을 조금 바꾸거나 `chezmoi state delete-bucket --bucket=entryState` 후 `chezmoi apply`.
 - 머신 전용 값은 `*.local` 파일, `~/.config/mise/config.toml`, `~/.config/ghostty/auto/theme.ghostty` 처럼 chezmoi 가 관리하지 않는 자리에 둔다 (`home/.chezmoiignore` 참고).
 
@@ -119,6 +122,14 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
 - **플랫폼 전용 파일**: `.zshrc` → `.zshrc.darwin` / `.zshrc.linux` 처럼 이름에 OS 토큰을 붙이면,
   `home/.chezmoiignore` 가 다른 OS 의 파일을 설치하지 않는다. 기본 파일이 런타임에 해당 OS 파일과
   `.local` 파일을 찾아 불러온다. 실행할 내용이 없는 플랫폼 파일은 만들지 않는다.
+- **머신별 기능**: 머신마다 설치 여부가 다른 것은 `packages.yaml` 의 `packages.<os>.features.<이름>` 에 묶음
+  (brews / casks)으로 두고, 이 머신이 쓰는지는 머신의 `chezmoi.toml` 의 `features.<이름>` 스위치가 정한다
+  (`.chezmoi.toml.tmpl` 이 init 때 한 번 묻는다. 저장소에는 들어가지 않는다). 같은 스위치로 설치 스크립트가 패키지를 넣고
+  `home/.chezmoiignore` 가 그 도구 전용 설정 파일을 뺀다. 공용 설정 파일 안에서 선택 도구를 부르는 부분은 템플릿이 아니라
+  실행 시점의 `command -v` 확인으로 처리한다. 스위치를 꺼도 설치된 앱과 이미 배포된 설정 파일은 지우지 않는다
+  (관리만 멈춘다). 필요하면 `brew uninstall --cask <이름>` 과 설정 디렉터리 삭제를 손으로 한다.
+  새 기능은 `packages.yaml` 에 묶음을, `.chezmoi.toml.tmpl` 에 묻는 줄을, 필요하면 `.chezmoiignore` 에 경로를 추가한다.
+  지금 있는 기능: `karabiner` (macOS. 가상 HID 드라이버 확장을 설치하므로 보안 소프트웨어가 관리하는 머신에서는 끈다).
 - **로컬 오버라이드**: `*.local` 파일은 gitignore 대상이며 chezmoi 가 관리하지 않는다. 머신별 설정은 여기에 둔다.
 - **초기값만 제공하는 파일**: `create_` 접두사(빈 파일은 `create_empty_`). 대상에 파일이 없을 때만 만들고 이후에는 건드리지 않는다.
   (예: `git config --global` 이 기록하는 `~/.config/git/config`)
@@ -128,7 +139,8 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
   그래서 Karabiner-Elements 규칙(`home/dot_config/private_karabiner/private_karabiner.json`)이 Ghostty 가 앞에 있고 입력기가 한글일 때
   `ctrl+b` / `Esc` / `ctrl+[` 를 "영문 전환 + 그 키" 로 바꾼다. 제어 조합은 입력기를 통과하므로 전환이 늦어도 prefix 는 들어가고,
   뒤따르는 키는 영문 상태에서 들어간다. 부작용은 zsh/nvim 에서 `ctrl+b` 를 눌러도 영문으로 바뀌는 것 하나다.
-  끄려면 Karabiner 설정 창 Complex Modifications 탭에서 규칙을 끄거나 메뉴바에서 Quit. 설정 창에서 뭔가 바꾸면 Karabiner 가
+  이 머신에서 아예 쓰지 않으려면 기능 스위치 `features.karabiner = false` (설치도, 설정 배포도 하지 않는다. 위 "머신별 기능").
+  잠깐 끄려면 Karabiner 설정 창 Complex Modifications 탭에서 규칙을 끄거나 메뉴바에서 Quit. 설정 창에서 뭔가 바꾸면 Karabiner 가
   `karabiner.json` 을 다시 써서 `chezmoi status` 에 차이가 생기므로, 유지할 변경은 `chezmoi re-add` 로 가져온다.
 - **tmux-dev (세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할)**: `home/dot_config/tmux/plugins/tmux-dev/` →
   `~/.config/tmux/plugins/tmux-dev/`. tmux 계층을 개발 계층에 대응시키는 확장이며 tmux 의 세션·윈도우를 대체하지 않고

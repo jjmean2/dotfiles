@@ -21,8 +21,12 @@
 # mise 의 머신 전용 전역 설정. 공유 기본값은 .config/mise/conf.d/shared.toml 에 있다.
 .config/mise/config.toml
 
-# Karabiner-Elements 는 macOS 전용이다. 디렉터리 이름에는 OS 토큰을 붙일 수 없어 여기서 뺀다.
-{{ if ne .chezmoi.os "darwin" -}}
+# 머신별 기능(.chezmoidata/packages.yaml 의 packages.<os>.features)을 끈 머신에는 그 설정도 배포하지 않는다.
+# 스위치는 ~/.config/chezmoi/chezmoi.toml 의 [data.features]. 이 파일은 모든 chezmoi 명령에서 평가되므로
+# 스위치가 아직 없는 config(init 다시 하기 전)에서도 깨지지 않게 dig 로 읽고 없으면 끈 것으로 본다.
+# 여기서 빠진 경로는 관리만 멈출 뿐 이미 있는 파일을 지우지는 않는다.
+# Karabiner-Elements 는 macOS 전용이라 다른 OS 에서는 스위치가 항상 false 다.
+{{ if not (dig "features" "karabiner" false .) -}}
 .config/karabiner
 {{ end -}}
 
