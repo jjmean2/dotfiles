@@ -32,8 +32,10 @@ Claude Code 의 `WorktreeCreate` 훅은 `claude -w`, EnterWorktree, 백그라운
 만들 때 발화하고 **기본 `git worktree add` 를 통째로 대체**한다. 훅을 `tmux-dev worktree --hook-create` 로 두면 에이전트가
 만드는 워크트리도 사람이 만든 것과 같은 위치(`~/.local/share/tmux-dev/worktrees/<저장소>/<브랜치>`), 같은 이름
 (`worktree-` 접두어 없음), 같은 베이스(로컬 main), 같은 셋업 훅(`tmux-dev.worktree.setup`)을 탄다. 피커는 그 모두를 한 목록에
-보여 준다. `WorktreeRemove` 는 Claude 가 사용자 확인을 거쳐 지우기로 한 뒤 불리므로 보관 → 강제 제거 → 브랜치 삭제만 하고,
-tmux 윈도우는 건드리지 않는다(사람의 셸이 거기 있을 수 있다).
+보여 준다. `WorktreeRemove` 는 Claude 가 워크트리를 지우기로 한 뒤 불린다. 사용자가 종료 때 "지우기" 를 고른 경우와,
+깨끗한 무명 워크트리가 세션 종료로 자동 정리되는 경우 둘 다다. 그래서 워크트리는 강제로 지우되 브랜치는 **main 에 모두
+들어 있을 때만** 보관 → 삭제하고, 머지 안 된 커밋이 있는 브랜치는 남긴다(피커에 `[ahead n]` 행으로 뜨고 ctrl-x 가 확인을
+거쳐 정리한다). tmux 윈도우는 건드리지 않는다(사람의 셸이 거기 있을 수 있다).
 
 `~/.claude/settings.json` 의 `hooks` 에 추가 (이 파일은 dotfiles 밖이다):
 

@@ -44,8 +44,8 @@
 # Claude Code 훅 (에이전트가 만드는 워크트리도 같은 위치·이름·베이스로. 설치 방법은 claude-code.md)
 #   tmux-dev worktree --hook-create      WorktreeCreate 훅. stdin JSON 의 name·cwd 로 워크트리를 만들고(있으면 그대로)
 #                                        경로 한 줄만 stdout 에 쓴다. 질문 없음. 브랜치는 name 그대로, 베이스는 로컬 main
-#   tmux-dev worktree --hook-remove      WorktreeRemove 훅. stdin JSON 의 worktree_path 를 보관 → 제거 → 브랜치 삭제.
-#                                        tmux 윈도우는 건드리지 않는다 (사람의 셸이 거기 있을 수 있다)
+#   tmux-dev worktree --hook-remove      WorktreeRemove 훅. stdin JSON 의 worktree_path 를 강제 제거하고, 브랜치는 베이스에
+#                                        모두 들어 있을 때만 보관 → 삭제 (머지 안 된 것은 남긴다). tmux 윈도우는 건드리지 않는다
 #
 # 워크트리 위치 (git config. 전역 --global 과 저장소별 값이 한 메커니즘. 스크립트가 tmux 밖에서도 돌아야 해서
 # tmux 옵션이 아니라 git config 에 둔다)
@@ -448,7 +448,10 @@ hook_create() {
   } >&2
   printf '%s\n' "$TARGET"
 }
-# WorktreeRemove: Claude 가 (사용자 확인을 거쳐) 지우기로 한 뒤 불린다. 보관 → 강제 제거 → 브랜치 삭제. 윈도우는 그대로.
+# WorktreeRemove: Claude 가 워크트리를 지우기로 한 뒤 불린다 (사용자가 "지우기" 를 고른 때, 그리고 깨끗한 무명 워크트리의
+# 세션 종료 때 자동으로). 워크트리는 강제로 지우되(--force 두 번: locked 도. 훅에는 되물을 기회가 없다) 브랜치는
+# 베이스에 모두 들어 있을 때만 보관 → 삭제한다. 머지 안 된 커밋이 있는 브랜치는 남긴다 (피커에 [ahead n] 행으로 뜨고
+# ctrl-x 가 확인을 거쳐 정리한다). 윈도우는 그대로.
 hook_remove() {
   hook_json
   local path branch common; path=$(hook_field worktree_path)
@@ -460,9 +463,10 @@ hook_remove() {
   repo_init
   {
     echo "tmux-dev: WorktreeRemove $(abbrev_home "$path") (${branch:-detached})"
-    git worktree remove --force "$path"
+    git worktree remove --force --force "$path"
     if [ -n "$branch" ] && [ "$branch" != "$(base)" ] && git show-ref -q --verify "refs/heads/$branch"; then
-      archive_branch "$branch" && git branch -D "$branch"
+      if is_merged "$branch"; then archive_branch "$branch" && git branch -D "$branch"
+      else echo "브랜치 $branch 는 $(base) 에 없는 커밋이 있어 남겨 둔다 (prefix W 의 ctrl-x 로 정리)"; fi
     fi
   } >&2
 }
