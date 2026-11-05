@@ -17,14 +17,23 @@ return {
             local filetypes = {
                 "lua",
                 "javascript",
+                "javascriptreact", -- .jsx (javascript 파서가 jsx 도 읽는다)
                 "typescript",
-                "typescriptreact",
+                "typescriptreact", -- .tsx (tsx 파서)
+                "css",
+                "scss",
+                "html",
+                "json",
+                "graphql",
                 "vim",
             }
             -- vim filetype 과 대응되는 treesitter parser 목록
             local parsers = vim.tbl_map(function(ft)
                 return vim.treesitter.language.get_lang(ft) or ft
             end, filetypes)
+            -- 파일 형식은 없지만 다른 파서 안에 끼어 쓰이는(injection) 파서.
+            -- jsdoc: /** */ 주석 강조, regex: 정규식 리터럴 강조.
+            vim.list_extend(parsers, { "jsdoc", "regex" })
 
             require("nvim-treesitter").install(parsers)
 

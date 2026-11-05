@@ -50,11 +50,28 @@ return {
                 "taplo",         -- toml (mise, chezmoi 설정)
                 "gopls",         -- go
                 "basedpyright",  -- python
+                -- 프론트엔드. 린터 둘은 프로젝트가 고른다: 프리셋의 root_dir 가 각자의 설정 파일
+                -- (eslint.config.* / .oxlintrc.json 등)이 있는 프로젝트에서만 서버를 붙이므로 같이
+                -- 켜 둬도 겹치지 않는다. 둘 다 프로젝트의 node_modules/.bin 실행 파일을 우선한다.
+                -- 고칠 수 있는 진단은 gra(코드 액션) 또는 :LspEslintFixAll / :LspOxlintFixAll.
+                "eslint",        -- eslint (vscode-eslint 서버)
+                "oxlint",        -- oxlint (oxc)
+                "cssls",         -- css / scss / less
+                "html",          -- html
+                "tailwindcss",   -- tailwind 클래스 완성·hover (tailwind 를 쓰는 프로젝트에서만 붙는다)
             }
             require("mason-lspconfig").setup({
                 ensure_installed = servers,
-                automatic_installation = true,
+                -- 기본값(true)은 Mason 에 설치된 패키지 중 lspconfig 프리셋이 있는 것을 전부 켠다.
+                -- 그러면 포맷터로 설치한 oxfmt 의 LSP 까지 모든 버퍼에 붙는다. 켤 서버는 아래
+                -- vim.lsp.enable(servers) 로 직접 고른다.
+                automatic_enable = false,
             })
+
+            -- oxlint 프리셋은 eslint/tailwindcss 와 달리 workspace_required 가 없어서, 설정 파일이 없는
+            -- 프로젝트에서도 단일 파일 모드로 붙어 oxlint 기본 규칙으로 진단한다. 프로젝트가 oxlint 를
+            -- 쓸 때만 붙게 맞춘다. (vim.lsp.config 는 프리셋 위에 덮어쓴다)
+            vim.lsp.config("oxlint", { workspace_required = true })
 
             -- 3. [핵심] Neovim 내장 API로 서버 일괄 활성화
             -- nvim-lspconfig가 runtimepath에 제공하는 프리셋을 Neovim 코어가 직접 읽어서 켭니다.
@@ -65,9 +82,14 @@ return {
             -- 이것들은 프로젝트 밖 파일용 fallback 이다: conform 은 파일 위치에서 위로
             -- node_modules/.bin 을 먼저 찾고, 없을 때만 PATH(맨 앞이 Mason 의 bin)를 본다.
             -- 셸에서도 직접 쓰는 CLI 가 아니라 nvim 전용이라 mise 가 아니라 Mason 에 둔다.
-            local tools = { "stylua", "prettier" }
+            -- mason-lspconfig 처럼 headless(스크립트 실행)에서는 건너뛴다: 설치 도중 nvim 이 끝나면
+            -- 반쯤 설치된 채로 남는다.
+            local tools = { "stylua", "prettier", "oxfmt" }
             local registry = require("mason-registry")
             registry.refresh(function()
+                if #vim.api.nvim_list_uis() == 0 then
+                    return
+                end
                 for _, name in ipairs(tools) do
                     local pkg = registry.get_package(name)
                     if not pkg:is_installed() and not pkg:is_installing() then
