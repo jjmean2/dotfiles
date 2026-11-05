@@ -45,6 +45,19 @@ return {
         -- true 로 하면 vim.ui.select (gra 코드 액션 메뉴, 순정 선택 프롬프트) 가 snacks
         -- 피커로 바뀐다. 순정 UI 를 먼저 익힌 뒤 켤지 정하기로 하고 지금은 끈다.
         ui_select = false,
+        -- 검색 히스토리는 소스별로 쌓인다 (files 는 files 끼리, grep 은 grep 끼리).
+        -- 기본 키 <C-Up>/<C-Down> 은 macOS 글로벌 단축키(Mission Control 등)가 가로채서
+        -- 왼쪽 Option(=Alt, Ghostty macos-option-as-alt=left) + k/j 로 옮긴다.
+        -- 입력창 버퍼 로컬 매핑이라 일반 버퍼의 <A-j>/<A-k> 와는 충돌하지 않는다.
+        -- 목록 포커스로 열리는 피커에서는 i 또는 / 로 입력창에 간 뒤 쓴다.
+        win = {
+          input = {
+            keys = {
+              ["<A-k>"] = { "history_back", mode = { "i", "n" } },
+              ["<A-j>"] = { "history_forward", mode = { "i", "n" } },
+            },
+          },
+        },
       },
     },
   },
