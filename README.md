@@ -90,7 +90,7 @@ Stow 로 관리하던 머신은 `stow -D <패키지>` 로 링크를 먼저 걷�
 1. `.chezmoi.toml.tmpl` 이 이메일을 묻고 `~/.config/chezmoi/chezmoi.toml` 을 만든다 (한 번만 묻는다).
 2. `run_onchange_before_*`: Homebrew 설치, `packages.yaml` 의 brew/cask 설치 (macOS) 또는 배포판 패키지와 mise 본체 설치 (Linux). 몇 분 걸린다.
 3. `home/` 의 파일이 홈에 배포된다.
-4. `run_onchange_after_*`: `mise install` 로 `conf.d/shared.toml` 의 런타임과 포맷터(stylua, prettier) 설치, fasd, (macOS) tmux/ghostty terminfo.
+4. `run_onchange_after_*`: `mise install` 로 `conf.d/shared.toml` 의 런타임 설치, fasd, (macOS) tmux/ghostty terminfo.
 5. 이후 `chezmoi apply` 는 바뀐 파일만 다시 쓰고, 스크립트는 내용이 바뀐 것만 다시 돈다.
 
 ### 설치 후 확인
@@ -100,7 +100,7 @@ chezmoi doctor        # source-dir, config-file 이 기대한 위치인지
 chezmoi data          # email 이 맞는지
 chezmoi status        # 비어 있어야 정상
 exec $SHELL -l        # 새 셸 (PATH, LG_CONFIG_FILE 등)
-nvim                  # 첫 실행에서 lazy.nvim 이 플러그인을 lazy-lock.json 에 적힌 commit 으로, mason 이 LSP 서버를 받는다. :checkhealth
+nvim                  # 첫 실행에서 lazy.nvim 이 플러그인을 lazy-lock.json 에 적힌 commit 으로, mason 이 LSP 서버와 포맷터를 받는다. :checkhealth
 tmux new -s test      # 상태바와 prefix G 팝업 확인
 ```
 

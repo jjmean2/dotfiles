@@ -60,6 +60,22 @@ return {
             -- nvim-lspconfig가 runtimepath에 제공하는 프리셋을 Neovim 코어가 직접 읽어서 켭니다.
             vim.lsp.enable(servers)
 
+            -- LSP 가 아닌 도구 (conform.nvim 포맷터, lua/plugins/formatter.lua).
+            -- mason-lspconfig 의 ensure_installed 는 LSP 서버만 다루므로 여기서 직접 설치한다.
+            -- 이것들은 프로젝트 밖 파일용 fallback 이다: conform 은 파일 위치에서 위로
+            -- node_modules/.bin 을 먼저 찾고, 없을 때만 PATH(맨 앞이 Mason 의 bin)를 본다.
+            -- 셸에서도 직접 쓰는 CLI 가 아니라 nvim 전용이라 mise 가 아니라 Mason 에 둔다.
+            local tools = { "stylua", "prettier" }
+            local registry = require("mason-registry")
+            registry.refresh(function()
+                for _, name in ipairs(tools) do
+                    local pkg = registry.get_package(name)
+                    if not pkg:is_installed() and not pkg:is_installing() then
+                        pkg:install()
+                    end
+                end
+            end)
+
             -- 4. 서버가 붙을 때 한 번: 완성 항목 확정 시 부수효과 활성화.
             -- 자동완성 자체는 순정 'autocomplete' 옵션이 omnifunc 를 통해 띄운다 (core/options.lua).
             -- 여기서 completion.enable 을 호출해 두면 Ctrl-Y 로 항목을 고를 때 LSP 가 보낸
