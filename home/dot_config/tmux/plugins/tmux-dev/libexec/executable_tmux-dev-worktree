@@ -179,6 +179,8 @@ rows() {  # $1 = all | worktrees
   # 행 마커(dirty, merged)는 행마다 git 을 띄워야 해서 병렬로 계산한다. dotfiles(워크트리 19, 브랜치 21) 기준
   # 직렬이면 ~700ms 가 더 걸려 첫 화면이 늦는다. 결과는 임시 파일에 받아 순서대로 읽는다.
   local tmp b i; tmp=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev.XXXXXX"); b=$(base)
+  # shellcheck disable=SC2064  # 지금 값의 tmp 를 지우는 것이 맞다
+  trap "/bin/rm -rf '$tmp'" EXIT
   i=0; for e in "${wt[@]+"${wt[@]}"}"; do
     path=${e%%|*}; branch=${e#*|}; branch=${branch%%|*}
     ( marks_for "$path" "$branch" "$b" > "$tmp/w$i" ) & i=$((i + 1))
@@ -228,7 +230,7 @@ is_merged() { local out; out=$(git cherry "$(base)" "$1" 2>/dev/null) && ! grep 
 header_for() {
   local a="all" o="worktrees"
   case "$1" in all) a="${B}[all]${R}" ;; worktrees) o="${B}[worktrees]${R}" ;; esac
-  printf '%s   %s   %stab 필터   ctrl-x 정리(워크트리 제거·머지된 브랜치 삭제)%s\n%s\n%s\n' "$a" "$o" "$D" "$R" \
+  printf '%s   %s   %stab 필터   ctrl-x 정리%s\n%s\n%s\n' "$a" "$o" "$D" "$R" \
     "${D}enter: ●N 윈도우로 · 워크트리 → 윈도우 · 브랜치 → 워크트리+윈도우${R}" \
     "${D}없는 이름 enter · alt-enter: 새 브랜치 (베이스 $(base))${R}"
 }
