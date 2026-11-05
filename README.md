@@ -147,6 +147,8 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
     맞출지 묻는다. 워크트리가 숨은 경로에 있으니 정리는 이 팝업에서 한다.
   - 파일은 XDG 세 디렉토리에 종류별로: 설정 `~/.config/tmux-dev/`, 상태 `~/.local/state/tmux-dev/`, 데이터(워크트리)
     `~/.local/share/tmux-dev/worktrees/<저장소>/<브랜치>`. 워크트리 위치·셋업 훅은 `git config tmux-dev.worktree.*`.
+  - Claude Code 와 함께 쓰는 흐름(워크트리를 먼저 만들고 그 안에서 `claude`), `WorktreeCreate/Remove` 훅으로 에이전트가 만드는
+    워크트리도 같은 자리에 두는 설정, 전역 CLAUDE.md 지침은 플러그인의 `claude-code.md`.
   - tmux.conf 나 진입 스크립트가 바뀌면 `run_onchange_after_40-reload-tmux.sh.tmpl` 이 apply 뒤 살아 있는 tmux 서버에
     `source-file` 을 보낸다 (파일 해시를 주석에 박아 그 파일이 바뀔 때만 실행되는 chezmoi 관례). 서버가 없으면 건너뛴다.
 
