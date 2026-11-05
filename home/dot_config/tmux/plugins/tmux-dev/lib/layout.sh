@@ -1,5 +1,5 @@
-# tmux 윈도우 레이아웃 함수. tmux-sessionizer(세션의 첫 윈도우)와 tmux-worktree(워크트리 윈도우)가
-# 함께 source 한다. bash 용.
+# tmux 윈도우 레이아웃 함수. tmux-dev project(세션의 첫 윈도우)와 tmux-dev worktree(워크트리 윈도우)가
+# 함께 source 한다. bash 용. 패널 = 역할: 왼쪽 셸(명령, 에이전트 CLI), 오른쪽 nvim.
 #
 # "레이아웃" 은 tmux 자체의 패널 배치 프리셋(prefix Space, select-layout)과는 별개로,
 # "새 윈도우의 어느 패널에 무엇을 띄우나" 를 정하는 것이다. 윈도우를 만든 직후 한 번만 적용한다.

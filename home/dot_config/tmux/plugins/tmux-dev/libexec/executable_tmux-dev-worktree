@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# tmux-worktree: 워크트리(브랜치)를 골라 그 윈도우로 간다 (없으면 워크트리와 윈도우를 만든다).
+# tmux-dev worktree: 워크트리(브랜치)를 골라 그 윈도우로 간다 (없으면 워크트리와 윈도우를 만든다).
 #
-# 멘탈 모델: 세션 = 저장소(tmux-sessionizer), 윈도우 = 워크트리 = 브랜치. 윈도우 탭에 브랜치 이름이
+# 멘탈 모델: 세션 = 저장소(tmux-dev project), 윈도우 = 워크트리 = 브랜치. 윈도우 탭에 브랜치 이름이
 # 나열되어 "지금 벌어져 있는 작업" 이 상태바에 보인다. 윈도우 안은 왼쪽 셸(에이전트 CLI 등) /
-# 오른쪽 nvim (share/tmux/layout.sh 의 ide 레이아웃).
+# 오른쪽 nvim (lib/layout.sh 의 ide 레이아웃).
 # 이것은 tmux 의 세션·윈도우를 대체하는 것이 아니라 그 위에 얹는 관례다. 워크트리가 아닌 윈도우
 # (prefix c), 저장소가 아닌 세션, 순정 `tmux new -c <워크트리>` 모두 그대로 정상이다.
 # 순정 대응은 `git worktree add -b <브랜치> <경로> main` + `tmux new-window -n <브랜치> -c <경로>` 이고,
 # 이 스크립트는 "없으면 만들어 준다", 경로 규칙, 레이아웃만 보탠다.
 #
 # 사용
-#   tmux-worktree                    fzf 로 고른다 (tmux 안에서는 prefix W 가 팝업으로 띄움)
-#   tmux-worktree <브랜치>           바로 그 브랜치의 윈도우로 (브랜치·워크트리가 없으면 만든다)
-#   tmux-worktree <워크트리 경로>    바로 그 워크트리의 윈도우로
-#   tmux-worktree --base <ref>       새 브랜치의 베이스 (기본: 로컬 main. origin/HEAD 가 가리키는 이름)
-#   tmux-worktree --layout plain     새 윈도우의 레이아웃 (ide | plain)
-#   tmux-worktree -t <세션>          윈도우를 만들 세션 (기본: 지금 클라이언트의 세션)
-#   tmux-worktree --path <브랜치>    그 브랜치의 워크트리가 만들어질 경로만 출력
-#   tmux-worktree --list             후보 목록만 출력 (디버그)
+#   tmux-dev worktree                    fzf 로 고른다 (tmux 안에서는 prefix W 가 팝업으로 띄움)
+#   tmux-dev worktree <브랜치>           바로 그 브랜치의 윈도우로 (브랜치·워크트리가 없으면 만든다)
+#   tmux-dev worktree <워크트리 경로>    바로 그 워크트리의 윈도우로
+#   tmux-dev worktree --base <ref>       새 브랜치의 베이스 (기본: 로컬 main. origin/HEAD 가 가리키는 이름)
+#   tmux-dev worktree --layout plain     새 윈도우의 레이아웃 (ide | plain)
+#   tmux-dev worktree -t <세션>          윈도우를 만들 세션 (기본: 지금 클라이언트의 세션)
+#   tmux-dev worktree --path <브랜치>    그 브랜치의 워크트리가 만들어질 경로만 출력
+#   tmux-dev worktree --list             후보 목록만 출력 (디버그)
 #   tmux 밖에서 실행하면 워크트리만 만들고(있으면 그대로) 경로를 출력한다.
 #
 # 팝업(fzf) 안에서 (fzf 기본 키와 겹치지 않는 키만 썼다)
@@ -28,41 +28,38 @@
 #                     맞는 후보가 없으면 친 글자를 새 브랜치 이름으로 쓴다 (베이스에서 분기)
 #   alt-enter         후보가 있어도 친 글자를 브랜치 이름으로 쓴다 (macOS Ghostty: 왼쪽 option)
 #
-# 워크트리 위치 (git config. 전역 --global 과 저장소별 값이 한 메커니즘)
-#   tmux-worktree.location  central(기본) | sibling
-#       central:  <root>/<name>/<브랜치의 / 를 - 로>      예) ~/dev/worktrees/dotfiles/feat-foo
+# 워크트리 위치 (git config. 전역 --global 과 저장소별 값이 한 메커니즘. 스크립트가 tmux 밖에서도 돌아야 해서
+# tmux 옵션이 아니라 git config 에 둔다)
+#   tmux-dev.worktree.location  central(기본) | sibling
+#       central:  <root>/<name>/<브랜치의 / 를 - 로>      기본 ~/.local/share/tmux-dev/worktrees/dotfiles/feat-foo
 #       sibling:  <저장소 부모>/<name>.worktrees/<...>      예) ~/dev/jwlee/dotfiles.worktrees/feat-foo
-#   tmux-worktree.root      central 의 모음 디렉토리 (기본 ~/dev/worktrees)
-#   tmux-worktree.name      모음 안에서 이 저장소가 쓰는 이름 (기본: 메인 체크아웃의 디렉토리 이름).
-#                           같은 이름의 저장소가 둘이면 만들 때 감지해 거절하므로, 그때 저장소별로 준다
-#   tmux-worktree.setup     새 워크트리를 만든 뒤 그 안에서 한 번 실행할 셸 명령 (예: cp "$TMUX_WORKTREE_MAIN/.env" .)
-#                           환경변수 TMUX_WORKTREE_MAIN / TMUX_WORKTREE_PATH / TMUX_WORKTREE_BRANCH 를 받는다.
-#                           순정 대응은 git 의 post-checkout 훅이다 (git worktree add 가 실행한다).
+#   tmux-dev.worktree.root      central 의 모음 디렉토리 (기본 $XDG_DATA_HOME/tmux-dev/worktrees. 워크트리는
+#                               저장소에서 파생된 체크아웃이라 도구가 관장하는 데이터 자리에 둔다. ls 로는 안 보이므로
+#                               무엇이 있는지는 이 팝업으로 본다)
+#   tmux-dev.worktree.name      모음 안에서 이 저장소가 쓰는 이름 (기본: 메인 체크아웃의 디렉토리 이름).
+#                               같은 이름의 저장소가 둘이면 만들 때 감지해 거절하므로, 그때 저장소별로 준다
+#   tmux-dev.worktree.setup     새 워크트리를 만든 뒤 그 안에서 한 번 실행할 셸 명령 (예: cp "$TMUX_WORKTREE_MAIN/.env" .)
+#                               환경변수 TMUX_WORKTREE_MAIN / TMUX_WORKTREE_PATH / TMUX_WORKTREE_BRANCH 를 받는다.
+#                               순정 대응은 git 의 post-checkout 훅이다 (git worktree add 가 실행한다).
 #
 # 윈도우 식별: 만든 윈도우에 사용자 옵션 @worktree <경로> 를 둔다 (man tmux OPTIONS: '@' 접두 user option.
 # 포맷 #{@worktree} 로 읽음). 이 옵션이 있는 윈도우만 "워크트리 윈도우" 이고, 메인 체크아웃 행은 옵션이 없을
-# 때 패널 경로로 보완한다 (sessionizer 가 세션을 만들며 첫 윈도우에 옵션을 둔다). 탐색 범위는 세션 하나다.
+# 때 패널 경로로 보완한다 (project 가 세션을 만들며 첫 윈도우에 옵션을 둔다). 탐색 범위는 세션 하나다.
 set -euo pipefail
 
 SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
-# shellcheck source=../share/tmux/layout.sh
-. "$(dirname "$SELF")/../share/tmux/layout.sh"
+LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
+# shellcheck source=../lib/common.sh
+. "$LIB/common.sh"
+# shellcheck source=../lib/layout.sh
+. "$LIB/layout.sh"
 
-LAYOUT="${TMUX_WORKTREE_LAYOUT:-ide}"
+LAYOUT=$TMUX_DEV_LAYOUT
 BASE=""                                    # --base. 비어 있으면 default_base
 SESSION="${TMUX_WORKTREE_SESSION:-}"       # -t
-DEFAULT_ROOT="$HOME/dev/worktrees"
+US=$'\x1f'   # 빈 필드가 있을 수 있는 행의 구분자. bash 의 read 는 tab 같은 공백 IFS 가 연속되면 빈 필드를 합친다.
 
-B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[0m'
-
-die() {
-  echo "tmux-worktree: $*" >&2
-  [ -n "${TMUX:-}" ] && tmux display-message -d 5000 "tmux-worktree: $*" || true
-  exit 1
-}
-expand_tilde() { printf '%s\n' "${1/#\~/$HOME}"; }
-abbrev_home()  { case $1 in "$HOME") printf '~\n' ;; "$HOME"/*) printf '~%s\n' "${1#"$HOME"}" ;; *) printf '%s\n' "$1" ;; esac; }
-conf() { git config --get "tmux-worktree.$1" 2>/dev/null || true; }   # 없으면 빈 문자열
+conf() { git config --get "tmux-dev.worktree.$1" 2>/dev/null || true; }   # 없으면 빈 문자열
 
 # --- 저장소 ---------------------------------------------------------------------
 # 현재 디렉토리에서 메인 체크아웃을 찾는다. 워크트리 안에서 불러도 된다 (worktree list 의 첫 줄이 메인).
@@ -89,9 +86,9 @@ base() { echo "${BASE:-$(default_base)}"; }
 project_dir() {  # 이 저장소의 워크트리들이 모이는 디렉토리
   local loc root; loc=$(conf location); loc=${loc:-central}
   case $loc in
-    central) root=$(conf root); root=$(expand_tilde "${root:-$DEFAULT_ROOT}"); printf '%s/%s\n' "$root" "$NAME" ;;
+    central) root=$(conf root); root=$(expand_tilde "${root:-$TMUX_DEV_WORKTREES}"); printf '%s/%s\n' "$root" "$NAME" ;;
     sibling) printf '%s/%s.worktrees\n' "$(dirname "$MAIN")" "$NAME" ;;
-    *) die "모르는 tmux-worktree.location '$loc' (central, sibling)" ;;
+    *) die "모르는 tmux-dev.worktree.location '$loc' (central, sibling)" ;;
   esac
 }
 wt_dir() { local p; p=$(project_dir) || exit 1; printf '%s/%s\n' "$p" "${1//\//-}"; }   # 브랜치 → 새 워크트리 경로
@@ -104,17 +101,17 @@ check_project_dir() {
     IFS= read -r line < "$g" || continue
     line=${line#gitdir: }; other=${line%/worktrees/*}
     [ "$other" = "$COMMON" ] && return 0
-    die "$(abbrev_home "$pdir") 는 $(abbrev_home "${other%/.git}") 의 워크트리 모음입니다. 이 저장소에는 다른 이름을 주세요:  git config tmux-worktree.name <이름>"
+    die "$(abbrev_home "$pdir") 는 $(abbrev_home "${other%/.git}") 의 워크트리 모음입니다. 이 저장소에는 다른 이름을 주세요:  git config tmux-dev.worktree.name <이름>"
   done
 }
 
 # --- 후보 -------------------------------------------------------------------------
 # 행 형식: "<표시>\t<종류>\t<브랜치>\t<경로>". fzf 는 TAB 앞만 보여주고 뒤를 돌려준다.
 #   worktree  경로 = 워크트리 디렉토리. 브랜치가 비면 detached
-#   branch    로컬 브랜치, 워크트리 없음. 경로 비어 있음
+#   branch    로컬 브랜치, 워크트리 없음. 경로 비어 있음 (마지막 필드라 tab 이어도 안전)
 #   remote    원격에만 있는 브랜치. 브랜치 = 짧은 이름, 경로 = 원격 ref (origin/이름)
 #   prunable  디렉토리가 사라진 워크트리 (git worktree prune 대상)
-list_worktrees() {  # "<경로>\t<브랜치>\t<플래그>" (메인이 첫 줄)
+list_worktrees() {  # "<경로>\t<브랜치>\t<플래그>" (메인이 첫 줄. 브랜치는 비지 않는다)
   local path="" head="" branch="" flags=""
   while IFS= read -r line; do
     case $line in
@@ -129,11 +126,10 @@ list_worktrees() {  # "<경로>\t<브랜치>\t<플래그>" (메인이 첫 줄)
     esac
   done < <(git worktree list --porcelain; echo)
 }
-# 세션의 윈도우: "<인덱스> US <id> US <@worktree> US <활성 패널 경로>". @worktree 는 비어 있을 수 있어
-# 구분자를 tab 이 아닌 US(0x1f)로 둔다 (bash 의 read 는 tab 같은 공백 IFS 가 연속되면 빈 필드를 합친다).
-US=$'\x1f'
+# 세션의 윈도우: "<인덱스> US <id> US <@worktree> US <활성 패널 경로>" (@worktree 는 비어 있을 수 있다)
 list_windows() { [ -n "$SESSION" ] && tmux list-windows -t "$SESSION" -F "#{window_index}${US}#{window_id}${US}#{@worktree}${US}#{pane_current_path}" 2>/dev/null || true; }
-# 워크트리 경로 → 그 윈도우 id (없으면 빈 줄). @worktree 가 우선, 메인은 패널 경로로 보완.
+# 워크트리 경로 → 그 윈도우 id (없으면 빈 줄). @worktree 가 우선, 메인은 패널 경로로 보완
+# (메인 안이되 다른 워크트리 안은 아닌 패널을 가진, 옵션 없는 가장 앞 윈도우).
 window_for() {
   local want=$1 idx id tag pane fallback="" inside
   while IFS=$US read -r idx id tag pane; do
@@ -172,7 +168,7 @@ rows() {  # $1 = all | worktrees
     done < <(git for-each-ref refs/remotes --format='%(refname)' | sort)
   fi
   [ "$w" -gt 40 ] && w=40
-  # 정렬 키: 0 윈도우 열림, 1 워크트리, 2 브랜치, 3 원격. 같은 키 안에서는 원래 순서(메인 먼저, 나머지 이름순)
+  # 정렬 키: 0 윈도우 열림, 1 워크트리, 2 브랜치, 3 원격. 같은 키 안에서는 원래 순서(메인 먼저, 나머지 경로순)
   {
     for e in "${wt[@]+"${wt[@]}"}"; do
       path=${e%%|*}; branch=${e#*|}; flags=${branch#*|}; branch=${branch%%|*}
@@ -208,7 +204,7 @@ action_toggle() {
   local mode; case $(mode_from_prompt) in all) mode=worktrees ;; *) mode=all ;; esac
   printf 'reload(%s --list %s)+change-prompt(%s> )+change-header(%s)\n' "$SELF" "$mode" "$mode" "$(header_for "$mode")"
 }
-cherry_summary() {  # $1 = ref. 베이스에 없는 커밋 수
+cherry_summary() {  # $1 = ref. 베이스에 없는 커밋 수 (git cherry 는 패치 내용으로 비교해 rebase 머지도 잡는다)
   local b n; b=$(base)
   [ "$1" = "$b" ] && return 0
   n=$(git cherry "$b" "$1" 2>/dev/null | grep -c '^+' || true)
@@ -281,11 +277,11 @@ resolve_path() {
   done <<< "$WT_LIST"
   die "등록된 워크트리가 아닙니다: $(abbrev_home "$want")"
 }
-run_setup() {  # 새 워크트리 안에서 tmux-worktree.setup 을 한 번
+run_setup() {  # 새 워크트리 안에서 tmux-dev.worktree.setup 을 한 번
   local cmd; cmd=$(conf setup); [ -n "$cmd" ] || return 0
   echo "setup: $cmd"
   ( cd "$TARGET" && TMUX_WORKTREE_MAIN=$MAIN TMUX_WORKTREE_PATH=$TARGET TMUX_WORKTREE_BRANCH=$BRANCH sh -c "$cmd" ) \
-    || echo "tmux-worktree: setup 이 실패했다 (워크트리는 만들어졌다)" >&2
+    || echo "tmux-dev: setup 이 실패했다 (워크트리는 만들어졌다)" >&2
 }
 add_worktree() {  # $@ = git worktree add 의 인자 (경로 뒤)
   TARGET=$(wt_dir "$BRANCH")
@@ -340,7 +336,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# 인자가 디렉토리면 그 안에서 저장소를 찾는다 (sessionizer 가 다른 디렉토리에서 넘길 수 있다)
+# 인자가 디렉토리면 그 안에서 저장소를 찾는다 (project 가 다른 디렉토리에서 넘길 수 있다)
 [ -n "$arg" ] && [ -d "$arg" ] && cd "$arg"
 repo_init
 if [ -n "${TMUX:-}" ]; then SESSION=${SESSION:-$(tmux display-message -p '#S')}; fi

@@ -16,8 +16,8 @@ if command -v mise >/dev/null 2>&1; then
 	fi
 fi
 
-# 개인 도구 경로, 우선순위 가장 높게 설정
-PATH="$HOME/.jongwan/bin:$PATH"
+# 개인 도구 경로, 우선순위 가장 높게 설정 (+ tmux-dev 플러그인의 bin: tmux-dev project|worktree)
+PATH="$HOME/.jongwan/bin:$HOME/.config/tmux/plugins/tmux-dev/bin:$PATH"
 
 # ==================================================
 # 🕹️ 터미널 설정
