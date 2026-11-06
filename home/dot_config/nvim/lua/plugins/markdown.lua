@@ -3,6 +3,10 @@
 --   1. 버퍼 안 렌더링 (render-markdown.nvim) — 평소 읽고 쓰는 용도
 --   2. 브라우저 라이브 프리뷰 (live-preview.nvim) — Mermaid, 수식, 최종 모양 확인용
 --
+-- live-preview 는 마크다운 전용이 아니다. HTML(+CSS/JS), SVG, AsciiDoc 도 같은 키로 연다.
+-- 즉 VS Code 의 Live Preview(프로젝트 루트를 정적 서버로 띄우고 브라우저로 보기)와 같은 자리다.
+-- 단, Vite/Next 처럼 자체 개발 서버가 있는 프로젝트는 그 서버(HMR)를 tmux 창에서 쓰는 게 맞다.
+--
 -- 터미널은 고정폭 문자 격자라 글자 크기(큰 헤딩)나 비례 폰트는 원리상 안 된다. 색, 배경,
 -- 테두리 문자, 아이콘, 기호 숨기기로 할 수 있는 만큼은 1 이 하고, 나머지는 2 가 맡는다.
 if vim.g.vscode then
@@ -45,7 +49,8 @@ return {
   --   (sync_scroll). HTML 은 저장할 때만 갱신된다. Mermaid, KaTeX, 코드 하이라이트 지원.
   --   node/deno 같은 외부 런타임과 빌드 단계가 없다 (markdown-preview.nvim 과의 차이).
   -- 명령: :LivePreview start [경로] / close / pick / help.  상태 확인: :checkhealth livepreview
-  -- 서버 루트는 cwd(워크스페이스)다 (dynamic_root = false). 상대 경로 이미지도 그 기준으로 보인다.
+  -- 서버 루트는 cwd(워크스페이스)다 (dynamic_root = false). 상대 경로 이미지·CSS·JS 도 그 기준으로
+  -- 로드되고, "/style.css" 같은 루트 절대 경로도 프로젝트 루트를 가리킨다.
   -- 브라우저 캐시: 플러그인을 업데이트한 뒤 이상하면 브라우저 캐시를 비운다 (README 안내).
   -- cmd 로 지연 로드한다. :LivePreview 를 처음 부를 때 로드된다.
   {

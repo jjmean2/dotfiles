@@ -17,7 +17,7 @@
 --   <leader>f       찾기 (find): snacks.picker
 --   <leader><leader> 파일 찾기 별칭 (VS Code 의 Cmd+P 자리)
 --   <leader>g       git 목록·도구 (snacks 피커, lazygit). hunk 조작은 <leader>gh 아래 (LazyVim 배치)
---   <leader>m       마크다운 (markdown): 버퍼 렌더 토글, 브라우저 프리뷰
+--   <leader>m       마크다운 (markdown): 버퍼 렌더 토글, 브라우저 프리뷰 (HTML 도)
 --   <leader>t       토글 (toggle)
 --   <leader>y       경로 복사 (yank path): 상대/절대/이름/경로:줄
 --   <leader>?       개인 치트시트 (:h jw, doc/jw.txt)
@@ -225,6 +225,8 @@ map("n", "<leader>gb", function() require("gitsigns").blame_line({ full = true }
 --   <leader>mP   | 브라우저 프리뷰 서버 끄기                 | :LivePreview close
 -- render-markdown 은 markdown 버퍼를 열 때 로드되므로, mr 은 마크다운 버퍼에서만 의미가 있다.
 -- 프리뷰할 다른 파일을 고르려면 :LivePreview pick.
+-- mp/mP 는 마크다운 전용이 아니다. HTML(+CSS/JS), SVG, AsciiDoc 버퍼에서도 그대로 쓴다
+-- (VS Code Live Preview 대응. 서버 루트 = cwd, HTML 은 저장할 때 갱신).
 map("n", "<leader>mr", function() require("render-markdown").toggle() end, { desc = "마크다운 렌더 토글" })
 map("n", "<leader>mp", "<Cmd>LivePreview start<CR>", { desc = "브라우저 프리뷰" })
 map("n", "<leader>mP", "<Cmd>LivePreview close<CR>", { desc = "브라우저 프리뷰 끄기" })
