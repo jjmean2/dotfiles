@@ -327,7 +327,7 @@ is_merged() {
 header_for() {
   local a="all" o="worktrees"
   case "$1" in all) a="${B}[all]${R}" ;; worktrees) o="${B}[worktrees]${R}" ;; esac
-  printf '%s   %s   %stab 필터   ctrl-x 정리%s\n%s\n%s\n' "$a" "$o" "$D" "$R" \
+  printf '%s   %s   %stab 필터   ctrl-x 정리   esc 검색어 지우기   ctrl-c 닫기%s\n%s\n%s\n' "$a" "$o" "$D" "$R" \
     "${D}enter: ●N 윈도우로 · 워크트리 → 윈도우 · 브랜치 → 워크트리+윈도우${R}" \
     "${D}없는 이름 enter · alt-enter: 새 브랜치 (베이스 $(base))   alt-l: 레이아웃 골라 열기${R}"
 }
@@ -373,10 +373,12 @@ pick() {
   command -v fzf >/dev/null || die "fzf 가 필요합니다"
   local out rc=0 query key sel
   # change:first — 검색어가 바뀌면 커서를 맨 위(가장 잘 맞는 후보)로. fzf 기본은 커서 줄 위치를 유지한다 (man fzf 의 change 이벤트 예).
+  # esc:clear-query — Esc 는 닫지 않고 검색어만 지운다. vim 습관으로 Esc 를 연타해도 팝업이 꺼지지 않게.
+  # 닫기는 fzf 기본 abort 키 ctrl-c (ctrl-g, ctrl-q 도 같다). nvim 피커와 같은 규칙 (picker.lua).
   out=$(fzf --ansi --delimiter=$'\t' --with-nth=1 --nth=1 \
       --prompt='all> ' --header="$(header_for all)" --height=100% --reverse \
       --print-query --expect=alt-enter,alt-l \
-      --bind 'change:first' \
+      --bind 'change:first' --bind 'esc:clear-query' \
       --preview="$SELF --preview {2} {3} {4}" --preview-window='right,45%,border-left,<60(down,40%,border-top)' \
       --bind "load:unbind(load)+transform($SELF --action marks)" \
       --bind "tab:transform($SELF --action toggle)" \

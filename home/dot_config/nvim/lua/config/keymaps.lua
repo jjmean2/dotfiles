@@ -109,6 +109,7 @@ end, { desc = "포맷 (버퍼 또는 선택 영역)" })
 --     목록(노멀 모드)에서 시작: 버퍼, 최근, 프로젝트, 참조, 진단, git diff/status, resume
 --   목록 창: j/k/gg/G 이동 · Enter 열기 · i 또는 / 로 입력창 이동 · q 닫기
 --   입력창: 타이핑으로 좁히기 · Ctrl-j/k 이동 · Tab 여러 개 선택 · Esc 로 노멀 모드(j/k 가 목록 이동)
+--   닫기: 노멀에서 q, 어디서든 Ctrl-c. Esc 는 닫지 않는다 (연타해도 노멀에 머문다)
 --   Ctrl-v 세로 분할 · Ctrl-s 가로 분할 · Ctrl-t 탭 · Ctrl-q 전체(또는 선택)를 quickfix 로
 --   alt-p 미리보기 토글 · alt-h 숨김 파일 · alt-i .gitignore 무시 토글 · ? 키 도움말
 --   alt-g 커서 항목 절대경로를 메시지 줄에 · alt-m 피커 최대화 (긴 경로가 잘릴 때)

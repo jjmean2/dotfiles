@@ -61,17 +61,35 @@ return {
             print(vim.fn.fnamemodify(path, ":p"))
           end,
         },
+        --
+        -- Esc 는 피커를 닫지 않는다. snacks 기본은 insert 에서 Esc → 노멀, 노멀에서 Esc → 닫기라
+        -- "노멀인 줄 모르고 Esc" 나 "확실히 노멀로 가려고 Esc 연타" 에 피커가 꺼진다.
+        -- 노멀의 <Esc> 매핑을 false 로 지워 vim 순정(아무 일 없음)으로 돌리고, 닫기는
+        --   q    노멀 모드 (snacks 기본, help·quickfix 창을 q 로 닫는 것과 같다)
+        --   C-c  어느 모드든 (snacks 기본은 입력창 insert 뿐이라 노멀·목록·미리보기에도 단다)
+        -- 로 한다. tmux-dev 의 fzf 피커도 같은 규칙 (Esc 검색어 지우기, ctrl-c 닫기).
+        -- 문서의 반대 방향 예시 ["<Esc>"] = { "close", mode = { "n", "i" } } 는 Esc 한 번에 닫기.
         win = {
           input = {
             keys = {
               ["<A-k>"] = { "history_back", mode = { "i", "n" } },
               ["<A-j>"] = { "history_forward", mode = { "i", "n" } },
               ["<A-g>"] = { "print_abspath", mode = { "i", "n" } },
+              ["<Esc>"] = false,
+              ["<C-c>"] = { "cancel", mode = { "i", "n" } },
             },
           },
           list = {
             keys = {
               ["<A-g>"] = "print_abspath",
+              ["<Esc>"] = false,
+              ["<C-c>"] = "cancel",
+            },
+          },
+          preview = {
+            keys = {
+              ["<Esc>"] = false,
+              ["<C-c>"] = "cancel",
             },
           },
         },
