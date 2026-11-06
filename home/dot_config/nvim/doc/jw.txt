@@ -14,7 +14,8 @@
   5. tmux			|jw-tmux|
   6. lazygit			|jw-lazygit|
   7. 마크다운			|jw-markdown|
-  8. 이 파일 고치기		|jw-edit|
+  8. 아웃라인			|jw-outline|
+  9. 이 파일 고치기		|jw-edit|
 
 원칙: 순정 키는 지우거나 뜻을 바꾸지 않는다. 추가 키는 <leader>(스페이스) 아래
 네임스페이스에 둔다. 어떤 키가 어디서 왔는지는 :verbose map <키>.
@@ -304,9 +305,27 @@ Mermaid·수식·최종 모양). 설정: lua/plugins/markdown.lua
 	때 갱신된다. 자체 개발 서버(Vite 등)가 있는 프로젝트는 그쪽을 tmux 창에서
 	쓴다 (HMR).
 
+==============================================================================
+8. 아웃라인							*jw-outline*
+
+VS Code 의 OUTLINE 패널. 화면 오른쪽 가장자리에 심볼 트리를 띄우고, 편집 중인
+창과 커서를 따라간다. 설정: lua/plugins/outline.lua (aerial.nvim)
+
+	<leader>o	사이드바 토글 (커서는 제자리)	:AerialToggle!
+	CTRL-W l	사이드바로 이동 (CTRL-W p 로 복귀)
+	:AerialInfo	지금 쓰는 심볼 출처 (treesitter / lsp / markdown)
+
+사이드바 안 ~
+	<CR>		그 심볼로 뛰기	p	소스만 스크롤 (포커스 유지)
+	{  }		이전/다음 심볼	h  l	접기/펼치기
+	zR  zM		전부 펼치기/접기	q	닫기	? 도움말
+
+순정 대안: gO 후 :vert lopen 40. 계층 없는 평평한 목록이고 커서를 따라가지
+않는다. 이름으로 골라 뛸 때는 <leader>fs (피커).
+
 
 ==============================================================================
-8. 이 파일 고치기						*jw-edit*
+9. 이 파일 고치기						*jw-edit*
 
 위치: dotfiles 의 home/dot_config/nvim/doc/jw.txt → ~/.config/nvim/doc/jw.txt
 형식: :h help-writing. 첫 줄의 *jw.txt* 와 각 절의 *태그* 가 색인 대상이다.
