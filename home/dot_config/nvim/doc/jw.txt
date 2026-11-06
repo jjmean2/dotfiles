@@ -299,6 +299,11 @@ Mermaid·수식·최종 모양). 설정: lua/plugins/markdown.lua
 	타이핑하는 대로 갱신(저장 불필요), 스크롤 따라옴. 주소 127.0.0.1:5500.
 	문제가 있으면 :checkhealth livepreview
 
+	HTML(+CSS/JS), SVG, AsciiDoc 도 같은 키로 연다. VS Code Live Preview 대응:
+	서버 루트 = cwd 라 상대·루트 경로 자원이 그대로 로드된다. HTML 은 저장할
+	때 갱신된다. 자체 개발 서버(Vite 등)가 있는 프로젝트는 그쪽을 tmux 창에서
+	쓴다 (HMR).
+
 
 ==============================================================================
 8. 이 파일 고치기						*jw-edit*
