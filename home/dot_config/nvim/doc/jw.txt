@@ -219,7 +219,7 @@ tmux-dev: 세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할 ~
 세션 = 프로젝트 ~
 	prefix S 로 프로젝트를 고르면 그 이름의 세션으로 간다. 처음이면 세션을 만들고
 	왼쪽 셸(여기서 claude) / 오른쪽 nvim 으로 연다. 열린 세션끼리는 prefix s 로도 간다.
-	셸에서: tmux-dev project [경로] [--layout ide|plain]. prefix d 로 분리해도 세션은 남는다.
+	셸에서: tmux-dev project [경로] [--layout <이름>]. prefix d 로 분리해도 세션은 남는다.
 
 	팝업 안 (헤더에도 적혀 있다). fzf 순정 키(ctrl-p/n 이동, ctrl-a/e 줄 처음/끝)는 그대로.
 	tab / shift-tab		모드 순환: project(목록) → dir(파일시스템 검색) → recent(최근).
@@ -229,6 +229,9 @@ tmux-dev: 세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할 ~
 	alt-l			레이아웃을 골라서 열기(두 번째 fzf, 그림 미리보기). 저장소면 그 저장소의
 				기본이 된다(git config tmux-dev.layout). Enter 는 묻지 않고 저장소 설정 →
 				전역(@tmux-dev-layout) → ide 순으로 쓴다. 개인 레이아웃: ~/.config/tmux-dev/layouts.sh
+				레이아웃: ide(셸|nvim) ide-dev(셸+dev 서버|nvim) nvim nvim-dev(nvim/dev 서버)
+				plain. dev 서버 명령: git config tmux-dev.dev, 없으면 package.json 의
+				dev 스크립트(lockfile 로 pnpm/yarn/bun/npm), 그것도 없으면 빈 셸
 	ctrl-t / ctrl-x / ctrl-o	커서 항목 등록 / 제거 / 목록 파일 열어 편집
 	목록 파일: ~/.config/tmux-dev/projects (머신별, 형식은 파일 주석). git
 	저장소는 이름 옆에 브랜치가 붙고, 미리보기에 최근 커밋과 내용이 뜬다.
@@ -240,7 +243,7 @@ tmux-dev: 세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할 ~
 	탭(#W)에 브랜치 이름이 나열되어 벌어져 있는 작업이 상태바에 보인다. 이것은 tmux
 	위에 얹는 관례라 prefix c 의 보통 윈도우, 저장소 아닌 세션, 순정 tmux new 는 그대로다.
 	순정 대응: git worktree add -b <브랜치> <경로> main + tmux new-window -n <브랜치> -c <경로>.
-	셸에서: tmux-dev worktree [브랜치|경로] [--base ref] [--layout ide|plain]. --help 에 전부.
+	셸에서: tmux-dev worktree [브랜치|경로] [--base ref] [--layout <이름>]. --help 에 전부.
 
 	팝업 안. 한 목록에 워크트리(●N 은 열린 윈도우 번호), 브랜치, 원격 브랜치가 순서대로.
 	tab			all ↔ worktrees(워크트리만) 필터
