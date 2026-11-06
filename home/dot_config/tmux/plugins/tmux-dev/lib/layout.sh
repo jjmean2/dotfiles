@@ -73,21 +73,21 @@ dev_pane() {      # $1 dev 패널 id, $2 디렉토리. 명령이 있으면 실�
 }
 # 패널 인덱스는 위치 순이라 나눌 때마다 바뀐다. 셋 이상으로 나누는 레이아웃은 split-window -P 로 패널 id(%N)를 받아 쓴다.
 
-layout_ide-dev() {   # 왼쪽 위 셸, 왼쪽 아래 dev 서버, 오른쪽 nvim. 포커스는 셸
+layout_ide-dev() {   # 왼쪽 셸, 오른쪽 위 nvim, 오른쪽 아래 dev 서버. 포커스는 셸
   local win=$1 dir=$2 shell nvim dev
   shell=$(tmux display-message -p -t "$win" '#{pane_id}')
   nvim=$(tmux split-window -h -t "$shell" -c "$dir" -P -F '#{pane_id}')
-  dev=$(tmux split-window -v -l 30% -t "$shell" -c "$dir" -P -F '#{pane_id}')
+  dev=$(tmux split-window -v -l 30% -t "$nvim" -c "$dir" -P -F '#{pane_id}')
   tmux send-keys -t "$nvim" 'nvim' Enter
   dev_pane "$dev" "$dir"
   tmux select-pane -t "$shell"
 }
-layout_register ide-dev "왼쪽 셸 + dev 서버 / 오른쪽 nvim" \
+layout_register ide-dev "왼쪽 셸 / 오른쪽 nvim + dev 서버" \
 '┌────────────┬────────────┐
 │ 셸         │ nvim       │
 │ (claude 등)│            │
-├────────────┤            │
-│ dev 서버   │            │
+│            ├────────────┤
+│            │ dev 서버   │
 └────────────┴────────────┘'
 
 layout_nvim() {   # nvim 하나 (셸 위에서 띄우므로 :q 하면 셸이 남는다)

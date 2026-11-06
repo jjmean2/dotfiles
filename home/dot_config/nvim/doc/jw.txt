@@ -231,7 +231,7 @@ tmux-dev: 세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할 ~
 	alt-l			레이아웃을 골라서 열기(두 번째 fzf, 그림 미리보기). 저장소면 그 저장소의
 				기본이 된다(git config tmux-dev.layout). Enter 는 묻지 않고 저장소 설정 →
 				전역(@tmux-dev-layout) → ide 순으로 쓴다. 개인 레이아웃: ~/.config/tmux-dev/layouts.sh
-				레이아웃: ide(셸|nvim) ide-dev(셸+dev 서버|nvim) nvim nvim-dev(nvim/dev 서버)
+				레이아웃: ide(셸|nvim) ide-dev(셸|nvim+dev 서버) nvim nvim-dev(nvim/dev 서버)
 				plain. dev 서버 명령: git config tmux-dev.dev, 없으면 package.json 의
 				dev 스크립트(lockfile 로 pnpm/yarn/bun/npm), 그것도 없으면 빈 셸
 	ctrl-t / ctrl-x / ctrl-o	커서 항목 등록 / 제거 / 목록 파일 열어 편집
