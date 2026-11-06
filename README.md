@@ -154,7 +154,7 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
     alt-l 은 레이아웃(어느 패널에 무엇을 띄우나)을 두 번째 fzf 에서 골라서 열고, 저장소면 그 선택이 저장소 기본값이 된다
     (`git config tmux-dev.layout`). Enter 는 묻지 않고 저장소 설정 → 전역 `@tmux-dev-layout` → ide 순으로 쓴다. 개인 레이아웃은
     `~/.config/tmux-dev/layouts.sh` 에 함수 하나와 `layout_register` 한 줄.
-    기본 레이아웃: `ide`(셸 | nvim), `ide-dev`(셸 + dev 서버 | nvim), `nvim`, `nvim-dev`(nvim / dev 서버), `plain`.
+    기본 레이아웃: `ide`(셸 | nvim), `ide-dev`(셸 | nvim + dev 서버), `nvim`, `nvim-dev`(nvim / dev 서버), `plain`.
     dev 서버 명령은 `git config tmux-dev.dev`, 없으면 package.json 의 `dev` 스크립트(lockfile 로 pnpm/yarn/bun/npm 선택).
   - `prefix W` (`tmux-dev worktree [브랜치|경로]`): 저장소의 워크트리·브랜치·원격 브랜치를 한 목록에서 고르면 그 워크트리의
     윈도우로, 없으면 `git worktree add` 와 윈도우를 만든다. 없는 이름을 치면 로컬 main 에서 새 브랜치. alt-l 로 레이아웃을
