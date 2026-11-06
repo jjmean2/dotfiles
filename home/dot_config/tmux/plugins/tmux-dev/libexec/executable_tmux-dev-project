@@ -9,7 +9,7 @@
 # 사용
 #   tmux-dev project                  fzf 로 고른다 (tmux 안에서는 prefix S 가 팝업으로 띄움)
 #   tmux-dev project <디렉토리>       바로 그 프로젝트로
-#   tmux-dev project --layout plain   새 세션을 만들 때 레이아웃 지정 (ide | plain, lib/layout.sh)
+#   tmux-dev project --layout plain   새 세션의 레이아웃을 명시. 없으면 저장소 설정 → 전역 → ide (lib/layout.sh). --layouts 로 목록
 #   tmux-dev project --add [디렉토리] 목록에 고정 등록 (생략하면 현재 디렉토리)
 #   tmux-dev project --remove <디렉토리>  목록에서 제거 (자동 수집된 것은 숨김으로)
 #   tmux-dev project --edit           목록 파일을 $EDITOR 로 열기
@@ -21,6 +21,8 @@
 #   Enter                      선택. 맞는 후보가 없으면 입력한 글자를 경로로 해석한다
 #   alt-enter                  후보가 있어도 입력한 글자를 경로로 쓴다 (없는 경로면 만들지 물어봄).
 #                              macOS Ghostty 는 왼쪽 option 이 alt (macos-option-as-alt = left)
+#   alt-l                      레이아웃을 골라서 연다 (두 번째 fzf, 그림 미리보기). 저장소면 그 저장소의 기본이 된다
+#                              (git config tmux-dev.layout). Enter 는 묻지 않고 저장소 설정 → 전역 → ide 순으로 쓴다
 #   ctrl-t / ctrl-x / ctrl-o   커서 항목을 목록에 등록 / 목록에서 제거 / 목록 파일 열어 편집
 #                              (후보가 비어 있을 때 ctrl-t 는 팝업을 띄운 패널의 디렉토리를 등록)
 #
@@ -47,7 +49,8 @@ WORKTREE_BIN="$(dirname "$SELF")/tmux-dev-worktree"
 # --- 설정 --------------------------------------------------------------------
 CONFIG=$TMUX_DEV_CONFIG
 HISTORY=$TMUX_DEV_HISTORY
-LAYOUT=$TMUX_DEV_LAYOUT
+LAYOUT=""              # --layout 으로 명시한 값. 비어 있으면 resolve_layout (저장소 설정 → 전역 → ide). alt-l 로 고르면 채워진다
+PICK_LAYOUT=""         # 피커에서 alt-l 을 눌렀다
 RECENT_MAX=30          # recent 모드에 보여 줄 수
 HISTORY_MAX=500        # 히스토리 파일 상한 (줄). 무한정 쌓지 않는다
 # dir 모드 기본 범위. 목록 파일의 search / exclude 줄이 있으면 그것으로 대체된다.
@@ -233,7 +236,7 @@ header_for() {  # 모드 탭 + 키 안내. 현재 모드만 굵게
   local p="project" f="dir" r="recent"
   case "$1" in project) p="${B}[project]${R}" ;; dir) f="${B}[dir]${R}" ;; recent) r="${B}[recent]${R}" ;; esac
   printf '%s   %s   %s\n%s\n%s\n' "$p" "$f" "$r" \
-    "${D}tab/shift-tab 모드 순환   enter 선택 (후보 없으면 친 글자가 경로)   alt-enter 친 글자 강제${R}" \
+    "${D}tab/shift-tab 모드 순환   enter 선택 (후보 없으면 친 글자가 경로)   alt-enter 친 글자 강제   alt-l 레이아웃 골라 열기${R}" \
     "${D}ctrl-t 등록   ctrl-x 제거   ctrl-o 목록 파일 편집${R}"
 }
 source_for() {
@@ -275,7 +278,7 @@ pick() {
   # change:first — 검색어가 바뀌면 커서를 맨 위(가장 잘 맞는 후보)로. fzf 기본은 커서 줄 위치를 유지한다 (man fzf 의 change 이벤트 예).
   out=$(fzf --ansi --delimiter=$'\t' --with-nth=1 --nth=1 --scheme=path \
       --prompt='project> ' --header="$(header_for project)" --height=100% --reverse \
-      --print-query --expect=alt-enter \
+      --print-query --expect=alt-enter,alt-l \
       --bind 'change:first' \
       --preview="$SELF --preview {2}" --preview-window='right,45%,border-left,<60(down,40%,border-top)' \
       --bind "tab:transform($SELF --action switch next)" \
@@ -288,7 +291,9 @@ pick() {
   [ "$rc" -eq 130 ] && exit 0
   [ "$rc" -gt 1 ] && exit "$rc"
   { IFS= read -r query; IFS= read -r key; IFS= read -r sel; } <<< "$out" || true
-  if [ -n "${sel:-}" ] && [ -z "$key" ]; then
+  [ "$key" = alt-l ] && PICK_LAYOUT=1     # 경로가 정해진 뒤(아래) 레이아웃을 고른다
+  # alt-enter 는 친 글자 강제. 후보가 없을 때도 친 글자. 그 밖(enter, alt-l)은 커서 항목
+  if [ "$key" != alt-enter ] && [ -n "${sel:-}" ]; then
     target=${sel##*$'\t'}
   else
     target=$(expand_tilde "$query")
@@ -306,6 +311,8 @@ target=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --layout) LAYOUT=$2; shift 2 ;;
+    --layouts)    layout_list; exit 0 ;;
+    --layout-art) layout_art "${2:-}"; exit 0 ;;
     --list)        candidates;  exit 0 ;;
     --list-dirs)   list_dirs;   exit 0 ;;
     --list-recent) recent_rows; exit 0 ;;
@@ -327,6 +334,12 @@ target=$(cd "$target" && pwd)
 name=$(basename "$target" | tr '.:' '__')
 record_history "$target"
 
+# alt-l: 레이아웃을 골라서 연다. 저장소면 그 저장소의 기본값으로 남긴다 (lib/layout.sh 의 resolve_layout 순서)
+if [ -n "$PICK_LAYOUT" ]; then
+  LAYOUT=$(choose_layout "$SELF --layout-art") || exit 0
+  [ -e "$target/.git" ] && git -C "$target" config tmux-dev.layout "$LAYOUT"
+fi
+
 # 워크트리를 골랐으면 메인 저장소의 세션으로 바꾸고, 워크트리는 그 세션의 윈도우로 연다 (아래).
 # 예외: 그 이름의 세션이 이미 있거나(순정으로 만든 세션 존중) 목록 파일에 직접 적은 고정 항목이면 적은 대로.
 worktree=""
@@ -342,10 +355,11 @@ if ! tmux has-session -t "=$name" 2>/dev/null; then
   win=$(tmux new-session -d -s "$name" -c "$target" -P -F '#{window_id}')
   # 저장소면 첫 윈도우가 "이 체크아웃의 윈도우" 임을 사용자 옵션으로 남긴다 (worktree 가 읽는다)
   [ -e "$target/.git" ] && tmux set-option -w -t "$win" @worktree "$target"
-  apply_layout "$LAYOUT" "$win" "$target"
+  apply_layout "$(resolve_layout "$LAYOUT" "$target")" "$win" "$target"
 fi
 if [ -n "$worktree" ]; then
-  "$WORKTREE_BIN" -t "$name" --layout "$LAYOUT" "$worktree"
+  # 레이아웃을 명시했을 때만 넘긴다. 아니면 worktree 가 저장소 설정 → 전역 순으로 스스로 정한다
+  "$WORKTREE_BIN" -t "$name" ${LAYOUT:+--layout "$LAYOUT"} "$worktree"
 fi
 if [ -n "${TMUX:-}" ]; then
   tmux switch-client -t "=$name"
