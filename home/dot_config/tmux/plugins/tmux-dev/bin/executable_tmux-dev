@@ -10,7 +10,7 @@
 #
 # 사용
 #   tmux-dev project  [...]    프로젝트 → 세션 (자세히: tmux-dev project --help)
-#   tmux-dev worktree [...]    워크트리 → 윈도우 (자세히: tmux-dev worktree --help)
+#   tmux-dev worktree [...]    워크트리 → 윈도우. dir 모드로 아무 디렉토리도 (자세히: tmux-dev worktree --help)
 #   tmux-dev help
 #
 # 설치: tmux.conf 에 `run-shell ~/.config/tmux/plugins/tmux-dev/tmux-dev.tmux` 한 줄. 셸에서 쓰려면
