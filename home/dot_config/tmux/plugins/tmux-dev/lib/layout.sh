@@ -4,8 +4,9 @@
 # "새 윈도우의 어느 패널에 무엇을 띄우나"(역할) 를 정하는 것이다. 윈도우를 만든 직후 한 번만 적용한다.
 #
 # 어느 레이아웃을 쓰나 (resolve_layout): 명령줄 --layout > 저장소의 git config tmux-dev.layout > 전역 TMUX_DEV_LAYOUT
-# (tmux 옵션 @tmux-dev-layout 을 진입 스크립트가 넘긴다) > ide. 피커에서 alt-l 로 고르면 그 저장소의 기본값으로 남는다
-# (tmux-dev.layout). 매번 묻지 않고 한 번 고른 것을 기억하는 쪽이 키가 적다.
+# (tmux 옵션 @tmux-dev-layout 을 진입 스크립트가 넘긴다) > ide. 피커에서 alt-l 로 고르면 이번 윈도우에만 쓰고,
+# 레이아웃 목록에서 alt-enter 로 고르면 그 저장소의 기본값(tmux-dev.layout)으로도 남는다. 직접 바꾸려면
+# 저장소 안에서 git config tmux-dev.layout <이름>, 되돌리려면 git config --unset tmux-dev.layout.
 #
 # 레이아웃 추가: layout_<이름>() 함수를 쓰고 layout_register 로 설명과 그림을 등록한다. 개인 레이아웃은
 # ~/.config/tmux-dev/layouts.sh 에 같은 꼴로 두면 있을 때 source 한다. 예)
@@ -138,14 +139,19 @@ resolve_layout() {
   [ -n "$l" ] || l=${TMUX_DEV_LAYOUT:-ide}
   printf '%s\n' "$l"
 }
-# fzf 로 레이아웃을 고른다. $1 은 미리보기용 명령 접두 (뒤에 이름이 붙어 그림을 출력해야 한다). $2 는 머리말 (생략하면
-# 저장소 기본값 안내). 고른 이름을 출력, 취소면 1.
+# fzf 로 레이아웃을 고른다. $1 은 미리보기용 명령 접두 (뒤에 이름이 붙어 그림을 출력해야 한다). $2 가 save 면
+# alt-enter 로 "저장소 기본값으로도 남기기" 를 고를 수 있다 (저장소일 때만 넘긴다).
+# "<이름>\t<save 또는 빈 값>" 을 출력, 취소면 1. enter 는 이번 윈도우만. 저장은 호출한 쪽이 git config 로 한다
+# (저장소 경로를 아는 건 그쪽). 대개는 이번만 다르게 열고 싶어서 고르므로 저장하는 쪽을 덜 쉬운 키에 둔다.
 # Esc 는 검색어만 지우고 닫기는 ctrl-c (tmux-dev 피커 공통 규칙, tmux-dev-project 의 pick 참고).
 choose_layout() {
-  local out
+  local out key sel header='이 윈도우를 어떤 레이아웃으로 열까요'
+  [ "${2:-}" = save ] && header+=$'\nenter: 이번만   alt-enter: 이 저장소의 기본으로도 저장 (git config tmux-dev.layout)'
   out=$(layout_list | fzf --delimiter=$'\t' --with-nth=1,2 --nth=1 --prompt='layout> ' --height=100% --reverse \
-        --bind 'esc:clear-query' \
-        --header="${2:-이 윈도우를 어떤 레이아웃으로 열까요. 고른 것이 이 저장소의 기본이 된다 (git config tmux-dev.layout)}" \
+        --bind 'esc:clear-query' --expect=alt-enter --header="$header" \
         --preview="$1 {1}" --preview-window='right,50%,border-left') || return 1
-  printf '%s\n' "${out%%$'\t'*}"
+  { IFS= read -r key; IFS= read -r sel; } <<< "$out" || true
+  [ -n "$sel" ] || return 1
+  [ "${2:-}" = save ] || key=""
+  printf '%s\t%s\n' "${sel%%$'\t'*}" "${key:+save}"
 }
