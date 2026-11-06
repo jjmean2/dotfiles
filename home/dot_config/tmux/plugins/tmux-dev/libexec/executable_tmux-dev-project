@@ -21,8 +21,9 @@
 #   Enter                      선택. 맞는 후보가 없으면 입력한 글자를 경로로 해석한다
 #   alt-enter                  후보가 있어도 입력한 글자를 경로로 쓴다 (없는 경로면 만들지 물어봄).
 #                              macOS Ghostty 는 왼쪽 option 이 alt (macos-option-as-alt = left)
-#   alt-l                      레이아웃을 골라서 연다 (두 번째 fzf, 그림 미리보기). 저장소면 그 저장소의 기본이 된다
-#                              (git config tmux-dev.layout). Enter 는 묻지 않고 저장소 설정 → 전역 → ide 순으로 쓴다
+#   alt-l                      레이아웃을 골라서 이번만 그것으로 연다 (두 번째 fzf, 그림 미리보기). 거기서 alt-enter
+#                              로 고르면 저장소의 기본으로도 남는다 (git config tmux-dev.layout).
+#                              Enter 는 묻지 않고 저장소 설정 → 전역 → ide 순으로 쓴다
 #   ctrl-t / ctrl-x / ctrl-o   커서 항목을 목록에 등록 / 목록에서 제거 / 목록 파일 열어 편집
 #                              (후보가 비어 있을 때 ctrl-t 는 팝업을 띄운 패널의 디렉토리를 등록)
 #
@@ -280,10 +281,13 @@ target=$(cd "$target" && pwd)
 name=$(basename "$target" | tr '.:' '__')
 record_history "$target"
 
-# alt-l: 레이아웃을 골라서 연다. 저장소면 그 저장소의 기본값으로 남긴다 (lib/layout.sh 의 resolve_layout 순서)
+# alt-l: 레이아웃을 골라서 이번만 그것으로 연다. 레이아웃 목록에서 alt-enter 로 골랐고 저장소면 그 저장소의
+# 기본값으로도 남긴다 (lib/layout.sh 의 resolve_layout 순서)
 if [ -n "$PICK_LAYOUT" ]; then
-  LAYOUT=$(choose_layout "$SELF --layout-art") || exit 0
-  [ -e "$target/.git" ] && git -C "$target" config tmux-dev.layout "$LAYOUT"
+  can_save=""; [ -e "$target/.git" ] && can_save=save
+  picked=$(choose_layout "$SELF --layout-art" "$can_save") || exit 0
+  IFS=$'\t' read -r LAYOUT save_layout <<< "$picked"
+  if [ -n "$save_layout" ]; then git -C "$target" config tmux-dev.layout "$LAYOUT"; fi
 fi
 
 # 워크트리를 골랐으면 메인 저장소의 세션으로 바꾸고, 워크트리는 그 세션의 윈도우로 연다 (아래).
