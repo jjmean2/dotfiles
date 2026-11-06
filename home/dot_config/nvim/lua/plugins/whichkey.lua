@@ -18,6 +18,7 @@ return {
         { "<leader>g", group = "git" },
         { "<leader>gh", group = "hunks" },
         { "<leader>c", group = "code" },
+        { "<leader>m", group = "markdown" },
         { "<leader>t", group = "toggle" },
         { "<leader>y", group = "yank path", mode = { "n", "x" } },
         { "]", group = "next" },

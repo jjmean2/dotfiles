@@ -17,6 +17,7 @@
 --   <leader>f       찾기 (find): snacks.picker
 --   <leader><leader> 파일 찾기 별칭 (VS Code 의 Cmd+P 자리)
 --   <leader>g       git 목록·도구 (snacks 피커, lazygit). hunk 조작은 <leader>gh 아래 (LazyVim 배치)
+--   <leader>m       마크다운 (markdown): 버퍼 렌더 토글, 브라우저 프리뷰
 --   <leader>t       토글 (toggle)
 --   <leader>y       경로 복사 (yank path): 상대/절대/이름/경로:줄
 --   <leader>?       개인 치트시트 (:h jw, doc/jw.txt)
@@ -214,6 +215,19 @@ map("n", "<leader>gl", function() Snacks.lazygit.log() end, { desc = "git log (l
 map("n", "<leader>gf", function() Snacks.lazygit.log_file() end, { desc = "현재 파일 히스토리 (lazygit)" })
 map("n", "<leader>gg", function() Snacks.lazygit() end, { desc = "lazygit" })
 map("n", "<leader>gb", function() require("gitsigns").blame_line({ full = true }) end, { desc = "현재 줄 blame" })
+
+-- --------------------------------------------------
+-- <leader>m  마크다운 (lua/plugins/markdown.lua)
+-- --------------------------------------------------
+--   키           | 하는 일                                  | 순정/CLI 대응
+--   <leader>mr   | 버퍼 안 렌더링 토글 (render-markdown)     | :RenderMarkdown toggle
+--   <leader>mp   | 현재 파일을 브라우저 프리뷰 (live-preview) | :LivePreview start
+--   <leader>mP   | 브라우저 프리뷰 서버 끄기                 | :LivePreview close
+-- render-markdown 은 markdown 버퍼를 열 때 로드되므로, mr 은 마크다운 버퍼에서만 의미가 있다.
+-- 프리뷰할 다른 파일을 고르려면 :LivePreview pick.
+map("n", "<leader>mr", function() require("render-markdown").toggle() end, { desc = "마크다운 렌더 토글" })
+map("n", "<leader>mp", "<Cmd>LivePreview start<CR>", { desc = "브라우저 프리뷰" })
+map("n", "<leader>mP", "<Cmd>LivePreview close<CR>", { desc = "브라우저 프리뷰 끄기" })
 
 -- --------------------------------------------------
 -- <leader>y  경로 복사 (yank path)

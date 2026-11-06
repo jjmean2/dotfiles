@@ -13,7 +13,8 @@
   4. git			|jw-git|
   5. tmux			|jw-tmux|
   6. lazygit			|jw-lazygit|
-  7. 이 파일 고치기		|jw-edit|
+  7. 마크다운			|jw-markdown|
+  8. 이 파일 고치기		|jw-edit|
 
 원칙: 순정 키는 지우거나 뜻을 바꾸지 않는다. 추가 키는 <leader>(스페이스) 아래
 네임스페이스에 둔다. 어떤 키가 어디서 왔는지는 :verbose map <키>.
@@ -281,7 +282,26 @@ Claude Code 와 나란히 쓸 때 ~
 	]  [		패널 안 탭 이동 (Worktrees, 서브모듈 등)
 
 ==============================================================================
-7. 이 파일 고치기						*jw-edit*
+7. 마크다운							*jw-markdown*
+
+두 층: 버퍼 안 렌더링(render-markdown, 평소) / 브라우저 프리뷰(live-preview,
+Mermaid·수식·최종 모양). 설정: lua/plugins/markdown.lua
+
+버퍼 안 렌더링 ~
+	<leader>mr	렌더 토글 (버퍼 단위)	순정: :RenderMarkdown toggle
+	파일 텍스트는 그대로다. 겉모습만 덧칠하므로 검색·이동·저장은 순정과 같다.
+	커서가 있는 줄과 insert 모드에서는 원문이 보인다.
+
+브라우저 프리뷰 ~
+	<leader>mp	현재 파일 프리뷰 시작	:LivePreview start
+	<leader>mP	프리뷰 서버 끄기	:LivePreview close
+	:LivePreview pick	다른 파일 골라 프리뷰
+	타이핑하는 대로 갱신(저장 불필요), 스크롤 따라옴. 주소 127.0.0.1:5500.
+	문제가 있으면 :checkhealth livepreview
+
+
+==============================================================================
+8. 이 파일 고치기						*jw-edit*
 
 위치: dotfiles 의 home/dot_config/nvim/doc/jw.txt → ~/.config/nvim/doc/jw.txt
 형식: :h help-writing. 첫 줄의 *jw.txt* 와 각 절의 *태그* 가 색인 대상이다.
