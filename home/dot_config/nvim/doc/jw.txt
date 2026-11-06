@@ -205,6 +205,7 @@ prefix 는 Ctrl-b (순정) 또는 Ctrl-a. 모든 tmux 조작은 prefix 로 시�
 	prefix H		이 치트시트 팝업
 	prefix S		프로젝트 → 세션 전환기 (없으면 만든다). 세션 = 프로젝트  (tmux-dev)
 	prefix W		워크트리 → 윈도우 전환기 (없으면 만든다). 윈도우 = 워크트리 (tmux-dev)
+				dir 모드(tab)로 아무 디렉토리의 윈도우도 연다
 	prefix :		명령 입력 (예: set -g popup-style 'bg=#2a2b3d')
 
 tmux-dev: 세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할 ~
@@ -243,10 +244,15 @@ tmux-dev: 세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할 ~
 	탭(#W)에 브랜치 이름이 나열되어 벌어져 있는 작업이 상태바에 보인다. 이것은 tmux
 	위에 얹는 관례라 prefix c 의 보통 윈도우, 저장소 아닌 세션, 순정 tmux new 는 그대로다.
 	순정 대응: git worktree add -b <브랜치> <경로> main + tmux new-window -n <브랜치> -c <경로>.
-	셸에서: tmux-dev worktree [브랜치|경로] [--base ref] [--layout <이름>]. --help 에 전부.
+	셸에서: tmux-dev worktree [브랜치|경로|디렉토리] [--base ref] [--layout <이름>]. --help 에 전부.
 
 	팝업 안. 한 목록에 워크트리(●N 은 열린 윈도우 번호), 브랜치, 원격 브랜치가 순서대로.
-	tab			all ↔ worktrees(워크트리만) 필터
+	tab / shift-tab		모드 순환: all → worktrees(워크트리만) → dir(아무 디렉토리)
+	dir 모드		고른 디렉토리를 지금 세션의 새 윈도우로 (이미 열었으면 그 윈도우로).
+				저장소가 아니어도 된다. 후보는 prefix S 의 dir 모드와 같은 범위(목록 파일의
+				search / exclude). 친 글자는 경로로(없으면 만들지 물어봄). alt-l 은 저장소
+				기본값으로 남기지 않는다. git 저장소 밖에서 prefix W 를 누르면 이 모드만 뜬다.
+	아래 Enter·alt-enter·ctrl-x·행 마커는 all / worktrees 모드의 설명.
 	Enter			행의 상태가 동작을 정한다: ●N → 그 윈도우. 워크트리만 → 윈도우 만들기.
 				브랜치만 → 워크트리 만들고 윈도우. 원격 → 추적 브랜치부터.
 				맞는 후보가 없으면 친 글자로 새 브랜치 (로컬 main 에서 분기, 확인 질문)

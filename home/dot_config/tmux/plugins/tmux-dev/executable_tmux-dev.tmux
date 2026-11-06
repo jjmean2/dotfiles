@@ -5,7 +5,7 @@
 #
 # 설정은 tmux 사용자 옵션으로, run-shell 줄보다 앞에 둔다. 없으면 기본값.
 #   set -g @tmux-dev-project-key  S         prefix S: 프로젝트 → 세션 (소문자 s 는 순정 세션 목록)
-#   set -g @tmux-dev-worktree-key W         prefix W: 워크트리 → 윈도우 (소문자 w 는 순정 윈도우 트리)
+#   set -g @tmux-dev-worktree-key W         prefix W: 워크트리·디렉토리 → 윈도우 (소문자 w 는 순정 윈도우 트리)
 #   set -g @tmux-dev-popup-size   85%,75%   팝업 너비,높이
 #   set -g @tmux-dev-layout       ide       새 세션·윈도우의 패널 배치 (ide: 왼쪽 셸 / 오른쪽 nvim, plain: 셸 하나)
 #

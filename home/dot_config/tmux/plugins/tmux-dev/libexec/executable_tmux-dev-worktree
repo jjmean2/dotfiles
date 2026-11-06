@@ -13,6 +13,7 @@
 #   tmux-dev worktree                    fzf 로 고른다 (tmux 안에서는 prefix W 가 팝업으로 띄움)
 #   tmux-dev worktree <브랜치>           바로 그 브랜치의 윈도우로 (브랜치·워크트리가 없으면 만든다)
 #   tmux-dev worktree <워크트리 경로>    바로 그 워크트리의 윈도우로
+#   tmux-dev worktree <디렉토리>         워크트리가 아닌 디렉토리면 그 디렉토리의 윈도우로 (dir 모드와 같다. tmux 안에서만)
 #   tmux-dev worktree --base <ref>       새 브랜치의 베이스 (기본: 로컬 main. origin/HEAD 가 가리키는 이름)
 #   tmux-dev worktree --layout plain     새 윈도우의 레이아웃을 명시. 없으면 저장소 설정(git config tmux-dev.layout) →
 #                                        전역(@tmux-dev-layout) → ide 순 (lib/layout.sh). --layouts 로 목록, --layout-art <이름>
@@ -25,7 +26,17 @@
 #   tmux 밖에서 실행하면 워크트리만 만들고(있으면 그대로) 경로를 출력한다.
 #
 # 팝업(fzf) 안에서 (fzf 기본 키와 겹치지 않는 키만 썼다)
-#   tab / shift-tab   all(워크트리 + 브랜치) ↔ worktrees(워크트리만) 필터
+#   tab / shift-tab   모드 순환: all(워크트리 + 브랜치) → worktrees(워크트리만) → dir(아무 디렉토리)
+#                     git 저장소 밖에서 띄우면 dir 모드만 있다
+#
+#   dir 모드: 저장소와 상관없이 고른 디렉토리를 지금 세션의 새 윈도우로 연다 (순정 new-window -c <dir> -n <이름>).
+#     후보는 prefix S 의 dir 모드와 같은 검색 범위 (목록 파일의 search / exclude 줄. lib/dirs.sh).
+#     Enter 는 그 디렉토리의 윈도우가 이미 있으면 그리로 (윈도우 옵션 @dir 로 식별), 없으면 만들고 레이아웃.
+#     골랐는데 이 저장소의 워크트리면 워크트리 윈도우로 연다. 후보가 없거나 alt-enter 면 친 글자를 경로로
+#     (상대 경로는 패널의 디렉토리 기준, 없으면 만들지 묻는다). alt-l 은 레이아웃을 고르되 저장소 기본값으로 남기지 않는다.
+#     ctrl-x 는 하지 않는다 (디렉토리는 지우지 않는다)
+#
+#   아래 Enter·alt-enter·alt-l·ctrl-x·행 마커는 all / worktrees 모드의 설명이다
 #   Enter             선택. 행의 상태가 동작을 정한다:
 #                       윈도우 열려 있음(●N) → 그 윈도우로.  워크트리만 있음 → 윈도우 만들기.
 #                       브랜치만 있음 → 워크트리 만들고 윈도우.  원격 브랜치 → 추적 브랜치 + 워크트리 + 윈도우.
@@ -71,6 +82,7 @@
 # 윈도우 식별: 만든 윈도우에 사용자 옵션 @worktree <경로> 를 둔다 (man tmux OPTIONS: '@' 접두 user option.
 # 포맷 #{@worktree} 로 읽음). 이 옵션이 있는 윈도우만 "워크트리 윈도우" 이고, 메인 체크아웃 행은 옵션이 없을
 # 때 패널 경로로 보완한다 (project 가 세션을 만들며 첫 윈도우에 옵션을 둔다). 탐색 범위는 세션 하나다.
+# dir 모드로 연 윈도우에는 @dir <경로> 를 둔다 (워크트리 윈도우와 섞이지 않게 다른 이름).
 set -euo pipefail
 
 SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
@@ -79,8 +91,10 @@ LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
 . "$LIB/common.sh"
 # shellcheck source=../lib/layout.sh
 . "$LIB/layout.sh"
+# shellcheck source=../lib/dirs.sh
+. "$LIB/dirs.sh"
 
-LAYOUT=""                                  # --layout 으로 명시한 값. 비어 있으면 resolve_layout (저장소 설정 → 전역 → ide)
+LAYOUT=""                               # --layout 으로 명시한 값. 비어 있으면 resolve_layout (저장소 설정 → 전역 → ide)
 BASE=""                                    # --base. 비어 있으면 default_base
 SESSION="${TMUX_WORKTREE_SESSION:-}"       # -t
 US=$'\x1f'   # 빈 필드가 있을 수 있는 행의 구분자. bash 의 read 는 tab 같은 공백 IFS 가 연속되면 빈 필드를 합친다.
@@ -89,15 +103,17 @@ conf() { git config --get "tmux-dev.worktree.$1" 2>/dev/null || true; }   # 없�
 
 # --- 저장소 ---------------------------------------------------------------------
 # 현재 디렉토리에서 메인 체크아웃을 찾는다. 워크트리 안에서 불러도 된다 (worktree list 의 첫 줄이 메인).
-repo_init() {
-  COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
-    || die "git 저장소가 아닙니다: $(abbrev_home "$PWD")  (워크트리가 아닌 윈도우는 prefix c)"
+IN_REPO=""   # repo_try 가 저장소를 찾았으면 1. 밖이면 dir 모드만 쓴다
+repo_try() {  # 저장소가 아니면 1 (죽지 않는다)
+  COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
   WT_LIST=$(list_worktrees)                              # 워크트리 목록은 한 번만 읽는다
   WT_PATHS=$(cut -f1 <<< "$WT_LIST")
   MAIN=${WT_PATHS%%$'\n'*}
   [ -n "$MAIN" ] && [ -d "$MAIN/.git" ] || die "bare 저장소는 지원하지 않습니다"
   NAME=$(conf name); NAME=${NAME:-$(basename "$MAIN")}
+  IN_REPO=1
 }
+repo_init() { repo_try || die "git 저장소가 아닙니다: $(abbrev_home "$PWD")  (아무 디렉토리의 윈도우는 피커의 dir 모드)"; }
 default_base() {  # origin/HEAD 가 가리키는 브랜치의 로컬 사본 → main → master → HEAD
   local b
   if b=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null); then
@@ -325,22 +341,45 @@ is_merged() {
 
 # --- fzf ----------------------------------------------------------------------------
 header_for() {
-  local a="all" o="worktrees"
-  case "$1" in all) a="${B}[all]${R}" ;; worktrees) o="${B}[worktrees]${R}" ;; esac
-  printf '%s   %s   %stab 필터   ctrl-x 정리%s\n%s\n%s\n' "$a" "$o" "$D" "$R" \
+  local a="all" o="worktrees" d="dir"
+  case "$1" in all) a="${B}[all]${R}" ;; worktrees) o="${B}[worktrees]${R}" ;; dir) d="${B}[dir]${R}" ;; esac
+  if [ "$1" = dir ]; then
+    if [ -n "$IN_REPO" ]; then printf '%s   %s   %s   %stab 모드 순환%s\n' "$a" "$o" "$d" "$D" "$R"
+    else printf '%s   %sgit 저장소 밖이라 디렉토리만%s\n' "$d" "$D" "$R"; fi
+    printf '%s\n%s\n' "${D}enter: 이 세션에 그 디렉토리의 윈도우 · 이미 열려 있으면 그 윈도우로${R}" \
+      "${D}없는 경로 enter · alt-enter: 친 글자를 경로로   alt-l: 레이아웃 골라 열기${R}"
+    return
+  fi
+  printf '%s   %s   %s   %stab 모드 순환   ctrl-x 정리%s\n%s\n%s\n' "$a" "$o" "$d" "$D" "$R" \
     "${D}enter: ●N 윈도우로 · 워크트리 → 윈도우 · 브랜치 → 워크트리+윈도우${R}" \
     "${D}없는 이름 enter · alt-enter: 새 브랜치 (베이스 $(base))   alt-l: 레이아웃 골라 열기${R}"
 }
-mode_from_prompt() { case "${FZF_PROMPT:-}" in worktrees*) echo worktrees ;; *) echo all ;; esac; }
+mode_from_prompt() { case "${FZF_PROMPT:-}" in worktrees*) echo worktrees ;; dir*) echo dir ;; *) echo all ;; esac; }
+list_mode() {  # $1 모드 $2 --marks. dir 모드는 저장소가 필요 없다
+  if [ "$1" = dir ]; then list_dirs | awk -F'\t' -v OFS='\t' '{ print $1, "dir", "", $2 }'; return; fi
+  repo_init; rows "$1" "${2:-}"
+}
 # 두 번 읽기: 목록을 바꾸는 액션은 마커 없는 빠른 목록을 reload 하고 load 이벤트를 다시 묶는다. load 가 나면
 # (= 빠른 목록이 그려지면) action_marks 가 같은 모드를 --marks 로 reload-sync 해 바꿔 끼운다. 그 사이 입력·이동은 된다.
 # load 는 먼저 unbind 해서 두 번째 로드가 또 load 를 울리는 순환을 끊는다 (man fzf 의 'load:reload-sync(...)+unbind(load)' 예).
-action_toggle() {
-  local mode; case $(mode_from_prompt) in all) mode=worktrees ;; *) mode=all ;; esac
-  printf 'rebind(load)+reload(%s --list %s)+first+change-prompt(%s> )+change-header(%s)\n' "$SELF" "$mode" "$mode" "$(header_for "$mode")"
+# dir 모드에는 마커가 없으므로 load 를 다시 묶지 않는다.
+action_cycle() {  # $1 = next | prev. 저장소 밖에서는 dir 하나뿐이라 아무것도 하지 않는다
+  [ -n "$IN_REPO" ] || return 0
+  local mode load='rebind(load)+'
+  case "$1:$(mode_from_prompt)" in
+    next:all) mode=worktrees ;; next:worktrees) mode=dir ;;       next:dir) mode=all ;;
+    prev:all) mode=dir ;;       prev:worktrees) mode=all ;;       prev:dir) mode=worktrees ;;
+  esac
+  [ "$mode" = dir ] && load=''
+  printf '%sreload(%s --list %s)+first+change-prompt(%s> )+change-header(%s)\n' "$load" "$SELF" "$mode" "$mode" "$(header_for "$mode")"
 }
-action_refresh() { printf 'rebind(load)+reload(%s --list %s)\n' "$SELF" "$(mode_from_prompt)"; }   # 정리 뒤 같은 모드로 다시 읽기
-action_marks()   { printf 'reload-sync(%s --list %s --marks)\n' "$SELF" "$(mode_from_prompt)"; }
+action_refresh() {   # 정리 뒤 같은 모드로 다시 읽기
+  local mode; mode=$(mode_from_prompt)
+  if [ "$mode" = dir ]; then printf 'reload(%s --list dir)\n' "$SELF"; else printf 'rebind(load)+reload(%s --list %s)\n' "$SELF" "$mode"; fi
+}
+action_marks() { local mode; mode=$(mode_from_prompt); [ "$mode" = dir ] || printf 'reload-sync(%s --list %s --marks)\n' "$SELF" "$mode"; }
+# 고르기: 키 이름과 그때의 모드를 출력 큐에 넣고 끝낸다 (--print-query 다음 두 줄. --expect 로는 모드를 알 수 없다)
+action_accept() { printf 'print(%s)+print(%s)+accept\n' "$1" "$(mode_from_prompt)"; }
 cherry_summary() {  # $1 = ref. 머지됐는지(is_merged), 아니면 베이스에 없는 커밋 수
   local b n; b=$(base)
   [ "$1" = "$b" ] && return 0
@@ -367,25 +406,39 @@ preview() {  # $1 종류 $2 브랜치 $3 경로
       printf '%s%s%s  %s원격에만 있음%s\n' "$B" "$path" "$R" "$D" "$R"
       printf '만들면: 추적 브랜치 %s → %s\n\n' "$branch" "$(abbrev_home "$(wt_dir "$branch")")"
       git log --oneline --color=always -8 "$path" 2>/dev/null ;;
+    dir) dir_preview "$path" ;;
   esac
 }
 pick() {
   command -v fzf >/dev/null || die "fzf 가 필요합니다"
-  local out rc=0 query key sel
+  local out rc=0 query key mode sel start=all
+  [ -n "$IN_REPO" ] || start=dir
   # change:first — 검색어가 바뀌면 커서를 맨 위(가장 잘 맞는 후보)로. fzf 기본은 커서 줄 위치를 유지한다 (man fzf 의 change 이벤트 예).
   out=$(fzf --ansi --delimiter=$'\t' --with-nth=1 --nth=1 \
-      --prompt='all> ' --header="$(header_for all)" --height=100% --reverse \
-      --print-query --expect=alt-enter,alt-l \
+      --prompt="$start> " --header="$(header_for "$start")" --height=100% --reverse \
+      --print-query \
       --bind 'change:first' \
       --preview="$SELF --preview {2} {3} {4}" --preview-window='right,45%,border-left,<60(down,40%,border-top)' \
       --bind "load:unbind(load)+transform($SELF --action marks)" \
-      --bind "tab:transform($SELF --action toggle)" \
-      --bind "shift-tab:transform($SELF --action toggle)" \
+      --bind "tab:transform($SELF --action cycle next)" \
+      --bind "shift-tab:transform($SELF --action cycle prev)" \
+      --bind "enter:transform($SELF --action accept enter)" \
+      --bind "alt-enter:transform($SELF --action accept alt-enter)" \
+      --bind "alt-l:transform($SELF --action accept alt-l)" \
       --bind "ctrl-x:execute($SELF --remove {2} {3} {4})+transform($SELF --action refresh)" \
-      < <(rows all)) || rc=$?
+      < <(list_mode "$start")) || rc=$?
   [ "$rc" -eq 130 ] && exit 0          # 취소
-  [ "$rc" -gt 1 ] && exit "$rc"        # 1 = 후보 없음 (입력을 브랜치 이름으로)
-  { IFS= read -r query; IFS= read -r key; IFS= read -r sel; } <<< "$out" || true
+  [ "$rc" -gt 1 ] && exit "$rc"        # 1 = 후보 없음 (입력을 브랜치 이름이나 경로로)
+  { IFS= read -r query; IFS= read -r key; IFS= read -r mode; IFS= read -r sel; } <<< "$out" || true
+  if [ "$mode" = dir ]; then
+    local dir
+    if [ "$key" != alt-enter ] && [ -n "${sel:-}" ]; then dir=${sel##*$'\t'}
+    else dir=$(query_dir "$query") || exit 0; fi   # 상대 경로는 패널의 디렉토리 기준, 없으면 만들지 묻는다
+    resolve_dir "$dir"
+    # alt-l: 레이아웃만 고른다. 아무 디렉토리라 저장소 기본값(git config tmux-dev.layout)으로 남기지 않는다
+    if [ "$key" = alt-l ]; then LAYOUT=$(choose_layout "$SELF --layout-art" '이 윈도우를 어떤 레이아웃으로 열까요') || exit 0; fi
+    return
+  fi
   # alt-enter 는 친 글자 강제. 후보가 없을 때도 친 글자. 그 밖(enter, alt-l)은 커서 항목
   if [ "$key" = alt-enter ] || [ -z "${sel:-}" ]; then
     [ -n "$query" ] || exit 0
@@ -417,13 +470,25 @@ resolve_name() {
   git check-ref-format --branch "$name" >/dev/null 2>&1 || die "브랜치 이름으로 쓸 수 없습니다: $name"
   KIND=new; BRANCH=$name; TARGET=""
 }
-# 경로가 등록된 워크트리면 worktree 로 푼다
-resolve_path() {
-  local want path branch flags; want=$(cd "$1" && pwd)
-  while IFS=$'\t' read -r path branch flags; do
-    [ "$path" = "$want" ] && { KIND=worktree; BRANCH=$branch; TARGET=$path; return; }
-  done <<< "$WT_LIST"
-  die "등록된 워크트리가 아닙니다: $(abbrev_home "$want")"
+# 디렉토리를 종류로 푼다: 이 저장소의 워크트리(메인 포함)면 worktree, 아니면 dir (아무 디렉토리의 윈도우)
+resolve_dir() {
+  local want path branch flags; want=$(cd "$1" && pwd -P)   # 실제 경로로 (fd 가 주는 경로, git worktree list 와 맞춘다)
+  if [ -n "$IN_REPO" ]; then
+    while IFS=$'\t' read -r path branch flags; do
+      case " $flags " in *" prunable "*) continue ;; esac
+      [ "$path" = "$want" ] && { KIND=worktree; BRANCH=$branch; TARGET=$path; return; }
+    done <<< "$WT_LIST"
+  fi
+  KIND=dir; BRANCH=""; TARGET=$want
+}
+ensure_dir_window() {  # 디렉토리 $TARGET 의 윈도우로. @dir 이 같은 윈도우가 있으면 그리로, 없으면 만들고 레이아웃
+  local id tag win
+  while IFS=$US read -r id tag; do
+    [ "$tag" = "$TARGET" ] && { tmux select-window -t "$id"; return; }
+  done < <(tmux list-windows -t "$SESSION" -F "#{window_id}${US}#{@dir}" 2>/dev/null)
+  win=$(tmux new-window -P -F '#{window_id}' -t "$SESSION:" -n "$(basename "$TARGET")" -c "$TARGET")
+  tmux set-option -w -t "$win" @dir "$TARGET"
+  apply_layout "$(resolve_layout "$LAYOUT" "$TARGET")" "$win" "$TARGET"
 }
 run_setup() {  # 새 워크트리 안에서 tmux-dev.worktree.setup 을 한 번
   local cmd; cmd=$(conf setup); [ -n "$cmd" ] || return 0
@@ -568,6 +633,10 @@ hook_remove() {
 }
 
 open_target() {
+  if [ "$KIND" = dir ]; then
+    [ -n "$SESSION" ] || die "tmux 밖에서는 디렉토리의 윈도우를 열 수 없습니다: $(abbrev_home "$TARGET")"
+    ensure_dir_window; return
+  fi
   case $KIND in
     prunable)
       printf '%s 의 디렉토리가 없습니다. 등록을 지우고(git worktree prune) 다시 만들까요? [y/N] ' "$(abbrev_home "$TARGET")"
@@ -595,10 +664,13 @@ while [ $# -gt 0 ]; do
     --base)   BASE=$2; shift 2 ;;
     --layout) LAYOUT=$2; shift 2 ;;
     -t)       SESSION=$2; shift 2 ;;
-    --list)    repo_init; SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; rows "${2:-all}" "${3:-}"; exit 0 ;;
-    --remove)  repo_init; SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; remove_target "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
-    --preview) repo_init; preview "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
-    --action)  repo_init; case "${2:-}" in toggle) action_toggle ;; refresh) action_refresh ;; marks) action_marks ;; esac; exit 0 ;;
+    --list)    SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; list_mode "${2:-all}" "${3:-}"; exit 0 ;;
+    --remove)  [ "${2:-}" = dir ] && { pause "dir 모드에는 정리가 없다 (디렉토리는 지우지 않는다)"; exit 0; }
+               repo_init; SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; remove_target "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
+    --preview) [ "${2:-}" = dir ] || repo_init; preview "${2:-}" "${3:-}" "${4:-}"; exit 0 ;;
+    --action)  [ "${2:-}" = accept ] && { action_accept "${3:-enter}"; exit 0; }   # 저장소 조회 없이 바로 (누를 때마다 불린다)
+               repo_try || true
+               case "${2:-}" in cycle) action_cycle "${3:-next}" ;; refresh) action_refresh ;; marks) action_marks ;; esac; exit 0 ;;
     --path)    repo_init; wt_dir "${2:?--path 에는 브랜치가 필요합니다}"; exit 0 ;;
     --archived) repo_init; list_archived; exit 0 ;;
     --layouts)    layout_list; exit 0 ;;
@@ -611,17 +683,18 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# 인자가 디렉토리면 그 안에서 저장소를 찾는다 (project 가 다른 디렉토리에서 넘길 수 있다)
+# 인자가 디렉토리면 그 안에서 저장소를 찾는다 (project 가 다른 디렉토리에서 넘길 수 있다). 저장소가 아니어도 된다 (dir)
 [ -n "$arg" ] && [ -d "$arg" ] && cd "$arg"
-repo_init
+repo_try || true
 if [ -n "${TMUX:-}" ]; then SESSION=${SESSION:-$(tmux display-message -p '#S')}; fi
 
 if [ -z "$arg" ]; then
   [ -n "$SESSION" ] || die "tmux 밖에서는 브랜치나 경로를 주세요"
   pick
 elif [ -d "$arg" ]; then
-  resolve_path "$arg"
+  resolve_dir .
 else
+  repo_init
   resolve_name "$arg"
 fi
 open_target
