@@ -39,6 +39,7 @@ return {
           commands = { focus = "input" },     -- <leader>fc
           keymaps = { focus = "input" },      -- <leader>fk
           lsp_symbols = { focus = "input" },  -- <leader>fs: 심볼 이름을 치는 게 보통
+          lsp_workspace_symbols = { focus = "input" }, -- <leader>fS: live 라 쳐야 결과가 나온다
           -- 목록을 돌아다니는 소스(list 유지): buffers, recent, projects, lsp_references,
           -- diagnostics_buffer, git_diff, git_status, qflist, resume
         },
