@@ -20,7 +20,9 @@ key_worktree=$(opt @tmux-dev-worktree-key W)
 size=$(opt @tmux-dev-popup-size '85%,75%'); w=${size%,*}; h=${size#*,}
 layout=$(opt @tmux-dev-layout ide)
 
+# 레이아웃은 전역 기본값으로 환경변수에 넘긴다 (-e). 명령줄 --layout 으로 넘기지 않는 이유: 스크립트가 "명령줄에서
+# 명시한 값" 과 "전역 기본값" 을 구분해야 저장소별 git config tmux-dev.layout 이 그 사이에 끼어들 수 있다 (lib/layout.sh).
 tmux bind-key "$key_project"  display-popup -E -d '#{pane_current_path}' -w "$w" -h "$h" -T ' project '  \
-  "$DIR/bin/tmux-dev project --layout $layout"
+  -e "TMUX_DEV_LAYOUT=$layout" "$DIR/bin/tmux-dev project"
 tmux bind-key "$key_worktree" display-popup -E -d '#{pane_current_path}' -w "$w" -h "$h" -T ' worktree ' \
-  "$DIR/bin/tmux-dev worktree --layout $layout"
+  -e "TMUX_DEV_LAYOUT=$layout" "$DIR/bin/tmux-dev worktree"

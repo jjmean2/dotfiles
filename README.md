@@ -151,8 +151,12 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
   - `prefix S` (`tmux-dev project [경로]`): 프로젝트 디렉토리 이름의 세션으로, 없으면 왼쪽 셸 / 오른쪽 nvim 으로 만든다.
     목록은 머신별 `~/.config/tmux-dev/projects` (chezmoi 가 처음 한 번만 만든다). tab 으로 project → dir → recent 순환,
     후보가 없으면 친 글자가 경로, ctrl-t/x/o 로 목록 편집. 워크트리 경로를 고르면 메인 저장소 세션의 윈도우로 간다.
+    alt-l 은 레이아웃(어느 패널에 무엇을 띄우나)을 두 번째 fzf 에서 골라서 열고, 저장소면 그 선택이 저장소 기본값이 된다
+    (`git config tmux-dev.layout`). Enter 는 묻지 않고 저장소 설정 → 전역 `@tmux-dev-layout` → ide 순으로 쓴다. 개인 레이아웃은
+    `~/.config/tmux-dev/layouts.sh` 에 함수 하나와 `layout_register` 한 줄.
   - `prefix W` (`tmux-dev worktree [브랜치|경로]`): 저장소의 워크트리·브랜치·원격 브랜치를 한 목록에서 고르면 그 워크트리의
-    윈도우로, 없으면 `git worktree add` 와 윈도우를 만든다. 없는 이름을 치면 로컬 main 에서 새 브랜치. 행에 `●N`(열린
+    윈도우로, 없으면 `git worktree add` 와 윈도우를 만든다. 없는 이름을 치면 로컬 main 에서 새 브랜치. alt-l 로 레이아웃을
+    골라서 열 수 있다(위 S 와 같은 규칙). 행에 `●N`(열린
     윈도우), `dirty`, `merged`(ff·merge commit·rebase 머지는 `git cherry`, squash 머지는 merge-base 위 임시 단일 커밋으로 판정),
     `[ahead n, behind m]` 마커가 붙는다(목록을 먼저 띄우고 fzf 의 load 이벤트에서 마커를 얹는 두 번 읽기. 머지 판정은 ff 는
     `for-each-ref --merged` 한 번, rebase·squash 는 main 커밋들의 patch-id 집합과 비교하며 `~/.cache/tmux-dev/` 에 캐시.

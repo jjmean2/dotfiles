@@ -14,7 +14,8 @@
 #   tmux-dev worktree <브랜치>           바로 그 브랜치의 윈도우로 (브랜치·워크트리가 없으면 만든다)
 #   tmux-dev worktree <워크트리 경로>    바로 그 워크트리의 윈도우로
 #   tmux-dev worktree --base <ref>       새 브랜치의 베이스 (기본: 로컬 main. origin/HEAD 가 가리키는 이름)
-#   tmux-dev worktree --layout plain     새 윈도우의 레이아웃 (ide | plain)
+#   tmux-dev worktree --layout plain     새 윈도우의 레이아웃을 명시. 없으면 저장소 설정(git config tmux-dev.layout) →
+#                                        전역(@tmux-dev-layout) → ide 순 (lib/layout.sh). --layouts 로 목록, --layout-art <이름>
 #   tmux-dev worktree -t <세션>          윈도우를 만들 세션 (기본: 지금 클라이언트의 세션)
 #   tmux-dev worktree --path <브랜치>    그 브랜치의 워크트리가 만들어질 경로만 출력
 #   tmux-dev worktree --list [all|worktrees] [--marks]   후보 목록만 출력 (디버그). --marks 가 있어야 dirty/merged 를 계산한다
@@ -30,6 +31,8 @@
 #                       브랜치만 있음 → 워크트리 만들고 윈도우.  원격 브랜치 → 추적 브랜치 + 워크트리 + 윈도우.
 #                     맞는 후보가 없으면 친 글자를 새 브랜치 이름으로 쓴다 (베이스에서 분기)
 #   alt-enter         후보가 있어도 친 글자를 브랜치 이름으로 쓴다 (macOS Ghostty: 왼쪽 option)
+#   alt-l             레이아웃을 골라서 연다 (두 번째 fzf, 그림 미리보기). 고른 것이 이 저장소의 기본이 된다
+#                     (git config tmux-dev.layout). Enter 는 묻지 않고 그 기본값을 쓴다
 #   ctrl-x            커서 항목 정리 (매 단계 y/N, 입력이 끊기면 취소).
 #                       워크트리 행 → 변경이 있으면 거절. git worktree remove + 그 윈도우 닫기 + 브랜치 삭제 질문
 #                       브랜치 행    → 브랜치 삭제 질문.  prunable 행 → git worktree prune + 브랜치 삭제 질문
@@ -77,7 +80,7 @@ LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
 # shellcheck source=../lib/layout.sh
 . "$LIB/layout.sh"
 
-LAYOUT=$TMUX_DEV_LAYOUT
+LAYOUT=""                                  # --layout 으로 명시한 값. 비어 있으면 resolve_layout (저장소 설정 → 전역 → ide)
 BASE=""                                    # --base. 비어 있으면 default_base
 SESSION="${TMUX_WORKTREE_SESSION:-}"       # -t
 US=$'\x1f'   # 빈 필드가 있을 수 있는 행의 구분자. bash 의 read 는 tab 같은 공백 IFS 가 연속되면 빈 필드를 합친다.
@@ -326,7 +329,7 @@ header_for() {
   case "$1" in all) a="${B}[all]${R}" ;; worktrees) o="${B}[worktrees]${R}" ;; esac
   printf '%s   %s   %stab 필터   ctrl-x 정리%s\n%s\n%s\n' "$a" "$o" "$D" "$R" \
     "${D}enter: ●N 윈도우로 · 워크트리 → 윈도우 · 브랜치 → 워크트리+윈도우${R}" \
-    "${D}없는 이름 enter · alt-enter: 새 브랜치 (베이스 $(base))${R}"
+    "${D}없는 이름 enter · alt-enter: 새 브랜치 (베이스 $(base))   alt-l: 레이아웃 골라 열기${R}"
 }
 mode_from_prompt() { case "${FZF_PROMPT:-}" in worktrees*) echo worktrees ;; *) echo all ;; esac; }
 # 두 번 읽기: 목록을 바꾸는 액션은 마커 없는 빠른 목록을 reload 하고 load 이벤트를 다시 묶는다. load 가 나면
@@ -372,7 +375,7 @@ pick() {
   # change:first — 검색어가 바뀌면 커서를 맨 위(가장 잘 맞는 후보)로. fzf 기본은 커서 줄 위치를 유지한다 (man fzf 의 change 이벤트 예).
   out=$(fzf --ansi --delimiter=$'\t' --with-nth=1 --nth=1 \
       --prompt='all> ' --header="$(header_for all)" --height=100% --reverse \
-      --print-query --expect=alt-enter \
+      --print-query --expect=alt-enter,alt-l \
       --bind 'change:first' \
       --preview="$SELF --preview {2} {3} {4}" --preview-window='right,45%,border-left,<60(down,40%,border-top)' \
       --bind "load:unbind(load)+transform($SELF --action marks)" \
@@ -383,11 +386,17 @@ pick() {
   [ "$rc" -eq 130 ] && exit 0          # 취소
   [ "$rc" -gt 1 ] && exit "$rc"        # 1 = 후보 없음 (입력을 브랜치 이름으로)
   { IFS= read -r query; IFS= read -r key; IFS= read -r sel; } <<< "$out" || true
-  if [ -n "${sel:-}" ] && [ -z "$key" ]; then
-    IFS=$'\t' read -r _ KIND BRANCH TARGET <<< "$sel"
-  else
+  # alt-enter 는 친 글자 강제. 후보가 없을 때도 친 글자. 그 밖(enter, alt-l)은 커서 항목
+  if [ "$key" = alt-enter ] || [ -z "${sel:-}" ]; then
     [ -n "$query" ] || exit 0
     resolve_name "$query"
+  else
+    IFS=$'\t' read -r _ KIND BRANCH TARGET <<< "$sel"
+  fi
+  # alt-l: 레이아웃을 골라서 연다. 고른 것은 이 저장소의 기본값이 된다 (lib/layout.sh 의 resolve_layout 순서)
+  if [ "$key" = alt-l ]; then
+    LAYOUT=$(choose_layout "$SELF --layout-art") || exit 0
+    git config tmux-dev.layout "$LAYOUT"
   fi
 }
 
@@ -435,7 +444,7 @@ ensure_window() {  # 워크트리 $TARGET(브랜치 $BRANCH)의 윈도우로. �
   if window_for "$TARGET"; then tmux select-window -t "$WIN"; return; fi
   win=$(tmux new-window -P -F '#{window_id}' -t "$SESSION:" -n "$BRANCH" -c "$TARGET")
   tmux set-option -w -t "$win" @worktree "$TARGET"
-  apply_layout "$LAYOUT" "$win" "$TARGET"
+  apply_layout "$(resolve_layout "$LAYOUT" "$MAIN")" "$win" "$TARGET"
 }
 # --- 정리 (ctrl-x) -------------------------------------------------------------------
 # fzf 의 execute 로 불린다. 끝나면 바로 팝업으로 돌아가 출력이 사라지므로 메시지 뒤에 Enter 를 기다린다.
@@ -592,6 +601,8 @@ while [ $# -gt 0 ]; do
     --action)  repo_init; case "${2:-}" in toggle) action_toggle ;; refresh) action_refresh ;; marks) action_marks ;; esac; exit 0 ;;
     --path)    repo_init; wt_dir "${2:?--path 에는 브랜치가 필요합니다}"; exit 0 ;;
     --archived) repo_init; list_archived; exit 0 ;;
+    --layouts)    layout_list; exit 0 ;;
+    --layout-art) layout_art "${2:-}"; exit 0 ;;
     --hook-create) hook_create; exit 0 ;;
     --hook-remove) hook_remove; exit 0 ;;
     -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
