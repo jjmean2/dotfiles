@@ -31,8 +31,8 @@
 #                       브랜치만 있음 → 워크트리 만들고 윈도우.  원격 브랜치 → 추적 브랜치 + 워크트리 + 윈도우.
 #                     맞는 후보가 없으면 친 글자를 새 브랜치 이름으로 쓴다 (베이스에서 분기)
 #   alt-enter         후보가 있어도 친 글자를 브랜치 이름으로 쓴다 (macOS Ghostty: 왼쪽 option)
-#   alt-l             레이아웃을 골라서 연다 (두 번째 fzf, 그림 미리보기). 고른 것이 이 저장소의 기본이 된다
-#                     (git config tmux-dev.layout). Enter 는 묻지 않고 그 기본값을 쓴다
+#   alt-l             레이아웃을 골라서 이번만 그것으로 연다 (두 번째 fzf, 그림 미리보기). 거기서 alt-enter 로
+#                     고르면 이 저장소의 기본으로도 남는다 (git config tmux-dev.layout). Enter 는 묻지 않고 기본값을 쓴다
 #   ctrl-x            커서 항목 정리 (매 단계 y/N, 입력이 끊기면 취소).
 #                       워크트리 행 → 변경이 있으면 거절. git worktree remove + 그 윈도우 닫기 + 브랜치 삭제 질문
 #                       브랜치 행    → 브랜치 삭제 질문.  prunable 행 → git worktree prune + 브랜치 삭제 질문
@@ -393,10 +393,13 @@ pick() {
   else
     IFS=$'\t' read -r _ KIND BRANCH TARGET <<< "$sel"
   fi
-  # alt-l: 레이아웃을 골라서 연다. 고른 것은 이 저장소의 기본값이 된다 (lib/layout.sh 의 resolve_layout 순서)
+  # alt-l: 레이아웃을 골라서 이번만 그것으로 연다. 레이아웃 목록에서 alt-enter 로 골랐으면 이 저장소의
+  # 기본값으로도 남긴다 (lib/layout.sh 의 resolve_layout 순서)
   if [ "$key" = alt-l ]; then
-    LAYOUT=$(choose_layout "$SELF --layout-art") || exit 0
-    git config tmux-dev.layout "$LAYOUT"
+    local picked save_layout
+    picked=$(choose_layout "$SELF --layout-art") || exit 0
+    IFS=$'\t' read -r LAYOUT save_layout <<< "$picked"
+    if [ -n "$save_layout" ]; then git config tmux-dev.layout "$LAYOUT"; fi
   fi
 }
 
