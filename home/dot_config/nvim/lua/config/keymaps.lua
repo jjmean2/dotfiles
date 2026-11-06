@@ -102,6 +102,7 @@ end, { desc = "포맷 (버퍼 또는 선택 영역)" })
 --   입력창: 타이핑으로 좁히기 · Ctrl-j/k 이동 · Tab 여러 개 선택 · Esc 로 노멀 모드(j/k 가 목록 이동)
 --   Ctrl-v 세로 분할 · Ctrl-s 가로 분할 · Ctrl-t 탭 · Ctrl-q 전체(또는 선택)를 quickfix 로
 --   alt-p 미리보기 토글 · alt-h 숨김 파일 · alt-i .gitignore 무시 토글 · ? 키 도움말
+--   alt-g 커서 항목 절대경로를 메시지 줄에 · alt-m 피커 최대화 (긴 경로가 잘릴 때)
 -- 피커는 nvim 의 cwd 를 프로젝트 루트로 본다. :pwd 로 확인, :cd 로 변경.
 
 local pick = function(fn, opts)

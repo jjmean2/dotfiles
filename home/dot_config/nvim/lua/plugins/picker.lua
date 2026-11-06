@@ -50,11 +50,27 @@ return {
         -- 왼쪽 Option(=Alt, Ghostty macos-option-as-alt=left) + k/j 로 옮긴다.
         -- 입력창 버퍼 로컬 매핑이라 일반 버퍼의 <A-j>/<A-k> 와는 충돌하지 않는다.
         -- 목록 포커스로 열리는 피커에서는 i 또는 / 로 입력창에 간 뒤 쓴다.
+        --
+        -- 긴 경로는 목록에서 가운데가 "…" 로 잘린다. Alt-g 로 커서 항목의 절대경로를 메시지
+        -- 줄에 찍는다 (:messages 로 다시 볼 수 있다). 기본 print_path(<C-g>)는 목록 창에만
+        -- 있고 ~ 로 줄여 찍으며, 입력창의 <C-g> 는 grep 의 라이브 모드 토글이라 따로 둔다.
+        actions = {
+          print_abspath = function(picker, item)
+            local path = item and Snacks.picker.util.path(item) or picker:dir()
+            print(vim.fn.fnamemodify(path, ":p"))
+          end,
+        },
         win = {
           input = {
             keys = {
               ["<A-k>"] = { "history_back", mode = { "i", "n" } },
               ["<A-j>"] = { "history_forward", mode = { "i", "n" } },
+              ["<A-g>"] = { "print_abspath", mode = { "i", "n" } },
+            },
+          },
+          list = {
+            keys = {
+              ["<A-g>"] = "print_abspath",
             },
           },
         },
