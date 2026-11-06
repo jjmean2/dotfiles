@@ -40,6 +40,80 @@ layout_register plain "셸 하나" \
 │                         │
 └─────────────────────────┘'
 
+# ---------------------------------------------------------------------------
+# dev 서버 패널
+# ---------------------------------------------------------------------------
+# 무엇을 실행하나 (dev_command): 저장소의 git config tmux-dev.dev (워크트리도 메인과 config 를 공유한다)
+#   > package.json 에 scripts.dev 가 있으면 lockfile 로 고른 패키지 매니저의 dev (pnpm/yarn/bun/npm)
+#   > 없음. 없으면 그 패널은 빈 셸로 남는다 (원하는 걸 직접 친다).
+#   예) git config tmux-dev.dev 'pnpm --filter web dev'   또는   git config tmux-dev.dev 'make serve'
+# 셸 위에서 send-keys 로 실행하므로 Ctrl-C 로 서버를 끄면 셸이 남고, ↑ Enter 로 다시 켠다.
+# 새 워크트리에 node_modules 가 없으면 서버가 실패한다. 설치는 워크트리 셋업 훅(git config tmux-dev.worktree.setup) 몫.
+# 워크트리 여러 개에서 동시에 켜면 포트가 겹친다. Vite·Next 는 다음 빈 포트로 비켜 간다.
+dev_command() {   # $1 디렉토리 → 실행할 명령 한 줄. 없으면 빈 출력
+  local dir=$1 cmd
+  cmd=$(git -C "$dir" config --get tmux-dev.dev 2>/dev/null) && [ -n "$cmd" ] && { printf '%s\n' "$cmd"; return; }
+  [ -f "$dir/package.json" ] || return 0
+  if command -v jq >/dev/null 2>&1; then
+    jq -e '.scripts.dev' "$dir/package.json" >/dev/null 2>&1 || return 0
+  else
+    grep -q '"dev"[[:space:]]*:' "$dir/package.json" || return 0
+  fi
+  if   [ -f "$dir/pnpm-lock.yaml" ]; then echo 'pnpm dev'
+  elif [ -f "$dir/yarn.lock" ]; then echo 'yarn dev'
+  elif [ -f "$dir/bun.lock" ] || [ -f "$dir/bun.lockb" ]; then echo 'bun run dev'
+  else echo 'npm run dev'
+  fi
+}
+dev_pane() {      # $1 dev 패널 id, $2 디렉토리. 명령이 있으면 실행한다
+  local cmd; cmd=$(dev_command "$2")
+  [ -n "$cmd" ] && tmux send-keys -t "$1" "$cmd" Enter
+  return 0
+}
+# 패널 인덱스는 위치 순이라 나눌 때마다 바뀐다. 셋 이상으로 나누는 레이아웃은 split-window -P 로 패널 id(%N)를 받아 쓴다.
+
+layout_ide-dev() {   # 왼쪽 위 셸, 왼쪽 아래 dev 서버, 오른쪽 nvim. 포커스는 셸
+  local win=$1 dir=$2 shell nvim dev
+  shell=$(tmux display-message -p -t "$win" '#{pane_id}')
+  nvim=$(tmux split-window -h -t "$shell" -c "$dir" -P -F '#{pane_id}')
+  dev=$(tmux split-window -v -l 30% -t "$shell" -c "$dir" -P -F '#{pane_id}')
+  tmux send-keys -t "$nvim" 'nvim' Enter
+  dev_pane "$dev" "$dir"
+  tmux select-pane -t "$shell"
+}
+layout_register ide-dev "왼쪽 셸 + dev 서버 / 오른쪽 nvim" \
+'┌────────────┬────────────┐
+│ 셸         │ nvim       │
+│ (claude 등)│            │
+├────────────┤            │
+│ dev 서버   │            │
+└────────────┴────────────┘'
+
+layout_nvim() {   # nvim 하나 (셸 위에서 띄우므로 :q 하면 셸이 남는다)
+  tmux send-keys -t "$1" 'nvim' Enter
+}
+layout_register nvim "nvim 하나" \
+'┌─────────────────────────┐
+│ nvim                    │
+│                         │
+└─────────────────────────┘'
+
+layout_nvim-dev() {  # 위 nvim, 아래 dev 서버. 포커스는 nvim
+  local win=$1 dir=$2 nvim dev
+  nvim=$(tmux display-message -p -t "$win" '#{pane_id}')
+  dev=$(tmux split-window -v -l 25% -t "$nvim" -c "$dir" -P -F '#{pane_id}')
+  tmux send-keys -t "$nvim" 'nvim' Enter
+  dev_pane "$dev" "$dir"
+  tmux select-pane -t "$nvim"
+}
+layout_register nvim-dev "위 nvim / 아래 dev 서버" \
+'┌─────────────────────────┐
+│ nvim                    │
+│                         │
+├─────────────────────────┤
+│ dev 서버                │
+└─────────────────────────┘'
+
 # 개인 레이아웃 (있으면)
 # shellcheck disable=SC1090
 [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/tmux-dev/layouts.sh" ] && . "${XDG_CONFIG_HOME:-$HOME/.config}/tmux-dev/layouts.sh"

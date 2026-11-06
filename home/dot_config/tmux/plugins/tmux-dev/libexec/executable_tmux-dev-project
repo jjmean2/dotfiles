@@ -43,7 +43,7 @@ LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
 # shellcheck source=../lib/common.sh
 . "$LIB/common.sh"
 # shellcheck source=../lib/layout.sh
-. "$LIB/layout.sh"           # 새 세션의 첫 윈도우에 한 번 적용. worktree 와 공유 (ide, plain)
+. "$LIB/layout.sh"           # 새 세션의 첫 윈도우에 한 번 적용. worktree 와 공유 (ide, ide-dev, nvim, nvim-dev, plain)
 WORKTREE_BIN="$(dirname "$SELF")/tmux-dev-worktree"
 
 # --- 설정 --------------------------------------------------------------------
