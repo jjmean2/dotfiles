@@ -94,6 +94,7 @@ end, { desc = "포맷 (버퍼 또는 선택 영역)" })
 --   <leader>f.   | 최근 연 파일                | :oldfiles → :e #<번호
 --   <leader>fr   | LSP 참조 (커서 심볼)        | grr
 --   <leader>fs   | 현재 파일 심볼 (Cmd+P @)    | gO
+--   <leader>fS   | 워크스페이스 심볼 (Cmd+T)   | :lua vim.lsp.buf.workspace_symbol()
 --   <leader>fd   | 현재 파일 진단 (Problems)   | ]d, :lua vim.diagnostic.setloclist()
 --   <leader>fc   | 명령어 (Cmd+Shift+P)        | :  + Tab
 --   <leader>fh   | 도움말 태그                 | :h 이름
@@ -104,7 +105,7 @@ end, { desc = "포맷 (버퍼 또는 선택 영역)" })
 --
 -- 피커 안에서
 --   시작 포커스는 소스에 따라 다르다 (picker.lua 의 sources 참고):
---     입력창(insert)에서 시작: 파일(ff, <leader><leader>), grep, 도움말, 명령어, 키맵, 심볼
+--     입력창(insert)에서 시작: 파일(ff, <leader><leader>), grep, 도움말, 명령어, 키맵, 심볼(fs, fS)
 --     목록(노멀 모드)에서 시작: 버퍼, 최근, 프로젝트, 참조, 진단, git diff/status, resume
 --   목록 창: j/k/gg/G 이동 · Enter 열기 · i 또는 / 로 입력창 이동 · q 닫기
 --   입력창: 타이핑으로 좁히기 · Ctrl-j/k 이동 · Tab 여러 개 선택 · Esc 로 노멀 모드(j/k 가 목록 이동)
@@ -122,6 +123,11 @@ map("n", "<leader>fb", pick("buffers"), { desc = "버퍼" })
 map("n", "<leader>f.", pick("recent"), { desc = "최근 파일" })
 map("n", "<leader>fr", pick("lsp_references"), { desc = "LSP 참조" })
 map("n", "<leader>fs", pick("lsp_symbols"), { desc = "문서 심볼" })
+-- 워크스페이스 심볼은 live 소스다: 글자를 칠 때마다 서버에 workspace/symbol 을 다시 묻고,
+-- 결과와 순서는 서버가 정한다 (문서 심볼은 한 번 받아 Lua 가 fuzzy 로 거른다).
+-- 그 언어의 서버가 붙어 있어야 하고(프로젝트 파일을 하나는 열어 둘 것), 범위는 서버가 아는
+-- 프로젝트까지다 (예: vtsls 는 tsconfig 에 든 파일).
+map("n", "<leader>fS", pick("lsp_workspace_symbols"), { desc = "워크스페이스 심볼" })
 map("n", "<leader>fd", pick("diagnostics_buffer"), { desc = "진단 (현재 파일)" })
 map("n", "<leader>fc", pick("commands"), { desc = "명령어" })
 map("n", "<leader>fh", pick("help"), { desc = "도움말" })
