@@ -65,9 +65,11 @@ resolve_layout() {
   printf '%s\n' "$l"
 }
 # fzf 로 레이아웃을 고른다. $1 은 미리보기용 명령 접두 (뒤에 이름이 붙어 그림을 출력해야 한다). 고른 이름을 출력, 취소면 1.
+# Esc 는 검색어만 지우고 닫기는 ctrl-c (tmux-dev 피커 공통 규칙, tmux-dev-project 의 pick 참고).
 choose_layout() {
   local out
   out=$(layout_list | fzf --delimiter=$'\t' --with-nth=1,2 --nth=1 --prompt='layout> ' --height=100% --reverse \
+        --bind 'esc:clear-query' \
         --header="$(printf '%s\n' '이 윈도우를 어떤 레이아웃으로 열까요. 고른 것이 이 저장소의 기본이 된다 (git config tmux-dev.layout)')" \
         --preview="$1 {1}" --preview-window='right,50%,border-left') || return 1
   printf '%s\n' "${out%%$'\t'*}"

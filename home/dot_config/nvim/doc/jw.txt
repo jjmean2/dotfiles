@@ -155,6 +155,7 @@ quickfix 로 들어가는 입구이고, 결과를 쌓아 돌아다니는 건 여
 피커 안에서 ~
 	목록 창	j k gg G 이동	Enter 열기	i 또는 /  입력창으로	q 닫기
 	입력창	타이핑으로 좁히기	Ctrl-j/k 이동	Tab 여러 개 선택	Esc 노멀 모드
+	닫기	노멀에서 q, 어디서든 Ctrl-c	(Esc 는 닫지 않는다)
 	Ctrl-v  Ctrl-s  Ctrl-t	세로 분할 / 가로 분할 / 탭으로 열기
 	Ctrl-q			전부(또는 선택)를 quickfix 로
 	alt-p  alt-h  alt-i	미리보기 토글 / 숨김 파일 / .gitignore 무시

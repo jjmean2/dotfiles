@@ -237,7 +237,7 @@ header_for() {  # 모드 탭 + 키 안내. 현재 모드만 굵게
   case "$1" in project) p="${B}[project]${R}" ;; dir) f="${B}[dir]${R}" ;; recent) r="${B}[recent]${R}" ;; esac
   printf '%s   %s   %s\n%s\n%s\n' "$p" "$f" "$r" \
     "${D}tab/shift-tab 모드 순환   enter 선택 (후보 없으면 친 글자가 경로)   alt-enter 친 글자 강제   alt-l 레이아웃 골라 열기${R}" \
-    "${D}ctrl-t 등록   ctrl-x 제거   ctrl-o 목록 파일 편집${R}"
+    "${D}ctrl-t 등록   ctrl-x 제거   ctrl-o 목록 파일 편집   esc 검색어 지우기   ctrl-c 닫기${R}"
 }
 source_for() {
   case "$1" in project) echo "$SELF --list" ;; dir) echo "$SELF --list-dirs" ;; recent) echo "$SELF --list-recent" ;; esac
@@ -276,10 +276,12 @@ pick() {
   local out rc=0 query key sel
   # 후보는 < <(...) 로 넣는다. 파이프로 넣으면 pipefail 때문에 candidates 의 종료 코드가 fzf 의 것을 가릴 수 있다.
   # change:first — 검색어가 바뀌면 커서를 맨 위(가장 잘 맞는 후보)로. fzf 기본은 커서 줄 위치를 유지한다 (man fzf 의 change 이벤트 예).
+  # esc:clear-query — Esc 는 닫지 않고 검색어만 지운다. vim 습관으로 Esc 를 연타해도 팝업이 꺼지지 않게.
+  # 닫기는 fzf 기본 abort 키 ctrl-c (ctrl-g, ctrl-q 도 같다). nvim 피커와 같은 규칙 (picker.lua).
   out=$(fzf --ansi --delimiter=$'\t' --with-nth=1 --nth=1 --scheme=path \
       --prompt='project> ' --header="$(header_for project)" --height=100% --reverse \
       --print-query --expect=alt-enter,alt-l \
-      --bind 'change:first' \
+      --bind 'change:first' --bind 'esc:clear-query' \
       --preview="$SELF --preview {2}" --preview-window='right,45%,border-left,<60(down,40%,border-top)' \
       --bind "tab:transform($SELF --action switch next)" \
       --bind "shift-tab:transform($SELF --action switch prev)" \
