@@ -19,7 +19,7 @@
 #                                        전역(@tmux-dev-layout) → ide 순 (lib/layout.sh). --layouts 로 목록, --layout-art <이름>
 #   tmux-dev worktree -t <세션>          윈도우를 만들 세션 (기본: 지금 클라이언트의 세션)
 #   tmux-dev worktree --path <브랜치>    그 브랜치의 워크트리가 만들어질 경로만 출력
-#   tmux-dev worktree --list [all|worktrees] [--marks]   후보 목록만 출력 (디버그). --marks 가 있어야 dirty/merged 를 계산한다
+#   tmux-dev worktree --list [all|worktrees|dir] [--marks]   후보 목록만 출력 (디버그). --marks 가 있어야 dirty/merged 를 계산한다 (dir 은 무시)
 #                                        팝업은 마커 없는 목록을 먼저 띄우고 fzf 의 load 이벤트에서 --marks 로 바꿔 끼운다.
 #                                        머지 판정은 ~/.cache/tmux-dev/ 에 캐시한다 (merged/<브랜치 커밋>, patchids/<main 커밋>).
 #                                        행 작업은 코어 수만큼만 동시에 (TMUX_DEV_JOBS 로 조절)
