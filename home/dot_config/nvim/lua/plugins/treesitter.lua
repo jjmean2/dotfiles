@@ -26,6 +26,7 @@ return {
                 "json",
                 "graphql",
                 "vim",
+                "markdown", -- render-markdown.nvim 이 이 파서로 구조를 읽는다 (lua/plugins/markdown.lua)
             }
             -- vim filetype 과 대응되는 treesitter parser 목록
             local parsers = vim.tbl_map(function(ft)
@@ -33,7 +34,9 @@ return {
             end, filetypes)
             -- 파일 형식은 없지만 다른 파서 안에 끼어 쓰이는(injection) 파서.
             -- jsdoc: /** */ 주석 강조, regex: 정규식 리터럴 강조.
-            vim.list_extend(parsers, { "jsdoc", "regex" })
+            -- markdown_inline: 마크다운 문단 안의 굵게·링크·인라인 코드 (markdown 파서가 주입).
+            -- yaml: 마크다운 프론트매터 (--- 블록).
+            vim.list_extend(parsers, { "jsdoc", "regex", "markdown_inline", "yaml" })
 
             require("nvim-treesitter").install(parsers)
 
