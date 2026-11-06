@@ -18,6 +18,7 @@
 --   <leader><leader> 파일 찾기 별칭 (VS Code 의 Cmd+P 자리)
 --   <leader>g       git 목록·도구 (snacks 피커, lazygit). hunk 조작은 <leader>gh 아래 (LazyVim 배치)
 --   <leader>m       마크다운 (markdown): 버퍼 렌더 토글, 브라우저 프리뷰 (HTML 도)
+--   <leader>o       아웃라인 사이드바 (outline)
 --   <leader>t       토글 (toggle)
 --   <leader>y       경로 복사 (yank path): 상대/절대/이름/경로:줄
 --   <leader>?       개인 치트시트 (:h jw, doc/jw.txt)
@@ -62,6 +63,13 @@ end
 -- 순정 대응: :Explore (netrw), :find 파일명
 map("n", "<leader>e", "<Cmd>NvimTreeToggle<CR>", { desc = "탐색기 토글" })
 map("n", "<leader>E", "<Cmd>NvimTreeFindFile<CR>", { desc = "탐색기에서 현재 파일 위치" })
+
+-- --------------------------------------------------
+-- <leader>o  아웃라인 (aerial, lua/plugins/outline.lua)
+-- --------------------------------------------------
+-- 순정 대응: gO (문서 심볼 → location list) 후 :vert lopen
+-- ! 를 붙여 연다: 커서는 편집 중인 창에 남는다. 사이드바로 가려면 CTRL-W l (또는 CTRL-W p).
+map("n", "<leader>o", "<Cmd>AerialToggle!<CR>", { desc = "아웃라인 토글" })
 
 -- --------------------------------------------------
 -- <leader>c  코드

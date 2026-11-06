@@ -1,4 +1,5 @@
 {
+  "aerial.nvim": { "branch": "master", "commit": "28fe6e822ae344544c379d60fcb13c9519a1f08a" },
   "conform.nvim": { "branch": "master", "commit": "016802de402556da54c36bd7359b441266b01cdd" },
   "gitsigns.nvim": { "branch": "main", "commit": "ef707fb93301a9b856f36eae4c8f56f5b988a794" },
   "jellybeans-nvim": { "branch": "main", "commit": "d5989265b5256cb296b5772c73e57490e84f69b1" },
