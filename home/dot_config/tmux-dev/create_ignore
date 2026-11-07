@@ -1,0 +1,14 @@
+# tmux-dev 의 디렉토리 탐색(prefix S, prefix W 의 dir 모드)에서 뺄 경로. 이 파일은 머신마다 다르다.
+# chezmoi 는 처음 한 번만 만들어 주고(create_) 이후에는 덮어쓰지 않으므로 여기서 직접 고친다.
+#
+# 문법은 .gitignore 와 같다 (fd --ignore-file 로 넘긴다).
+#   이름          어느 깊이에 있든 그 이름의 디렉토리를 뺀다       예) node_modules
+#   /경로         홈 기준 그 자리만 뺀다                          예) /Library
+#   경로/**       그 아래만 뺀다
+#   !패턴         위에서 뺀 것을 다시 넣는다
+#
+# 이 파일이 없으면 Library 와 node_modules 를 뺀다. 숨김 디렉토리(. 으로 시작)는 이 파일과 상관없이 늘 빠진다.
+# 디렉토리 탐색은 각 저장소의 .gitignore 도 따른다. 저장소 탐색은 따르지 않는다 (무시된 곳의 저장소도 찾는다).
+
+/Library
+node_modules

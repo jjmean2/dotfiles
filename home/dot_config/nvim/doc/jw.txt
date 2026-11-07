@@ -204,7 +204,7 @@ prefix 는 Ctrl-b (순정) 또는 Ctrl-a. 모든 tmux 조작은 prefix 로 시�
 	prefix ?		tmux 전체 바인딩 목록
 	prefix G		lazygit 팝업
 	prefix H		이 치트시트 팝업
-	prefix S		프로젝트 → 세션 전환기 (없으면 만든다). 세션 = 프로젝트  (tmux-dev)
+	prefix S		디렉토리 → 세션 전환기 (없으면 만든다). 세션 = 디렉토리  (tmux-dev)
 	prefix W		워크트리 → 윈도우 전환기 (없으면 만든다). 윈도우 = 워크트리 (tmux-dev)
 				dir 모드(tab)로 아무 디렉토리의 윈도우도 연다
 	prefix :		명령 입력 (예: set -g popup-style 'bg=#2a2b3d')
@@ -215,30 +215,36 @@ tmux-dev: 세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할 ~
 	순정 tmux new 는 그대로다. "플러그인" 은 tmux.conf 의 run-shell 한 줄이 진입 스크립트
 	(tmux-dev.tmux)를 돌리고 그 스크립트가 bind-key 를 부르는 것이 전부다. 키·팝업 크기·
 	레이아웃은 @tmux-dev-* 옵션 (진입 스크립트 머리말). 파일은 XDG 에 종류별로:
-	~/.config/tmux-dev/projects (목록), ~/.local/state/tmux-dev (최근), ~/.local/share/tmux-dev/
+	~/.config/tmux-dev/ignore (탐색 제외), ~/.local/state/tmux-dev (최근), ~/.local/share/tmux-dev/
 	worktrees (워크트리). 셸: tmux-dev project|worktree ... (--help).
 
-세션 = 프로젝트 ~
-	prefix S 로 프로젝트를 고르면 그 이름의 세션으로 간다. 처음이면 세션을 만들고
-	왼쪽 셸(여기서 claude) / 오른쪽 nvim 으로 연다. 열린 세션끼리는 prefix s 로도 간다.
-	셸에서: tmux-dev project [경로] [--layout <이름>]. prefix d 로 분리해도 세션은 남는다.
+세션 = 디렉토리 ~
+	prefix S 로 디렉토리를 고르면 그 디렉토리의 세션으로 간다. 없으면 세션을 만들고
+	레이아웃(기본: 왼쪽 셸 / 오른쪽 nvim)으로 연다. 디렉토리가 없으면 만든다. 세션은 이름이
+	아니라 경로로 찾는다(이름을 바꿔도 된다). 열린 세션끼리는 prefix s 로도 간다.
+	셸에서: tmux-dev project <경로> [--layout <이름>]. prefix d 로 분리해도 세션은 남는다.
+	설계와 판단 근거: ~/.config/tmux/plugins/tmux-dev/session-picker.md
 
-	팝업 안 (헤더에도 적혀 있다). fzf 순정 키(ctrl-p/n 이동, ctrl-a/e 줄 처음/끝)는 그대로.
-	tab / shift-tab		모드 순환: project(목록) → dir(파일시스템 검색) → recent(최근).
-				검색어는 모드를 바꿔도 유지된다
-	Enter			선택. 맞는 후보가 없으면 친 글자를 경로로 (팝업을 띄운 패널 기준)
-	alt-enter		후보가 있어도 친 글자를 경로로. 없는 경로면 만들지 물어봄 (왼쪽 option)
-	alt-l			레이아웃을 골라서 열기(두 번째 fzf, 그림 미리보기). 저장소면 그 저장소의
-				기본이 된다(git config tmux-dev.layout). Enter 는 묻지 않고 저장소 설정 →
-				전역(@tmux-dev-layout) → ide 순으로 쓴다. 개인 레이아웃: ~/.config/tmux-dev/layouts.sh
+	팝업 안. fzf 순정 키(ctrl-p/n 이동, ctrl-a/e 줄 처음/끝)는 그대로. alt-h 로 키 안내.
+	tab / shift-tab		모드: 저장소(메인 체크아웃만) ↔ 디렉토리(전부). 윗변 탭에 표시
+	Enter			커서 항목의 세션으로
+	alt-l			레이아웃을 골라서 열기. 겹쳐 뜬 목록에서 Enter 는 이번만, alt-enter 는
+				저장소 기본으로도(git config tmux-dev.layout). Enter 는 묻지 않고 저장소
+				설정 → 전역(@tmux-dev-layout) → ide. 개인 레이아웃: ~/.config/tmux-dev/layouts.sh
 				레이아웃: ide(셸|nvim) ide-dev(셸|nvim+dev 서버) nvim nvim-dev(nvim/dev 서버)
 				plain. dev 서버 명령: git config tmux-dev.dev, 없으면 package.json 의
 				dev 스크립트(lockfile 로 pnpm/yarn/bun/npm), 그것도 없으면 빈 셸
-	ctrl-t / ctrl-x / ctrl-o	커서 항목 등록 / 제거 / 목록 파일 열어 편집
-	목록 파일: ~/.config/tmux-dev/projects (머신별, 형식은 파일 주석). git
-	저장소는 이름 옆에 브랜치가 붙고, 미리보기에 최근 커밋과 내용이 뜬다.
-	워크트리 경로를 고르면 메인 저장소의 세션으로 가서 그 워크트리의 윈도우를 연다
-	(그 이름의 세션이 이미 있거나 목록 파일에 직접 적은 항목이면 적은 대로 세션).
+	ctrl-]			커서 경로를 검색어에 채운다. 이어서 /이름 을 치면 그 아래 새 디렉토리
+	alt-p			미리보기 오른쪽 → 아래 → 숨김
+	Esc			한 단계 뒤(확인 → 레이아웃 → 목록). 목록에서는 검색어 지우기. 닫기는 ctrl-c
+	목록: 열린 세션(●) → 피커로 최근 고른 곳(◷) → 홈 전체 탐색. 탐색은 숨김 디렉토리를
+	빼고 ~/.config/tmux-dev/ignore(gitignore 문법, 머신별)의 패턴을 뺀다.
+	경로 입력: / 나 ~ 로 시작하면 경로 접두 일치로 거른다. 걸리는 항목이 없을 때 Enter 로
+	판정해 푸터에서 묻는다. 없으면 만들기(저장소 모드는 git init 까지), 목록에 없던 기존
+	디렉토리는 열기만, 파일이면 막는다. 끝 슬래시는 "이 디렉토리 아래": ~/dev/dot/ 은
+	dotfiles 가 있어도 dot 을 새로 만든다. 치는 동안 Enter 가 할 일을 푸터에 미리 보여 준다.
+	워크트리 경로를 고르면 그 워크트리로: 그 경로의 세션 → 그 워크트리를 연 윈도우 →
+	메인 저장소 세션에 윈도우를 열어 준다(prefix W 와 같은 윈도우).
 
 윈도우 = 워크트리 ~
 	저장소 세션 안에서 prefix W 로 브랜치를 고르면 그 워크트리의 윈도우로 간다. 윈도우
@@ -250,8 +256,8 @@ tmux-dev: 세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할 ~
 	팝업 안. 한 목록에 워크트리(●N 은 열린 윈도우 번호), 브랜치, 원격 브랜치가 순서대로.
 	tab / shift-tab		모드 순환: all → worktrees(워크트리만) → dir(아무 디렉토리)
 	dir 모드		고른 디렉토리를 지금 세션의 새 윈도우로 (이미 열었으면 그 윈도우로).
-				저장소가 아니어도 된다. 후보는 prefix S 의 dir 모드와 같은 범위(목록 파일의
-				search / exclude). 친 글자는 경로로(없으면 만들지 물어봄). alt-l 은 저장소
+				저장소가 아니어도 된다. 후보는 prefix S 의 디렉토리 모드와 같은 탐색(홈 전체,
+				ignore 파일). 친 글자는 경로로(없으면 만들지 물어봄). alt-l 은 저장소
 				기본값으로 남기지 않는다. git 저장소 밖에서 prefix W 를 누르면 이 모드만 뜬다.
 	아래 Enter·alt-enter·ctrl-x·행 마커는 all / worktrees 모드의 설명.
 	Enter			행의 상태가 동작을 정한다: ●N → 그 윈도우. 워크트리만 → 윈도우 만들기.
