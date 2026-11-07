@@ -148,12 +148,17 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
   진입 스크립트 `tmux-dev.tmux` 를 돌리고 그 스크립트가 `bind-key` 를 부르는 것이다(TPM 은 그 위의 설치기일 뿐).
   키·팝업 크기·레이아웃은 `@tmux-dev-*` 사용자 옵션으로 `run-shell` 앞에서 바꾼다. 셸에서는 `tmux-dev project|worktree`
   (bin 이 PATH 에 들어 있다, `--help`).
-  - `prefix S` (`tmux-dev project [경로]`): 프로젝트 디렉토리 이름의 세션으로, 없으면 왼쪽 셸 / 오른쪽 nvim 으로 만든다.
-    목록은 머신별 `~/.config/tmux-dev/projects` (chezmoi 가 처음 한 번만 만든다). tab 으로 project → dir → recent 순환,
-    후보가 없으면 친 글자가 경로, ctrl-t/x/o 로 목록 편집. 워크트리 경로를 고르면 메인 저장소 세션의 윈도우로 간다.
-    alt-l 은 레이아웃(어느 패널에 무엇을 띄우나)을 두 번째 fzf 에서 골라서 열고, 저장소면 그 선택이 저장소 기본값이 된다
-    (`git config tmux-dev.layout`). Enter 는 묻지 않고 저장소 설정 → 전역 `@tmux-dev-layout` → ide 순으로 쓴다. 개인 레이아웃은
-    `~/.config/tmux-dev/layouts.sh` 에 함수 하나와 `layout_register` 한 줄.
+  - `prefix S` (`tmux-dev project [경로]`): 디렉토리 하나를 고르면 그 디렉토리의 세션으로 간다. 세션이 없으면 만들고(레이아웃
+    적용), 디렉토리가 없으면 만든다. 세션은 이름이 아니라 경로로 찾는다(세션 옵션 `@tmux-dev-path`, 없으면 `session_path`).
+    모드는 저장소(메인 체크아웃만) ↔ 디렉토리(전부)를 tab 으로. 후보는 열린 세션 → 피커로 최근 고른 곳 → 홈 전체 탐색 순이고,
+    탐색은 숨김 디렉토리를 빼고 머신별 `~/.config/tmux-dev/ignore`(gitignore 문법, chezmoi 가 처음 한 번만 만든다)의 패턴을 뺀다.
+    `/` 나 `~` 로 시작하는 검색어는 경로 접두 일치로 거르고, 걸리는 항목이 없을 때 enter 로 그 경로를 판정해 푸터에서 묻는다
+    (없으면 만들기, 저장소 모드는 `git init` 까지. 목록에 없던 기존 디렉토리는 열기만). ctrl-] 는 커서 경로를 검색어에 채운다.
+    팝업은 테두리 없이 띄우고 fzf 가 tmux 팝업과 같은 모양의 테두리를 그려 윗변에 모드 탭을 둔다. 워크트리 경로를 고르면 그
+    워크트리의 윈도우로 간다. 설계와 판단 근거는 플러그인의 `session-picker.md`.
+    alt-l 은 레이아웃(어느 패널에 무엇을 띄우나)을 겹쳐 뜬 목록에서 골라서 열고(esc 는 한 단계 뒤로), 거기서 alt-enter 면 저장소
+    기본값으로도 남긴다(`git config tmux-dev.layout`). Enter 는 묻지 않고 저장소 설정 → 전역 `@tmux-dev-layout` → ide 순으로 쓴다.
+    개인 레이아웃은 `~/.config/tmux-dev/layouts.sh` 에 함수 하나와 `layout_register` 한 줄.
     기본 레이아웃: `ide`(셸 | nvim), `ide-dev`(셸 | nvim + dev 서버), `nvim`, `nvim-dev`(nvim / dev 서버), `plain`.
     dev 서버 명령은 `git config tmux-dev.dev`, 없으면 package.json 의 `dev` 스크립트(lockfile 로 pnpm/yarn/bun/npm 선택).
   - `prefix W` (`tmux-dev worktree [브랜치|경로]`): 저장소의 워크트리·브랜치·원격 브랜치를 한 목록에서 고르면 그 워크트리의
@@ -166,7 +171,7 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
     이게 먼저) 워크트리 제거(변경 있으면 거절) + 윈도우 닫기 + 브랜치 삭제를 매번 확인하며 한다. 브랜치는 지우기 전에 항상
     `refs/archive/<날짜>/<브랜치>` 에 보관하므로 머지 안 된 것도 "보관하고 삭제" 를 고를 수 있다(`--archived` 로 목록·복구).
     로컬 머지와 PR 머지 어느 쪽이든 같은 ctrl-x 로 닫는다. 워크트리가 숨은 경로에 있으니 정리는 이 팝업에서 한다.
-  - 파일은 XDG 세 디렉토리에 종류별로: 설정 `~/.config/tmux-dev/`, 상태 `~/.local/state/tmux-dev/`, 데이터(워크트리)
+  - 파일은 XDG 세 디렉토리에 종류별로: 설정 `~/.config/tmux-dev/`(ignore, layouts.sh), 상태 `~/.local/state/tmux-dev/`(history), 데이터(워크트리)
     `~/.local/share/tmux-dev/worktrees/<저장소>/<브랜치>`. 워크트리 위치·셋업 훅은 `git config tmux-dev.worktree.*`.
   - Claude Code 와 함께 쓰는 흐름(워크트리를 먼저 만들고 그 안에서 `claude`), `WorktreeCreate/Remove` 훅으로 에이전트가 만드는
     워크트리도 같은 자리에 두는 설정, 전역 CLAUDE.md 지침은 플러그인의 `claude-code.md`.

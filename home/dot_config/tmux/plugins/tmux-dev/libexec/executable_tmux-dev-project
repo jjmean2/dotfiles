@@ -1,42 +1,35 @@
 #!/usr/bin/env bash
-# tmux-dev project: 프로젝트 디렉토리를 골라 그 이름의 tmux 세션으로 들어간다 (없으면 만든다).
+# tmux-dev project: 디렉토리 하나를 골라 그 디렉토리의 세션으로 간다. 세션이 없으면 만들고, 디렉토리가 없으면 만든다.
 #
-# 멘탈 모델: 세션 = 프로젝트. 세션에 프로젝트 이름을 붙이고 그 디렉토리에서 시작하면 세션 전환이
-# 곧 프로젝트 전환이다. 분리(prefix d)해도 세션은 살아 있어 Claude, 셸 히스토리, nvim 버퍼가
-# 프로젝트별로 보존된다. 순정 대응은 `tmux new -s 이름 -c 경로` + `prefix s` 이고, 이 스크립트는
-# "없으면 만들어 준다" 와 "기본 레이아웃" 만 보탠다. 프로젝트는 git 저장소가 아니어도 된다.
+# 멘탈 모델 (자세히: ../session-picker.md)
+#   세션 = 디렉토리. 세션의 정체는 이름이 아니라 디렉토리의 실제 경로다. 같은 경로의 세션이 있으면 전환만 한다.
+#   모드는 "무엇을 후보로 보여 주나" 만 정한다. 어느 모드에서 골라도 결과는 같다.
+#   피커(fzf)는 결정만 한다. 만들기·전환은 fzf 가 끝난 뒤 이 스크립트가 한다. 셸에서 경로를 주는 것과 같은 길이다.
+#   순정 대응은 `tmux new -s 이름 -c 경로` + `prefix s`. 이 스크립트는 "없으면 만들어 준다" 와 레이아웃만 보탠다.
 #
 # 사용
-#   tmux-dev project                  fzf 로 고른다 (tmux 안에서는 prefix S 가 팝업으로 띄움)
-#   tmux-dev project <디렉토리>       바로 그 프로젝트로
-#   tmux-dev project --layout plain   새 세션의 레이아웃을 명시. 없으면 저장소 설정 → 전역 → ide (lib/layout.sh). --layouts 로 목록
-#   tmux-dev project --add [디렉토리] 목록에 고정 등록 (생략하면 현재 디렉토리)
-#   tmux-dev project --remove <디렉토리>  목록에서 제거 (자동 수집된 것은 숨김으로)
-#   tmux-dev project --edit           목록 파일을 $EDITOR 로 열기
-#   tmux-dev project --list           후보 목록만 출력 (디버그)
+#   tmux-dev project                  피커 (tmux 안에서는 prefix S 가 팝업으로 띄운다)
+#   tmux-dev project <디렉토리>       바로 그 디렉토리의 세션으로 (있는 디렉토리만. 최근 내역에는 남기지 않는다)
+#   tmux-dev project --layout <이름>  새 세션의 레이아웃. 없으면 저장소 설정 → 전역 → ide (lib/layout.sh). --layouts 로 목록
+#   tmux-dev project --list [repo|dir]  후보 목록만 출력 (디버그)
 #
-# 팝업(fzf) 안에서 (fzf 기본 키와 겹치지 않는 키만 썼다. ctrl-p/n, ctrl-a/e 등은 순정 그대로)
-#   tab / shift-tab            모드 순환: project(목록) → dir(파일시스템 검색) → recent(최근 연 곳)
-#                              검색어는 모드를 바꿔도 유지된다
-#   Enter                      선택. 맞는 후보가 없으면 입력한 글자를 경로로 해석한다
-#   alt-enter                  후보가 있어도 입력한 글자를 경로로 쓴다 (없는 경로면 만들지 물어봄).
-#                              macOS Ghostty 는 왼쪽 option 이 alt (macos-option-as-alt = left)
-#   alt-l                      레이아웃을 골라서 이번만 그것으로 연다 (두 번째 fzf, 그림 미리보기). 거기서 alt-enter
-#                              로 고르면 저장소의 기본으로도 남는다 (git config tmux-dev.layout).
-#                              Enter 는 묻지 않고 저장소 설정 → 전역 → ide 순으로 쓴다
-#   ctrl-t / ctrl-x / ctrl-o   커서 항목을 목록에 등록 / 목록에서 제거 / 목록 파일 열어 편집
-#                              (후보가 비어 있을 때 ctrl-t 는 팝업을 띄운 패널의 디렉토리를 등록)
+# 피커 (fzf 순정 키는 그대로. 아래는 비어 있던 키와, 같은 뜻으로 덮은 enter·esc·tab)
+#   tab / shift-tab   모드 전환: 저장소(메인 체크아웃만) ↔ 디렉토리(모든 디렉토리)
+#   enter             커서 항목으로. 걸리는 항목이 없고 검색어가 경로(/ 나 ~ 로 시작)면 그 경로를 판정한다.
+#                     없으면 만들지(저장소 모드는 git init 까지), 목록에 없지만 있으면 열지 푸터에서 묻는다
+#   alt-l             레이아웃을 골라서 열기. 겹쳐 뜬 목록에서 enter 는 이번만, alt-enter 는 저장소 기본으로도 저장
+#   ctrl-]            커서 항목의 경로를 검색어에 채운다. 이어서 /이름 을 치면 그 아래 새 디렉토리
+#   alt-p             미리보기 오른쪽 → 아래 → 숨김
+#   alt-h             키 안내를 미리보기 자리에 (다시 누르면 원래대로)
+#   esc               한 단계 뒤 (확인 → 레이아웃 → 목록). 목록에서는 검색어 지우기. 닫기는 ctrl-c
+#   경로 모양 검색어는 퍼지가 아니라 경로 접두 일치로 거른다. 끝 슬래시는 "이 디렉토리 아래" 다.
 #
-# 목록 파일: ~/.config/tmux-dev/projects (머신마다 다르다. 형식은 그 파일의 주석 참고)
-# 후보 = 목록 파일의 저장소·고정 항목 + 지금 열려 있는 세션. 세션 이름은 디렉토리 이름이고
-# tmux 가 못 쓰는 . 과 : 은 _ 로 바꾼다. 이미 있는 세션으로 갈 때는 레이아웃을 건드리지 않는다.
-#
-# 워크트리 (tmux-dev worktree, prefix W 와 짝). 세션 = 저장소, 윈도우 = 워크트리 라는 관례를 지키기 위해
-#   - 자동 수집은 .git 이 파일인 디렉토리(= 워크트리)를 프로젝트로 보지 않는다. 고정 항목은 적은 대로 쓴다.
-#   - 워크트리 경로를 골랐는데 그 이름의 세션이 없고 고정 항목도 아니면, 메인 체크아웃의 세션으로 가서
-#     그 워크트리의 윈도우를 연다 (worktree 에 넘김). 그 이름의 세션이 이미 있으면 그냥 그 세션으로
-#     간다 (순정 `tmux new -c <워크트리>` 로 만든 세션을 존중).
-#   - 세션을 만들 때 저장소면 첫 윈도우에 사용자 옵션 @worktree <경로> 를 둔다 (worktree 가 읽는다).
+# 목록: 열린 세션(●) → 최근 고른 곳(◷) → 홈 전체 탐색 (lib/dirs.sh). 한 경로는 한 번만, 모드 조건에 맞는 것만.
+# 파일: ~/.config/tmux-dev/ignore (탐색 제외, gitignore 문법), ~/.local/state/tmux-dev/history (피커로 고른 곳만)
+# 세션 찾기: 세션 옵션 @tmux-dev-path 가 그 경로 → 옵션 없는 세션의 session_path 가 그 경로 → 없으면 만든다.
+#   여럿이면 최근에 붙었던 것. 만들 때 @tmux-dev-path 를 붙이고, 저장소면 첫 윈도우에 @worktree 를 둔다 (worktree 가 읽는다).
+# 워크트리(.git 이 파일)를 고르면 그 워크트리로 이동한다: 그 경로의 세션 → 그 워크트리를 연 윈도우(@worktree)
+#   → 메인 저장소 세션에 윈도우를 열어 준다 (tmux-dev worktree 에 넘김). 세션 = 저장소, 윈도우 = 워크트리.
 set -euo pipefail
 
 SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
@@ -44,22 +37,45 @@ LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
 # shellcheck source=../lib/common.sh
 . "$LIB/common.sh"
 # shellcheck source=../lib/dirs.sh
-. "$LIB/dirs.sh"             # dir 모드 검색(list_dirs)·미리보기. worktree 의 dir 모드와 공유
+. "$LIB/dirs.sh"             # 홈 탐색(scan_repos, scan_dirs)·미리보기. worktree 의 dir 모드와 공유
 # shellcheck source=../lib/layout.sh
-. "$LIB/layout.sh"           # 새 세션의 첫 윈도우에 한 번 적용. worktree 와 공유 (ide, ide-dev, nvim, nvim-dev, plain)
+. "$LIB/layout.sh"           # 새 세션의 첫 윈도우에 한 번 적용. worktree 와 공유
 WORKTREE_BIN="$(dirname "$SELF")/tmux-dev-worktree"
 
-# --- 설정 --------------------------------------------------------------------
-CONFIG=$TMUX_DEV_CONFIG
-HISTORY=$TMUX_DEV_HISTORY
-LAYOUT=""              # --layout 으로 명시한 값. 비어 있으면 resolve_layout (저장소 설정 → 전역 → ide). alt-l 로 고르면 채워진다
-PICK_LAYOUT=""         # 피커에서 alt-l 을 눌렀다
-RECENT_MAX=30          # recent 모드에 보여 줄 수
-HISTORY_MAX=500        # 히스토리 파일 상한 (줄). 무한정 쌓지 않는다
+LAYOUT=""          # --layout 으로 명시한 값, 또는 피커의 alt-l. 비어 있으면 resolve_layout
+RECENT_MAX=20      # 목록 위쪽에 보여 줄 최근 항목 수
+HISTORY_MAX=500    # 히스토리 파일 상한 (줄)
+US=$'\x1f'         # tmux 포맷 출력의 칸 구분자 (빈 칸이 있을 수 있다)
+C=$'\033[36m'      # 브랜치 색
 
-# --- git 도우미 ----------------------------------------------------------------
-# 워크트리의 메인 체크아웃. .git 파일의 "gitdir: <메인>/.git/worktrees/<이름>" 에서 역산한다 (git 프로세스 없음).
-# 워크트리가 아니거나 메인을 못 찾으면 빈 문자열.
+# --- 작은 도구 -------------------------------------------------------------------
+# fzf 액션 한 개. 인자에 괄호가 있어도 깨지지 않게, 인자에 없는 구분 기호 쌍을 고른다 (man fzf: ACTION ARGUMENT)
+act() {
+  local name=$1 text=$2 pair
+  for pair in '()' '[]' '{}' '<>' '~~' '!!' '@@' '##' '%%' '^^' '&&' '**' ';;' '||'; do
+    case $text in *"${pair:0:1}"*|*"${pair:1:1}"*) continue ;; esac
+    printf '%s%s%s%s' "$name" "${pair:0:1}" "$text" "${pair:1:1}"; return
+  done
+  printf '%s:%s' "$name" "$text"   # 마지막 수단. 액션 줄의 맨 끝에만 써야 한다
+}
+home_disp() { case $1 in "$HOME") printf '~' ;; "$HOME"/*) printf '~%s' "${1#"$HOME"}" ;; *) printf '%s' "$1" ;; esac; }
+# 경로 모양 검색어: / 나 ~/ 로 시작하거나 ~ 하나
+pathish() { case ${1:-} in /*|'~'|'~/'*) return 0 ;; *) return 1 ;; esac; }
+# ~ 를 풀고 . .. // 끝 슬래시를 글자로만 정리한다 (파일시스템을 보지 않는다). 절대 경로가 아니면 1
+norm_path() {
+  local p=$1 seg out=""
+  case $p in '~') p=$HOME ;; '~/'*) p=$HOME/${p#'~/'} ;; esac
+  [[ $p = /* ]] || return 1
+  local -a parts=()
+  local IFS=/
+  for seg in $p; do
+    case $seg in ''|.) ;; ..) [ ${#parts[@]} -gt 0 ] && unset "parts[$((${#parts[@]} - 1))]" ;; *) parts+=("$seg") ;; esac
+  done
+  for seg in "${parts[@]+"${parts[@]}"}"; do out+="/$seg"; done
+  printf '%s' "${out:-/}"
+}
+canon_dir() { (cd "$1" 2>/dev/null && pwd -P); }
+# 워크트리의 메인 체크아웃. .git 파일의 "gitdir: <메인>/.git/worktrees/<이름>" 에서 역산한다 (git 프로세스 없음)
 worktree_main() {
   local g=$1/.git line
   [ -f "$g" ] || return 0
@@ -68,251 +84,398 @@ worktree_main() {
   case $g in */.git/worktrees/*) g=${g%/.git/worktrees/*}; [ -d "$g/.git" ] && printf '%s' "$g" ;; esac
   return 0
 }
+fits_mode() { if [ "$1" = repo ]; then [ -d "$2/.git" ]; else [ -d "$2" ]; fi; }
+mode_name() { if [ "$1" = repo ]; then printf '저장소'; else printf '디렉토리'; fi; }
 
-# --- 목록 파일 ----------------------------------------------------------------
-# 형식(한 줄에 하나, # 은 주석):
-#   <경로>:<깊이>      루트. 깊이만큼 내려가며 .git 이 있는 디렉토리를 자동 수집
-#   <경로>             고정 항목. git 저장소가 아니어도 된다
-#   !<경로>            자동 수집에서 숨김 (열려 있는 세션은 그대로 보인다)
-#   search <경로>:<깊이>   dir 모드가 뒤지는 범위. 여러 줄 가능
-#   exclude <이름>...  dir 모드에서 건너뛸 디렉토리 이름
-# (search·exclude 는 lib/dirs.sh 가 읽는다. prefix W 의 dir 모드도 같은 범위를 쓴다)
-config_roots()    { config_lines | grep -E '^[^!s][^[:space:]]*:[0-9]+$' || true; }
-config_pins()     { config_lines | grep -vE '^(!|search |exclude )' | grep -vE ':[0-9]+$' || true; }
-config_hidden()   { config_lines | sed -n 's/^!//p'; }
+# --- 상태 (팝업 하나당 디렉토리 하나) ----------------------------------------------
+# fzf 가 띄우는 콜백은 매번 새 프로세스라 상태를 파일로 주고받는다. 경로는 환경변수로 물려받는다.
+# 읽기·쓰기는 bash 내장(read, printf 리다이렉션)이라 프로세스를 더 띄우지 않는다.
+#   mode     repo | dir             phase   list | confirm
+#   pending  판정을 기다리는 대상: "<종류>\t<경로>" (open, worktree, confirm-open, confirm-dir, confirm-repo)
+#   origin   layout 이면 alt-l 을 거쳐 왔다 (확인에서 esc 하면 레이아웃으로 돌아간다)
+#   layout   고른 레이아웃 "<이름>\t<save 또는 빈 값>"      help  1 이면 미리보기 자리에 키 안내
+#   decision fzf 를 끝낼 때 쓰는 결정 "<경로>\t<만들기: none|dir|repo>\t<레이아웃>\t<save>"
+st_get() { ST=""; [ -f "$TMUX_DEV_STATE/$1" ] && IFS= read -r ST < "$TMUX_DEV_STATE/$1" || true; }
+st_set() { printf '%s\n' "$2" > "$TMUX_DEV_STATE/$1"; }
+st_del() { local k; for k in "$@"; do rm -f "$TMUX_DEV_STATE/$k"; done; }
 
-ensure_config() {
-  [ -f "$CONFIG" ] && return 0
-  mkdir -p "$(dirname "$CONFIG")"
-  cat > "$CONFIG" <<'EOF'
-# tmux-dev project (prefix S) 가 팝업에 보여줄 프로젝트 목록. 이 파일은 머신마다 다르다.
-#   <경로>:<깊이>    루트. 깊이만큼 내려가며 .git 이 있는 디렉토리를 자동 수집 (워크트리는 제외)
-#   <경로>           고정 항목 (git 저장소가 아니어도 됨)
-#   !<경로>          자동 수집에서 숨김
-#   search <경로>:<깊이>   dir 모드 검색 범위 (기본 ~:4)
-#   exclude <이름>...      dir 모드가 건너뛸 디렉토리 이름
-~/dev:2
-EOF
+# --- 후보 ------------------------------------------------------------------------
+# 행: "<~경로>\t<표시>\t<실제 경로>". fzf 는 1·2칸을 보여 주고(--with-nth 1,2) 1칸(경로)만 검색한다(--nth 1).
+# 표시를 경로 뒤에 두어야 경로 접두 일치(^~/...)가 맞는다.
+row() { printf '%s\t%s\t%s\n' "$(home_disp "$1")" "$2" "$1"; }
+branch_mark() { local b; b=$(git_branch "$1"); [ -n "$b" ] && printf ' %s%s%s' "$C" "$b" "$R"; return 0; }
+session_list() {  # "<최근 붙은 시각>US<id>US<이름>US<@tmux-dev-path>US<session_path>", 최근 붙은 순
+  tmux list-sessions -F "#{session_last_attached}${US}#{session_id}${US}#{session_name}${US}#{@tmux-dev-path}${US}#{session_path}" 2>/dev/null \
+    | sort -t "$US" -k1,1nr || true
 }
-
-# --- 후보 수집 ----------------------------------------------------------------
-list_roots() {  # 설정의 루트 아래 git 저장소
-  local entry root depth
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    root=$(expand_tilde "${entry%:*}"); depth=${entry##*:}
-    [ -d "$root" ] || continue
-    # 루트 자신은 적은 대로 후보. 그 아래는 depth 까지 .git 디렉토리를 검색한다. .git 이 파일이면
-    # 워크트리라 건너뛴다 (워크트리는 세션이 아니라 메인 저장소 세션의 윈도우. tmux-dev worktree 참고).
-    [ -e "$root/.git" ] && printf '%s\n' "$root"
-    [ "$depth" -gt 0 ] && find "$root" -mindepth 2 -maxdepth $((depth + 1)) -name .git -prune \
-      2>/dev/null | while IFS= read -r g; do [ -d "$g" ] && printf '%s\n' "${g%/.git}"; done
-  done < <(config_roots)
+session_rows() {
+  local _t _id name tag sp p
+  while IFS=$US read -r _t _id name tag sp; do
+    p=${tag:-$(canon_dir "$sp")}; [ -n "$p" ] || continue
+    fits_mode "$1" "$p" || continue
+    row "$p" "${G}●${R} ${D}$name${R}$(branch_mark "$p")"
+  done < <(session_list)
 }
-list_pins() {
-  local p; while IFS= read -r p; do [ -n "$p" ] && canon "$(expand_tilde "$p")"; done < <(config_pins)
-}
-list_hidden() {
-  local p; while IFS= read -r p; do [ -n "$p" ] && canon "$(expand_tilde "$p")"; done < <(config_hidden)
-}
-list_sessions() {
-  tmux list-sessions -F '#{session_path}' 2>/dev/null || true
-}
-# 표시용 줄로 바꾼다: "<~경로> [<브랜치>]<TAB><절대경로>". fzf 는 TAB 앞만 보여주고 뒤를 돌려준다.
-annotate() {
-  local p b rows=() w=0 n
-  while IFS= read -r p; do
-    [ -n "$p" ] || continue
-    b=$(git_branch "$p")
-    rows+=("$(abbrev_home "$p")|$b|$p")
-    n=$(abbrev_home "$p"); n=${#n}; [ "$n" -gt "$w" ] && w=$n
-  done
-  [ "$w" -gt 60 ] && w=60
-  for p in "${rows[@]+"${rows[@]}"}"; do
-    local disp=${p%%|*} rest=${p#*|} br abs
-    br=${rest%%|*}; abs=${rest#*|}
-    if [ -n "$br" ]; then
-      printf '%-*s \033[2;36m%s\033[0m\t%s\n' "$w" "$disp" "$br" "$abs"
-    else
-      printf '%s\t%s\n' "$disp" "$abs"
-    fi
-  done
-}
-registered() {  # 설정으로 들어온 항목 (고정 + 자동 수집, 숨김 제외). 열려 있는 세션은 포함하지 않는다
-  local hidden; hidden=$(list_hidden)
-  { list_pins; list_roots | grep -vxF -f <(printf '%s\n' "$hidden"; echo '//none//') || true; } | awk '!seen[$0]++'
-}
-candidates() {  # project 모드 = 열려 있는 세션 + 설정 항목. 순서 유지하며 경로로 중복 제거
-  { list_sessions; registered; } | awk '!seen[$0]++' | annotate
-}
-list_recent() { # recent 모드. 최근 연 순서, 중복 제거, 사라진 디렉토리 제외
-  [ -f "$HISTORY" ] || return 0
-  tail -r "$HISTORY" 2>/dev/null || tac "$HISTORY"
+history_paths() {  # 최근 순, 중복 없이. 옛 형식(경로만)과 새 형식(<epoch>\t<경로>) 둘 다 읽는다
+  [ -f "$TMUX_DEV_HISTORY" ] || return 0
+  { tail -r "$TMUX_DEV_HISTORY" 2>/dev/null || tac "$TMUX_DEV_HISTORY"; } | awk -F'\t' '{ p = NF > 1 ? $2 : $1; if (p != "" && !seen[p]++) print p }'
 }
 recent_rows() {
-  list_recent | awk '!seen[$0]++' | while IFS= read -r p; do [ -d "$p" ] && printf '%s\n' "$p"; done \
-    | head -n "$RECENT_MAX" | annotate
+  local p n=0
+  while IFS= read -r p; do
+    [ "$n" -lt "$RECENT_MAX" ] || break
+    fits_mode "$1" "$p" || continue   # 지금 없는 곳은 건너뛴다 (파일에서는 지우지 않는다)
+    row "$p" "${D}◷${R}$(branch_mark "$p")"; n=$((n + 1))
+  done < <(history_paths)
 }
-record_history() {  # 최근 순. 같은 경로는 최신 하나만 남기고, 파일은 HISTORY_MAX 줄로 자른다 (fzf --history, 에디터 최근 파일과 같은 관행)
-  mkdir -p "$(dirname "$HISTORY")"
-  local tmp; tmp=$(mktemp "$HISTORY.XXXXXX")
-  { [ -f "$HISTORY" ] && grep -vxF -- "$1" "$HISTORY" || true; printf '%s\n' "$1"; } | tail -n "$HISTORY_MAX" > "$tmp" && mv -f "$tmp" "$HISTORY"
-}
-
-# --- 목록 편집 ----------------------------------------------------------------
-# 설정에서 내용이 $1 또는 $2 와 같은 줄을 지운다 (뒤따르는 주석·공백은 무시). 정규식을 쓰지 않는다.
-delete_lines() {
-  local tmp; tmp=$(mktemp "$CONFIG.XXXXXX")
-  awk -v a="$1" -v b="$2" '{ l=$0; sub(/[ \t]*#.*$/, "", l); sub(/[ \t]+$/, "", l); if (l==a || l==b) next; print }' \
-    "$CONFIG" > "$tmp" && mv "$tmp" "$CONFIG"
-}
-add_entry() {
-  local dir; dir=$(canon "${1:-$PWD}")
-  [ -n "$dir" ] || die "디렉토리가 아닙니다: ${1:-$PWD}"
-  ensure_config
-  local short; short=$(abbrev_home "$dir")
-  # 숨김 줄이 있으면 그것을 지우는 것으로 충분하다 (다시 자동 수집된다)
-  if config_hidden | grep -xF -e "$short" -e "$dir" >/dev/null; then
-    delete_lines "!$short" "!$dir"
-    return 0
+scan_rows() {
+  if [ "$1" = repo ]; then
+    local p; while IFS= read -r p; do row "$p" "$(branch_mark "$p")"; done < <(scan_repos)
+  else
+    scan_dirs | awk -v home="$HOME" -v OFS='\t' '{ d = $0; if (index(d, home "/") == 1) d = "~" substr(d, length(home) + 1); else if (d == home) d = "~"; print d, "", $0 }'
   fi
-  registered | grep -xF "$dir" >/dev/null && return 0   # 이미 설정에 있음 (열려 있는 세션일 뿐이면 등록한다)
-  printf '%s\n' "$short" >> "$CONFIG"
 }
-remove_entry() {
-  local dir; dir=$(canon "$1")
-  [ -n "$dir" ] || die "디렉토리가 아닙니다: $1"
-  ensure_config
-  local short; short=$(abbrev_home "$dir")
-  if config_pins | grep -xF -e "$short" -e "$dir" >/dev/null; then   # 고정 항목이면 줄을 지운다
-    delete_lines "$short" "$dir"
-  elif registered | grep -xF "$dir" >/dev/null; then                  # 자동 수집 항목이면 숨김 줄 추가
-    printf '!%s\n' "$short" >> "$CONFIG"
-  fi                                                                  # 열려 있는 세션일 뿐이면 할 일 없음
+rows() {  # 앞에 나온 것이 이긴다. fflush 로 한 줄씩 흘려 보내 fzf 가 찾는 대로 그린다
+  { session_rows "$1"; recent_rows "$1"; scan_rows "$1"; } | awk -F'\t' '!seen[$3]++ { print; fflush() }'
 }
-edit_config() { ensure_config; "${EDITOR:-nvim}" "$CONFIG"; }
+record_history() {  # 피커로 고른 것만 기록한다 (CLI 는 기록하지 않는다)
+  mkdir -p "$(dirname "$TMUX_DEV_HISTORY")"
+  local tmp; tmp=$(mktemp "$TMUX_DEV_HISTORY.XXXXXX")
+  { [ -f "$TMUX_DEV_HISTORY" ] && awk -F'\t' -v p="$1" '{ q = NF > 1 ? $2 : $1; if (q != p) print (NF > 1 ? $0 : "0\t" $1) }' "$TMUX_DEV_HISTORY"
+    printf '%s\t%s\n' "$(date +%s)" "$1"; } | tail -n "$HISTORY_MAX" > "$tmp" && mv -f "$tmp" "$TMUX_DEV_HISTORY"
+}
 
-# --- fzf ------------------------------------------------------------------------
-header_for() {  # 모드 탭 + 키 안내. 현재 모드만 굵게
-  local p="project" f="dir" r="recent"
-  case "$1" in project) p="${B}[project]${R}" ;; dir) f="${B}[dir]${R}" ;; recent) r="${B}[recent]${R}" ;; esac
-  printf '%s   %s   %s\n%s\n%s\n' "$p" "$f" "$r" \
-    "${D}tab/shift-tab 모드 순환   enter 선택 (후보 없으면 친 글자가 경로)   alt-enter 친 글자 강제   alt-l 레이아웃 골라 열기${R}" \
-    "${D}ctrl-t 등록   ctrl-x 제거   ctrl-o 목록 파일 편집   esc 검색어 지우기   ctrl-c 닫기${R}"
+# --- 세션 찾기·만들기 --------------------------------------------------------------
+find_session() {  # $1 실제 경로 → 세션 id. 옵션이 붙은 세션이 먼저, 그다음 옵션 없는 세션의 session_path
+  local _t id _n tag sp by_path=""
+  while IFS=$US read -r _t id _n tag sp; do
+    if [ -n "$tag" ]; then [ "$tag" = "$1" ] && { printf '%s' "$id"; return 0; }
+    elif [ -z "$by_path" ] && [ "$(canon_dir "$sp")" = "$1" ]; then by_path=$id; fi
+  done < <(session_list)
+  [ -n "$by_path" ] && printf '%s' "$by_path"
+  return 0
 }
-source_for() {
-  case "$1" in project) echo "$SELF --list" ;; dir) echo "$SELF --list-dirs" ;; recent) echo "$SELF --list-recent" ;; esac
+session_name_for() {  # 표시용 이름. 겹치면 부모 이름을 붙이고, 그래도 겹치면 -2, -3
+  local base parent name i=2
+  base=$(basename "$1" | tr '.:' '__'); name=$base
+  tmux has-session -t "=$name" 2>/dev/null || { printf '%s' "$name"; return; }
+  parent=$(basename "$(dirname "$1")" | tr '.:' '__'); name="${parent}_$base"
+  while tmux has-session -t "=$name" 2>/dev/null; do name="${parent}_$base-$i"; i=$((i + 1)); done
+  printf '%s' "$name"
 }
-# transform 액션에서 호출된다. $FZF_PROMPT 로 현재 모드를 알아내 그 모드의 목록을 다시 읽는다.
-mode_from_prompt() {
-  case "${FZF_PROMPT:-}" in dir*) echo dir ;; recent*) echo recent ;; *) echo project ;; esac
+ensure_session() {  # $1 실제 경로 → 세션 id (없으면 만들고 레이아웃)
+  local sid win
+  sid=$(find_session "$1")
+  if [ -z "$sid" ]; then
+    win=$(tmux new-session -d -s "$(session_name_for "$1")" -c "$1" -P -F '#{window_id}')
+    sid=$(tmux display-message -p -t "$win" '#{session_id}')
+    tmux set-option -t "$sid" @tmux-dev-path "$1"
+    [ -d "$1/.git" ] && tmux set-option -w -t "$win" @worktree "$1"
+    apply_layout "$(resolve_layout "$LAYOUT" "$1")" "$win" "$1"
+  fi
+  printf '%s' "$sid"
 }
-next_mode() {  # $1 = next | prev
-  local cur; cur=$(mode_from_prompt)
-  case "$1:$cur" in
-    next:project) echo dir ;;    next:dir) echo recent ;; next:recent) echo project ;;
-    prev:project) echo recent ;; prev:dir) echo project ;; prev:recent) echo dir ;;
+switch_to() { if [ -n "${TMUX:-}" ]; then tmux switch-client -t "$1"; else tmux attach-session -t "$1"; fi; }
+# 워크트리를 고르면 그 워크트리로 이동한다 (session-picker.md 결정 3). 읽기를 바꾸려면 이 함수만 고친다.
+open_worktree() {
+  local path=$1 sid _t win tag main
+  sid=$(find_session "$path")                       # 순정으로 만든 워크트리 세션은 존중한다
+  if [ -n "$sid" ]; then switch_to "$sid"; return; fi
+  while IFS=$US read -r _t sid win tag; do          # 그 워크트리를 연 윈도우가 어느 세션에든 있으면 그리로
+    [ "$tag" = "$path" ] || continue
+    tmux select-window -t "$win"; switch_to "$sid"; return
+  done < <(tmux list-windows -a -F "#{session_last_attached}${US}#{session_id}${US}#{window_id}${US}#{@worktree}" 2>/dev/null | sort -t "$US" -k1,1nr)
+  main=$(worktree_main "$path")
+  if [ -z "$main" ]; then switch_to "$(ensure_session "$path")"; return; fi
+  sid=$(LAYOUT="" ensure_session "$main")           # 메인 세션은 기본 레이아웃으로. 고른 레이아웃은 워크트리 윈도우에
+  "$WORKTREE_BIN" -t "$sid" ${LAYOUT:+--layout "$LAYOUT"} "$path"
+  switch_to "$sid"
+}
+open_path() {  # $1 실제 경로
+  if [ -f "$1/.git" ]; then open_worktree "$1"; else switch_to "$(ensure_session "$1")"; fi
+}
+# 결정을 실행한다: $1 경로 $2 만들기(none|dir|repo) $3 레이아웃 $4 save
+apply_decision() {
+  local path=$1 create=$2
+  case $create in
+    dir)  mkdir -p "$path" || die "만들 수 없습니다: $(home_disp "$path")" ;;
+    repo) mkdir -p "$path" && git -C "$path" init -q || die "저장소를 만들 수 없습니다: $(home_disp "$path")" ;;
+  esac
+  path=$(canon_dir "$path") || die "디렉토리가 아닙니다: $1"
+  LAYOUT=$3
+  [ -n "$4" ] && [ -n "$LAYOUT" ] && [ -d "$path/.git" ] && git -C "$path" config tmux-dev.layout "$LAYOUT"
+  record_history "$path"
+  open_path "$path"
+}
+
+# --- 판정: 걸리는 항목 없이 친 경로 --------------------------------------------------
+# 결과: J_KIND (block | open | worktree | confirm-open | confirm-dir | confirm-repo), J_PATH, J_SAY (푸터 미리 보기),
+#       J_ASK (확인 질문). 목록을 다 받기 전(홈 탐색은 1~2초)에도 판정이 맞도록, "이 모드의 목록에 나올 곳" 이면 묻지 않고 연다.
+listed_like() {  # 탐색 범위 안이고 숨김 아래가 아니면 목록에 나올 곳으로 본다 (ignore 파일까지는 보지 않는다)
+  case $1 in "$SCAN_ROOT"|"$SCAN_ROOT"/*) ;; *) return 1 ;; esac
+  case ${1#"$SCAN_ROOT"} in */.*) return 1 ;; esac
+  return 0
+}
+judge() {  # $1 검색어 $2 모드
+  local p a rest="" top d
+  J_KIND=block J_PATH="" J_SAY="" J_ASK=""
+  p=$(norm_path "$1") || { J_SAY="${Y}절대 경로가 아니다${R}"; return; }
+  d=$(home_disp "$p")
+  if [ -e "$p" ] && [ ! -d "$p" ]; then J_SAY="${Y}파일이 이미 있다: $d${R}"; return; fi
+  if [ -d "$p" ]; then
+    J_PATH=$(canon_dir "$p"); d=$(home_disp "$J_PATH")
+    if [ -f "$J_PATH/.git" ]; then J_KIND=worktree; J_SAY="enter → 워크트리로 이동: $d"
+    elif [ -n "$(find_session "$J_PATH")" ]; then J_KIND=open; J_SAY="enter → 열린 세션으로: $d"
+    elif [ "$2" = repo ] && [ ! -d "$J_PATH/.git" ]; then
+      J_KIND=confirm-open; J_SAY="enter → 저장소가 아닌 디렉토리 열기: $d"
+      J_ASK="${B}enter${R} 열기 · ${B}esc${R} 취소 │ ${Y}저장소가 아닌 디렉토리다${R} (git init 은 하지 않는다)"
+    elif listed_like "$J_PATH"; then J_KIND=open; J_SAY="enter → 열기: $d"
+    else J_KIND=confirm-open; J_SAY="enter → 목록에 없는 디렉토리 열기: $d"; J_ASK="${B}enter${R} 열기 · ${B}esc${R} 취소 │ ${Y}목록에 없지만 있는 디렉토리다${R}"; fi
+    return
+  fi
+  a=$p; while [ ! -e "$a" ]; do rest="/$(basename "$a")$rest"; a=$(dirname "$a"); done   # 있는 가장 가까운 조상
+  [ -d "$a" ] || { J_SAY="${Y}중간 경로가 파일이다: $(home_disp "$a")${R}"; return; }
+  [ -w "$a" ] || { J_SAY="${Y}쓸 수 없다: $(home_disp "$a")${R}"; return; }
+  a=$(canon_dir "$a"); [ "$a" = / ] && a=""; J_PATH=$a$rest; d=$(home_disp "$J_PATH")
+  local extra=""; [ "$rest" = "/$(basename "$p")" ] || extra=" · 중간 디렉토리도 만든다"
+  if [ "$2" = repo ]; then
+    top=$(git -C "${a:-/}" rev-parse --show-toplevel 2>/dev/null || true)
+    [ -n "$top" ] && extra+=" · ${Y}저장소 $(home_disp "$top") 안${R}"
+    J_KIND=confirm-repo; J_SAY="enter → 새 저장소: $d$extra"
+    J_ASK="${B}enter${R} 만들기 · ${B}esc${R} 취소 │ 새 저장소 $d (mkdir + git init)$extra"
+  else
+    J_KIND=confirm-dir; J_SAY="enter → 새 디렉토리: $d$extra"
+    J_ASK="${B}enter${R} 만들기 · ${B}esc${R} 취소 │ 새 디렉토리 $d$extra"
+  fi
+}
+
+# --- 피커 화면 -------------------------------------------------------------------
+tabs() {  # 바깥 테두리 라벨에 그리는 모드 탭
+  local m out=""
+  for m in repo dir; do
+    if [ "$m" = "$1" ]; then out+="${B}$(mode_name "$m")${R}  "; else out+="${D}$(mode_name "$m")${R}  "; fi
+  done
+  printf ' %s' "${out%  } "
+}
+hint() { printf '%s' "${D}enter 열기 · alt-l 레이아웃 · tab 모드 · alt-h 키 안내 · ctrl-c 닫기${R}"; }
+help_keys() {
+  cat <<EOF
+${B}prefix S: 디렉토리 → 세션${R}
+
+enter         커서 항목의 세션으로 (없으면 만든다)
+alt-l         레이아웃을 골라서 열기
+                enter 이번만 · alt-enter 저장소 기본으로도
+tab           모드: 저장소 ↔ 디렉토리
+ctrl-]        커서 경로를 검색어에 채우기
+alt-p         미리보기 오른쪽 → 아래 → 숨김
+alt-h         이 안내 열고 닫기
+esc           한 단계 뒤 · 목록에서는 검색어 지우기
+ctrl-c        닫기
+
+${B}경로 입력${R}
+/ 나 ~ 로 시작하면 경로 접두 일치로 거른다.
+걸리는 항목이 없을 때 enter 로 판정한다.
+  없음        만들지 묻는다 (저장소 모드는 git init 까지)
+  있음        목록에 없던 곳이면 열지 묻는다
+  파일        막는다
+끝 슬래시는 "이 디렉토리 아래" 다.
+  ~/dev/dot/  는 dotfiles 가 있어도 dot 을 새로 만든다.
+
+${B}목록${R}
+● 열린 세션 · ◷ 최근 고른 곳 · 나머지는 홈 전체 탐색
+탐색 제외: ~/.config/tmux-dev/ignore (gitignore 문법)
+EOF
+}
+# tmux 팝업 테두리와 같은 모양으로 그린다 (팝업은 -B 로 테두리 없이 띄운다). 런타임에 읽어 tmux.conf 를 따라간다
+popup_border() {
+  BORDER=rounded BCOLOR=""
+  [ -n "${TMUX:-}" ] || return 0
+  case $(tmux show -gqv popup-border-lines 2>/dev/null) in
+    rounded) BORDER=rounded ;; double) BORDER=double ;; heavy) BORDER=bold ;; *) BORDER=sharp ;;
+  esac
+  local fg; fg=$(tmux show -gqv popup-border-style 2>/dev/null | sed -n 's/.*fg=\([^,]*\).*/\1/p')
+  case $fg in   # fzf 가 모르는 색 이름을 넘기면 fzf 가 뜨지 않으므로 아는 꼴만 넘긴다
+    colour[0-9]*|color[0-9]*) BCOLOR=${fg#colo*r} ;;
+    '#'[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]|[0-9]|[0-9][0-9]|[0-9][0-9][0-9]) BCOLOR=$fg ;;
+    black|red|green|yellow|blue|magenta|cyan|white) BCOLOR=$fg ;;
   esac
 }
-action_switch() {  # $1 = 바꿀 모드 (next / prev 는 지금 모드 기준으로 순환)
-  local mode=$1
-  case "$mode" in next|prev) mode=$(next_mode "$mode") ;; esac
-  printf 'reload(%s)+first+change-prompt(%s> )+change-header(%s)\n' "$(source_for "$mode")" "$mode" "$(header_for "$mode")"
-}
-action_after_edit() {  # 목록을 고친 뒤: 지금 모드 그대로 다시 읽기
-  printf 'reload(%s)\n' "$(source_for "$(mode_from_prompt)")"
-}
-pick() {
-  command -v fzf >/dev/null || die "fzf 가 필요합니다"
-  local out rc=0 query key sel
-  # 후보는 < <(...) 로 넣는다. 파이프로 넣으면 pipefail 때문에 candidates 의 종료 코드가 fzf 의 것을 가릴 수 있다.
-  # change:first — 검색어가 바뀌면 커서를 맨 위(가장 잘 맞는 후보)로. fzf 기본은 커서 줄 위치를 유지한다 (man fzf 의 change 이벤트 예).
-  # esc:clear-query — Esc 는 닫지 않고 검색어만 지운다. vim 습관으로 Esc 를 연타해도 팝업이 꺼지지 않게.
-  # 닫기는 fzf 기본 abort 키 ctrl-c (ctrl-g, ctrl-q 도 같다). nvim 피커와 같은 규칙 (picker.lua).
-  out=$(fzf --ansi --delimiter=$'\t' --with-nth=1 --nth=1 --scheme=path \
-      --prompt='project> ' --header="$(header_for project)" --height=100% --reverse \
-      --print-query --expect=alt-enter,alt-l \
-      --bind 'change:first' --bind 'esc:clear-query' \
-      --preview="$SELF --preview {2}" --preview-window='right,45%,border-left,<60(down,40%,border-top)' \
-      --bind "tab:transform($SELF --action switch next)" \
-      --bind "shift-tab:transform($SELF --action switch prev)" \
-      --bind "ctrl-t:execute-silent($SELF --add {2})+transform($SELF --action refresh)" \
-      --bind "ctrl-x:execute-silent($SELF --remove {2})+transform($SELF --action refresh)" \
-      --bind "ctrl-o:execute($SELF --edit)+transform($SELF --action refresh)" \
-      < <(candidates)) || rc=$?
-  # 종료 코드: 0 선택, 1 후보 없음(입력을 경로로), 130 취소
-  [ "$rc" -eq 130 ] && exit 0
-  [ "$rc" -gt 1 ] && exit "$rc"
-  { IFS= read -r query; IFS= read -r key; IFS= read -r sel; } <<< "$out" || true
-  [ "$key" = alt-l ] && PICK_LAYOUT=1     # 경로가 정해진 뒤(아래) 레이아웃을 고른다
-  # alt-enter 는 친 글자 강제. 후보가 없을 때도 친 글자. 그 밖(enter, alt-l)은 커서 항목
-  if [ "$key" != alt-enter ] && [ -n "${sel:-}" ]; then
-    target=${sel##*$'\t'}
-  else
-    target=$(query_dir "$query") || exit 0   # 상대 경로는 패널의 디렉토리 기준, 없으면 만들지 묻는다 (lib/dirs.sh)
-  fi
+style_opts() {  # STYLE 배열: 피커와 겹쳐 뜨는 레이아웃 목록이 같이 쓴다
+  popup_border
+  STYLE=(--border "$BORDER" --border-label-pos 3 --input-border "$BORDER" --list-border "$BORDER" --reverse --height=100%)
+  [ -n "$BCOLOR" ] && STYLE+=(--color "border:$BCOLOR,label:$BCOLOR")
+  return 0
 }
 
-# --- 인자 ---------------------------------------------------------------------
+# --- 콜백 (fzf 가 이벤트마다 부른다. 액션 한 줄을 출력한다) -----------------------------
+footer_now() {  # 목록 단계의 푸터: 경로 모양 검색어에 걸리는 항목이 없으면 enter 가 할 일, 아니면 키 안내
+  if pathish "${FZF_QUERY:-}" && [ "${FZF_MATCH_COUNT:-1}" -eq 0 ]; then
+    local mode; st_get mode; mode=${ST:-repo}; judge "$FZF_QUERY" "$mode"; printf '%s' "$J_SAY"
+  else hint; fi
+}
+back_to_list() { st_set phase list; st_del pending origin; printf 'change-prompt(> )+%s' "$(act change-footer "$(footer_now)")"; }
+search_action() {  # 경로 모양 검색어 → 경로 접두 일치. /Users/<나>/... 도 ~/... 로 맞춘다. 공백은 fzf 검색 문법대로 \ 로
+  local q=$1
+  case $q in "$HOME") q='~' ;; "$HOME"/*) q="~${q#"$HOME"}" ;; esac
+  q=${q// /\\ }
+  printf 'search:^%s' "$q"    # search: 꼴은 액션 줄의 맨 끝이어야 한다
+}
+decide() {  # $1 경로 $2 만들기 → 결정 파일을 쓰고 fzf 를 끝낸다
+  local l="" s=""; st_get layout; [ -n "$ST" ] && IFS=$'\t' read -r l s <<< "$ST"
+  st_set decision "$1"$'\t'"$2"$'\t'"$l"$'\t'"$s"
+  printf 'accept'
+}
+ask() {  # 확인 단계로: pending 에 대상을 두고 프롬프트·푸터를 바꾼다
+  local text=$J_ASK; st_get layout; [ -n "$ST" ] && text+=" · 레이아웃 ${ST%%$'\t'*}"
+  st_set phase confirm; st_set pending "$J_KIND"$'\t'"$J_PATH"
+  printf 'change-prompt(%s)+%s' "확인> " "$(act change-footer "$text")"
+}
+# 대상을 정한다: 커서 항목이 있으면 그것, 없으면 경로 판정. J_KIND/J_PATH 를 채운다. 할 수 없으면 푸터 액션을 출력하고 1
+resolve_target() {  # $1 커서 항목의 실제 경로 (없으면 빈 값)
+  local mode; st_get mode; mode=${ST:-repo}
+  if [ -n "$1" ]; then
+    J_PATH=$1; if [ -f "$1/.git" ]; then J_KIND=worktree; else J_KIND=open; fi; return 0
+  fi
+  if pathish "${FZF_QUERY:-}"; then
+    judge "$FZF_QUERY" "$mode"
+    [ "$J_KIND" = block ] && { printf 'bell+%s' "$(act change-footer "$J_SAY")"; return 1; }
+    return 0
+  fi
+  printf 'bell+%s' "$(act change-footer "${Y}맞는 항목이 없다.${R} 새로 만들려면 / 나 ~ 로 시작하는 경로를 친다")"
+  return 1
+}
+on_enter() {
+  st_get phase
+  if [ "$ST" = confirm ]; then   # 확인 단계의 enter = 예
+    local kind path; st_get pending; IFS=$'\t' read -r kind path <<< "$ST"
+    case $kind in confirm-dir) decide "$path" dir ;; confirm-repo) decide "$path" repo ;; *) decide "$path" none ;; esac
+    return
+  fi
+  st_del layout origin
+  resolve_target "${1:-}" || return 0
+  case $J_KIND in open|worktree) decide "$J_PATH" none ;; *) ask ;; esac
+}
+on_layout() {  # alt-l: 대상을 정해 두고 레이아웃 목록을 겹쳐 띄운다
+  st_del layout
+  resolve_target "${1:-}" || return 0
+  st_set pending "$J_KIND"$'\t'"$J_PATH"; st_set origin layout
+  [ -n "$J_ASK" ] && st_set ask "$J_ASK" || st_del ask
+  printf 'execute(%s --choose-layout)+transform(%s --on after-layout)' "$SELF" "$SELF"
+}
+choose_layout_step() {  # execute 안에서 돈다. 고른 것을 상태에 쓴다. esc·ctrl-c 면 아무것도 안 쓴다
+  local kind path can="" picked
+  st_get pending; IFS=$'\t' read -r kind path <<< "$ST"
+  { [ -d "$path/.git" ] || [ "$kind" = confirm-repo ]; } && can=save
+  style_opts
+  LAYOUT_ESC=abort
+  LAYOUT_FZF_OPTS=("${STYLE[@]}" --border-label " 레이아웃 · $(home_disp "$path") ")
+  picked=$(choose_layout "$SELF --layout-art" "$can") || return 0
+  st_set layout "$picked"
+}
+on_after_layout() {
+  st_get layout
+  if [ -z "$ST" ]; then back_to_list; return; fi   # 레이아웃에서 esc → 목록으로
+  local kind; st_get pending; IFS=$'\t' read -r kind J_PATH <<< "$ST"; J_KIND=$kind
+  case $kind in
+    open|worktree) decide "$J_PATH" none ;;
+    *) st_get ask; J_ASK=$ST; ask ;;
+  esac
+}
+on_esc() {
+  st_get phase
+  if [ "$ST" = confirm ]; then
+    st_get origin
+    if [ "$ST" = layout ]; then   # 레이아웃을 거쳐 왔으면 레이아웃으로 돌아간다
+      st_set phase list; st_del layout
+      printf 'change-prompt(> )+%s+execute(%s --choose-layout)+transform(%s --on after-layout)' "$(act change-footer "$(hint)")" "$SELF" "$SELF"
+    else back_to_list; fi
+    return
+  fi
+  printf 'clear-query'
+}
+on_change() {
+  local out="bg-cancel+"   # 이전 검색어로 돌던 푸터 미리 보기(bg-transform)를 버린다. 늦게 끝난 낡은 결과가 덮지 않게
+  st_get phase; [ "$ST" = confirm ] && out+="$(back_to_list)+"   # 확인 중에 검색어를 고치면 질문을 접는다
+  if pathish "${FZF_QUERY:-}"; then printf '%srebind(result)+first+%s' "$out" "$(search_action "$FZF_QUERY")"
+  else printf '%sunbind(result)+first+%s' "$out" "$(act change-footer "$(hint)")"; fi
+}
+on_result() {  # 경로 모양 검색어일 때만 묶여 있다. 걸리는 항목이 없으면 enter 가 무엇을 할지 푸터에 미리 보여 준다
+  st_get phase; [ "$ST" = confirm ] && return 0   # 목록이 흘러 들어오는 동안에도 질문을 덮지 않는다
+  pathish "${FZF_QUERY:-}" || return 0
+  act change-footer "$(footer_now)"
+}
+on_mode() {
+  local mode; st_get mode; if [ "${ST:-repo}" = repo ]; then mode=dir; else mode=repo; fi
+  st_set mode "$mode"; st_set phase list; st_del pending origin layout
+  printf 'reload(%s --list %s)+%s+change-prompt(> )+first+%s' "$SELF" "$mode" "$(act change-border-label "$(tabs "$mode")")" "$(act change-footer "$(hint)")"
+}
+on_fill() {  # ctrl-]: 커서 항목의 경로를 검색어에 (끝 슬래시 없이. 이어서 /이름 을 치면 그 아래)
+  [ -n "${1:-}" ] || return 0
+  printf '%s+rebind(result)+first+%s' "$(act change-query "$1")" "$(search_action "$1")"
+}
+on_help() {
+  st_get help
+  if [ "$ST" = 1 ]; then st_del help; act change-preview "$SELF --preview {3}"
+  else st_set help 1; printf '%s+show-preview' "$(act change-preview "$SELF --help-keys")"; fi
+}
+
+pick() {
+  command -v fzf >/dev/null || die "fzf 가 필요합니다"
+  TMUX_DEV_STATE=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev-project.XXXXXX"); export TMUX_DEV_STATE
+  # shellcheck disable=SC2064  # 지금 값의 디렉토리를 지운다
+  trap "rm -rf '$TMUX_DEV_STATE'" EXIT
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmux-dev-project.*' -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true  # 비정상 종료 흔적
+  st_set mode repo; st_set phase list
+  style_opts
+
+  # 정렬: --scheme=path 의 점수에 동점이면 파일 이름 일치 → 입력 순서(열린 세션 → 최근 → 탐색). path 의 기본 length 대신 index.
+  # 바인딩은 fzf 기본 키와 겹치지 않는 것만. enter·esc·tab·double-click 은 같은 뜻으로 덮는다(판정을 거치게).
+  fzf --ansi --delimiter '\t' --with-nth 1,2 --nth 1 --tabstop 2 --scheme path --tiebreak pathname,index \
+      "${STYLE[@]}" --border-label "$(tabs repo)" --prompt '> ' \
+      --footer "$(hint)" --footer-border line \
+      --preview "$SELF --preview {3}" --preview-window 'right,45%,border-left' \
+      --bind 'start:unbind(result)' \
+      --bind "change:transform($SELF --on change)" \
+      --bind "result:bg-transform($SELF --on result)" \
+      --bind "enter:transform($SELF --on enter {3})" \
+      --bind "double-click:transform($SELF --on enter {3})" \
+      --bind "alt-l:transform($SELF --on layout {3})" \
+      --bind "esc:transform($SELF --on esc)" \
+      --bind "tab:transform($SELF --on mode)" --bind "shift-tab:transform($SELF --on mode)" \
+      --bind "ctrl-]:transform($SELF --on fill {1})" \
+      --bind 'alt-p:change-preview-window(down,40%,border-top|hidden|right,45%,border-left)' \
+      --bind "alt-h:transform($SELF --on help)" \
+      < <(rows repo) > /dev/null || true
+  [ -f "$TMUX_DEV_STATE/decision" ] || exit 0     # 결정 없이 끝남 = 취소 (ctrl-c 는 130)
+  local path create layout save
+  IFS=$'\t' read -r path create layout save < "$TMUX_DEV_STATE/decision"
+  apply_decision "$path" "$create" "$layout" "$save"
+}
+
+# --- 인자 ------------------------------------------------------------------------
 target=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --layout) LAYOUT=$2; shift 2 ;;
+    --on)
+      # 콜백은 출력이 전부다. 마지막 조건식의 종료 코드로 set -e 가 끊지 않게 || true
+      case $2 in
+        enter) on_enter "${3:-}" || true ;; layout) on_layout "${3:-}" || true ;; after-layout) on_after_layout || true ;;
+        esc) on_esc || true ;; change) on_change || true ;; result) on_result || true ;; mode) on_mode || true ;;
+        fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
+      esac; exit 0 ;;
+    --choose-layout) choose_layout_step; exit 0 ;;
+    --preview)    dir_preview "${2:-}"; exit 0 ;;
+    --help-keys)  help_keys; exit 0 ;;
+    --list)       rows "${2:-repo}"; exit 0 ;;
+    --layout)     LAYOUT=$2; shift 2 ;;
     --layouts)    layout_list; exit 0 ;;
     --layout-art) layout_art "${2:-}"; exit 0 ;;
-    --list)        candidates;  exit 0 ;;
-    --list-dirs)   list_dirs;   exit 0 ;;
-    --list-recent) recent_rows; exit 0 ;;
-    --add)    add_entry "${2:-}";    exit $? ;;
-    --remove) remove_entry "${2:?--remove 에는 디렉토리가 필요합니다}"; exit $? ;;
-    --edit)   edit_config; exit $? ;;
-    --preview) dir_preview "${2:-}"; exit 0 ;;
-    --action) case "$2" in switch) action_switch "$3" ;; refresh) action_after_edit ;; esac; exit 0 ;;
     -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "모르는 옵션: $1" ;;
     *) target=$1; shift ;;
   esac
 done
 
-# --- 고르기 -------------------------------------------------------------------
-[ -z "$target" ] && pick
-[ -d "$target" ] || die "디렉토리가 아닙니다: $target"
-target=$(cd "$target" && pwd)
-name=$(basename "$target" | tr '.:' '__')
-record_history "$target"
-
-# alt-l: 레이아웃을 골라서 이번만 그것으로 연다. 레이아웃 목록에서 alt-enter 로 골랐고 저장소면 그 저장소의
-# 기본값으로도 남긴다 (lib/layout.sh 의 resolve_layout 순서)
-if [ -n "$PICK_LAYOUT" ]; then
-  can_save=""; [ -e "$target/.git" ] && can_save=save
-  picked=$(choose_layout "$SELF --layout-art" "$can_save") || exit 0
-  IFS=$'\t' read -r LAYOUT save_layout <<< "$picked"
-  if [ -n "$save_layout" ]; then git -C "$target" config tmux-dev.layout "$LAYOUT"; fi
-fi
-
-# 워크트리를 골랐으면 메인 저장소의 세션으로 바꾸고, 워크트리는 그 세션의 윈도우로 연다 (아래).
-# 예외: 그 이름의 세션이 이미 있거나(순정으로 만든 세션 존중) 목록 파일에 직접 적은 고정 항목이면 적은 대로.
-worktree=""
-if [ -f "$target/.git" ] && ! tmux has-session -t "=$name" 2>/dev/null && ! list_pins | grep -xF "$target" >/dev/null; then
-  main=$(worktree_main "$target")
-  if [ -n "$main" ]; then
-    worktree=$target; target=$main; name=$(basename "$target" | tr '.:' '__')
-  fi
-fi
-
-# --- 세션 만들기 / 전환 -------------------------------------------------------
-if ! tmux has-session -t "=$name" 2>/dev/null; then
-  win=$(tmux new-session -d -s "$name" -c "$target" -P -F '#{window_id}')
-  # 저장소면 첫 윈도우가 "이 체크아웃의 윈도우" 임을 사용자 옵션으로 남긴다 (worktree 가 읽는다)
-  [ -e "$target/.git" ] && tmux set-option -w -t "$win" @worktree "$target"
-  apply_layout "$(resolve_layout "$LAYOUT" "$target")" "$win" "$target"
-fi
-if [ -n "$worktree" ]; then
-  # 레이아웃을 명시했을 때만 넘긴다. 아니면 worktree 가 저장소 설정 → 전역 순으로 스스로 정한다
-  "$WORKTREE_BIN" -t "$name" ${LAYOUT:+--layout "$LAYOUT"} "$worktree"
-fi
-if [ -n "${TMUX:-}" ]; then
-  tmux switch-client -t "=$name"
-else
-  tmux attach-session -t "=$name"
-fi
+if [ -z "$target" ]; then pick; exit 0; fi
+target=$(canon_dir "$target") || die "디렉토리가 아닙니다: $target"   # CLI 는 있는 디렉토리만. 최근 내역에 남기지 않는다
+open_path "$target"

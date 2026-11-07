@@ -9,8 +9,8 @@
 #   set -g @tmux-dev-popup-size   85%,75%   팝업 너비,높이
 #   set -g @tmux-dev-layout       ide       새 세션·윈도우의 패널 배치 (ide: 왼쪽 셸 / 오른쪽 nvim, plain: 셸 하나)
 #
-# 팝업은 -d 로 현재 패널의 디렉토리에서 열린다. 그래서 후보 대신 상대 경로를 쳐도 그 기준으로 풀리고,
-# worktree 는 그 패널이 속한 저장소를 본다. -E 는 명령이 끝나면 팝업을 닫는다.
+# 팝업은 -d 로 현재 패널의 디렉토리에서 열린다. worktree 는 그 패널이 속한 저장소를 보고 dir 모드의 상대 경로도
+# 그 기준으로 푼다 (project 는 절대 경로만 받는다). -E 는 명령이 끝나면 팝업을 닫는다.
 set -eu
 DIR=$(cd "$(dirname "$0")" && pwd)
 opt() { local v; v=$(tmux show-option -gqv "$1"); printf '%s' "${v:-$2}"; }
@@ -22,7 +22,9 @@ layout=$(opt @tmux-dev-layout ide)
 
 # 레이아웃은 전역 기본값으로 환경변수에 넘긴다 (-e). 명령줄 --layout 으로 넘기지 않는 이유: 스크립트가 "명령줄에서
 # 명시한 값" 과 "전역 기본값" 을 구분해야 저장소별 git config tmux-dev.layout 이 그 사이에 끼어들 수 있다 (lib/layout.sh).
-tmux bind-key "$key_project"  display-popup -E -d '#{pane_current_path}' -w "$w" -h "$h" -T ' project '  \
+# project 는 테두리 없이(-B) 띄운다. 테두리는 fzf 가 tmux 팝업 테두리와 같은 모양(popup-border-lines·popup-border-style)으로
+# 그리고, 그 윗변 라벨에 모드 탭을 둔다 (tmux 팝업 제목은 띄운 뒤 바꿀 수 없다). session-picker.md 의 화면 절.
+tmux bind-key "$key_project"  display-popup -E -B -d '#{pane_current_path}' -w "$w" -h "$h" \
   -e "TMUX_DEV_LAYOUT=$layout" "$DIR/bin/tmux-dev project"
 tmux bind-key "$key_worktree" display-popup -E -d '#{pane_current_path}' -w "$w" -h "$h" -T ' worktree ' \
   -e "TMUX_DEV_LAYOUT=$layout" "$DIR/bin/tmux-dev worktree"
