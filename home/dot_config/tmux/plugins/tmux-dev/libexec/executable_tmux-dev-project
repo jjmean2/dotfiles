@@ -11,21 +11,24 @@
 #   tmux-dev project                  피커 (tmux 안에서는 prefix S 가 팝업으로 띄운다)
 #   tmux-dev project <디렉토리>       바로 그 디렉토리의 세션으로 (있는 디렉토리만. 최근 내역에는 남기지 않는다)
 #   tmux-dev project --layout <이름>  새 세션의 레이아웃. 없으면 저장소 설정 → 전역 → ide (lib/layout.sh). --layouts 로 목록
-#   tmux-dev project --list [repo|dir]  후보 목록만 출력 (디버그)
+#   tmux-dev project --list [repo|dir|loc]  후보 목록만 출력 (디버그. loc 은 위치 피커)
 #
 # 피커 (fzf 순정 키는 그대로. 아래는 비어 있던 키와, 같은 뜻으로 덮은 enter·esc·tab)
 #   tab / shift-tab   모드 전환: 저장소(메인 체크아웃만) ↔ 디렉토리(모든 디렉토리)
-#   enter             커서 항목으로. 걸리는 항목이 없고 검색어가 경로(/ 나 ~ 로 시작)면 그 경로를 판정한다.
-#                     없으면 만들지(저장소 모드는 git init 까지), 목록에 없지만 있으면 열지 푸터에서 묻는다
+#   enter             커서 항목으로. 열기만 한다. 걸리는 항목이 없으면 벨과 안내 (경로를 쳤고 있으면 연다)
+#   alt-enter         친 이름으로 새로 만들기. 위치 피커가 겹쳐 뜬다(최근 만든 곳 → 커서 옆 → 디렉토리 전부).
+#                     거기서 enter 는 여기에 만들기, alt-l 은 레이아웃 골라 만들기, esc 는 돌아가기.
+#                     저장소 모드는 git init 까지. 경로(/ 나 ~ 로 시작)를 쳤으면 위치를 묻지 않고 그 자리에
 #   alt-l             레이아웃을 골라서 열기. 겹쳐 뜬 목록에서 enter 는 이번만, alt-enter 는 저장소 기본으로도 저장
-#   ctrl-]            커서 항목의 경로를 검색어에 채운다. 이어서 /이름 을 치면 그 아래 새 디렉토리
+#   ctrl-]            커서 항목의 경로를 검색어에 채운다
 #   alt-p             미리보기 오른쪽 → 아래 → 숨김
 #   alt-h             키 안내를 미리보기 자리에 (다시 누르면 원래대로)
-#   esc               한 단계 뒤 (확인 → 레이아웃 → 목록). 목록에서는 검색어 지우기. 닫기는 ctrl-c
+#   esc               검색어 지우기. 겹쳐 뜬 목록(위치, 레이아웃)에서는 돌아가기. 닫기는 ctrl-c
 #   경로 모양 검색어는 퍼지가 아니라 경로 접두 일치로 거른다. 끝 슬래시는 "이 디렉토리 아래" 다.
 #
 # 목록: 열린 세션(●) → 최근 고른 곳(◷) → 홈 전체 탐색 (lib/dirs.sh). 한 경로는 한 번만, 모드 조건에 맞는 것만.
-# 파일: ~/.config/tmux-dev/ignore (탐색 제외, gitignore 문법), ~/.local/state/tmux-dev/history (피커로 고른 곳만)
+# 파일: ~/.config/tmux-dev/ignore (탐색 제외, gitignore 문법), ~/.local/state/tmux-dev/history (피커로 고른 곳만),
+#   ~/.local/state/tmux-dev/parents (위치 피커로 무언가를 만든 곳)
 # 세션 찾기: 세션 옵션 @tmux-dev-path 가 그 경로 → 옵션 없는 세션의 session_path 가 그 경로 → 없으면 만든다.
 #   여럿이면 최근에 붙었던 것. 만들 때 @tmux-dev-path 를 붙이고, 저장소면 첫 윈도우에 @worktree 를 둔다 (worktree 가 읽는다).
 # 워크트리(.git 이 파일)를 고르면 그 워크트리로 이동한다: 그 경로의 세션 → 그 워크트리를 연 윈도우(@worktree)
@@ -45,6 +48,7 @@ WORKTREE_BIN="$(dirname "$SELF")/tmux-dev-worktree"
 LAYOUT=""          # --layout 으로 명시한 값, 또는 피커의 alt-l. 비어 있으면 resolve_layout
 RECENT_MAX=20      # 목록 위쪽에 보여 줄 최근 항목 수
 HISTORY_MAX=500    # 히스토리 파일 상한 (줄)
+TMUX_DEV_PARENTS="${TMUX_DEV_HISTORY%/*}/parents"   # 위치 피커로 무언가를 만든 부모 디렉토리 (최근 순)
 US=$'\x1f'         # tmux 포맷 출력의 칸 구분자 (빈 칸이 있을 수 있다)
 C=$'\033[36m'      # 브랜치 색
 
@@ -90,12 +94,12 @@ mode_name() { if [ "$1" = repo ]; then printf '저장소'; else printf '디렉�
 # --- 상태 (팝업 하나당 디렉토리 하나) ----------------------------------------------
 # fzf 가 띄우는 콜백은 매번 새 프로세스라 상태를 파일로 주고받는다. 경로는 환경변수로 물려받는다.
 # 읽기·쓰기는 bash 내장(read, printf 리다이렉션)이라 프로세스를 더 띄우지 않는다.
-#   mode     repo | dir             phase   list | confirm
-#   pending  판정을 기다리는 대상: "<종류>\t<경로>" (open, worktree, confirm-open, confirm-dir, confirm-repo)
-#   origin   layout 이면 alt-l 을 거쳐 왔다 (확인에서 esc 하면 레이아웃으로 돌아간다)
-#   layout   고른 레이아웃 "<이름>\t<save 또는 빈 값>"      help  1 이면 미리보기 자리에 키 안내
-#   decision fzf 를 끝낼 때 쓰는 결정 "<경로>\t<만들기: none|dir|repo>\t<레이아웃>\t<save>"
-st_get() { ST=""; [ -f "$TMUX_DEV_STATE/$1" ] && IFS= read -r ST < "$TMUX_DEV_STATE/$1" || true; }
+#   mode     repo | dir             help    1 이면 미리보기 자리에 키 안내
+#   layout   고른 레이아웃 "<이름>\t<save 또는 빈 값>"
+#   pending  레이아웃을 고를 대상 "<만들기: none|dir|repo>\t<경로>"
+#   name     새로 만들 이름 (alt-enter)      near  커서 항목의 부모 (위치 피커 후보)      loc  위치 피커에서 고른 부모
+#   decision fzf 를 끝낼 때 쓰는 결정 "<경로>US<만들기>US<레이아웃>US<save>US<고른 부모>" (빈 칸이 있어 US)
+st_get() { ST=""; [ -f "${TMUX_DEV_STATE:-/nonexistent}/$1" ] && IFS= read -r ST < "$TMUX_DEV_STATE/$1" || true; }
 st_set() { printf '%s\n' "$2" > "$TMUX_DEV_STATE/$1"; }
 st_del() { local k; for k in "$@"; do rm -f "$TMUX_DEV_STATE/$k"; done; }
 
@@ -194,7 +198,13 @@ open_worktree() {
 open_path() {  # $1 실제 경로
   if [ -f "$1/.git" ]; then open_worktree "$1"; else switch_to "$(ensure_session "$1")"; fi
 }
-# 결정을 실행한다: $1 경로 $2 만들기(none|dir|repo) $3 레이아웃 $4 save
+record_parent() {  # 위치 피커로 무언가를 만든 부모. 다음 위치 피커의 위쪽에 둔다
+  mkdir -p "$(dirname "$TMUX_DEV_PARENTS")"
+  local tmp; tmp=$(mktemp "$TMUX_DEV_PARENTS.XXXXXX")
+  { [ -f "$TMUX_DEV_PARENTS" ] && awk -F'\t' -v p="$1" '{ q = NF > 1 ? $2 : $1; if (q != p) print }' "$TMUX_DEV_PARENTS"
+    printf '%s\t%s\n' "$(date +%s)" "$1"; } | tail -n 100 > "$tmp" && mv -f "$tmp" "$TMUX_DEV_PARENTS"
+}
+# 결정을 실행한다: $1 경로 $2 만들기(none|dir|repo) $3 레이아웃 $4 save $5 위치 피커에서 고른 부모
 apply_decision() {
   local path=$1 create=$2
   case $create in
@@ -205,48 +215,47 @@ apply_decision() {
   LAYOUT=$3
   [ -n "$4" ] && [ -n "$LAYOUT" ] && [ -d "$path/.git" ] && git -C "$path" config tmux-dev.layout "$LAYOUT"
   record_history "$path"
+  [ -n "${5:-}" ] && record_parent "$5"
   open_path "$path"
 }
 
-# --- 판정: 걸리는 항목 없이 친 경로 --------------------------------------------------
-# 결과: J_KIND (block | open | worktree | confirm-open | confirm-dir | confirm-repo), J_PATH, J_SAY (푸터 미리 보기),
-#       J_ASK (확인 질문). 목록을 다 받기 전(홈 탐색은 1~2초)에도 판정이 맞도록, "이 모드의 목록에 나올 곳" 이면 묻지 않고 연다.
-listed_like() {  # 탐색 범위 안이고 숨김 아래가 아니면 목록에 나올 곳으로 본다 (ignore 파일까지는 보지 않는다)
-  case $1 in "$SCAN_ROOT"|"$SCAN_ROOT"/*) ;; *) return 1 ;; esac
-  case ${1#"$SCAN_ROOT"} in */.*) return 1 ;; esac
-  return 0
-}
-judge() {  # $1 검색어 $2 모드
-  local p a rest="" top d
-  J_KIND=block J_PATH="" J_SAY="" J_ASK=""
+# --- 판정: 경로 모양 검색어 ----------------------------------------------------------
+# 결과: J_KIND (block | open | worktree | create), J_PATH (실제 경로, create 면 만들 경로), J_CREATE (dir | repo),
+#       J_SAY (푸터에 보여 줄 판정). 있는 디렉토리는 목록에 있었든 없었든 묻지 않고 연다(생성이 아니므로).
+classify() {  # $1 경로 글자 $2 모드
+  local p a rest="" top d extra=""
+  J_KIND=block J_PATH="" J_CREATE="" J_SAY=""
   p=$(norm_path "$1") || { J_SAY="${Y}절대 경로가 아니다${R}"; return; }
   d=$(home_disp "$p")
   if [ -e "$p" ] && [ ! -d "$p" ]; then J_SAY="${Y}파일이 이미 있다: $d${R}"; return; fi
   if [ -d "$p" ]; then
     J_PATH=$(canon_dir "$p"); d=$(home_disp "$J_PATH")
-    if [ -f "$J_PATH/.git" ]; then J_KIND=worktree; J_SAY="enter → 워크트리로 이동: $d"
-    elif [ -n "$(find_session "$J_PATH")" ]; then J_KIND=open; J_SAY="enter → 열린 세션으로: $d"
-    elif [ "$2" = repo ] && [ ! -d "$J_PATH/.git" ]; then
-      J_KIND=confirm-open; J_SAY="enter → 저장소가 아닌 디렉토리 열기: $d"
-      J_ASK="${B}enter${R} 열기 · ${B}esc${R} 취소 │ ${Y}저장소가 아닌 디렉토리다${R} (git init 은 하지 않는다)"
-    elif listed_like "$J_PATH"; then J_KIND=open; J_SAY="enter → 열기: $d"
-    else J_KIND=confirm-open; J_SAY="enter → 목록에 없는 디렉토리 열기: $d"; J_ASK="${B}enter${R} 열기 · ${B}esc${R} 취소 │ ${Y}목록에 없지만 있는 디렉토리다${R}"; fi
+    if [ -f "$J_PATH/.git" ]; then J_KIND=worktree; J_SAY="enter 워크트리로 이동: $d"
+    else
+      J_KIND=open; J_SAY="enter 열기: $d"
+      [ "$2" = repo ] && [ ! -d "$J_PATH/.git" ] && J_SAY+=" ${D}(저장소 아님. git init 은 하지 않는다)${R}"
+    fi
     return
   fi
   a=$p; while [ ! -e "$a" ]; do rest="/$(basename "$a")$rest"; a=$(dirname "$a"); done   # 있는 가장 가까운 조상
   [ -d "$a" ] || { J_SAY="${Y}중간 경로가 파일이다: $(home_disp "$a")${R}"; return; }
   [ -w "$a" ] || { J_SAY="${Y}쓸 수 없다: $(home_disp "$a")${R}"; return; }
+  [ "$rest" = "/$(basename "$p")" ] || extra=" · 중간 디렉토리도"
+  top=$(git -C "$a" rev-parse --show-toplevel 2>/dev/null || true)
   a=$(canon_dir "$a"); [ "$a" = / ] && a=""; J_PATH=$a$rest; d=$(home_disp "$J_PATH")
-  local extra=""; [ "$rest" = "/$(basename "$p")" ] || extra=" · 중간 디렉토리도 만든다"
+  J_KIND=create
   if [ "$2" = repo ]; then
-    top=$(git -C "${a:-/}" rev-parse --show-toplevel 2>/dev/null || true)
+    J_CREATE=repo; extra=" (git init)$extra"
     [ -n "$top" ] && extra+=" · ${Y}저장소 $(home_disp "$top") 안${R}"
-    J_KIND=confirm-repo; J_SAY="enter → 새 저장소: $d$extra"
-    J_ASK="${B}enter${R} 만들기 · ${B}esc${R} 취소 │ 새 저장소 $d (mkdir + git init)$extra"
-  else
-    J_KIND=confirm-dir; J_SAY="enter → 새 디렉토리: $d$extra"
-    J_ASK="${B}enter${R} 만들기 · ${B}esc${R} 취소 │ 새 디렉토리 $d$extra"
-  fi
+  else J_CREATE=dir; fi
+  J_SAY="${D}없는 경로${R} · alt-enter 만들기: $d$extra"
+}
+# 새로 만들 이름 (경로 모양이 아닌 검색어). 위치 피커에서 고른 디렉토리 아래에 붙는다. a/b 처럼 / 를 넣어도 된다
+name_ok() {
+  local n=${1%/}
+  case $n in ''|/*|'~'*) return 1 ;; esac
+  case "/$n/" in */../*|*/./*|*//*) return 1 ;; esac
+  return 0
 }
 
 # --- 피커 화면 -------------------------------------------------------------------
@@ -257,29 +266,38 @@ tabs() {  # 바깥 테두리 라벨에 그리는 모드 탭
   done
   printf ' %s' "${out%  } "
 }
-hint() { printf '%s' "${D}enter 열기 · alt-l 레이아웃 · tab 모드 · alt-h 키 안내 · ctrl-c 닫기${R}"; }
+hint() { printf '%s' "${D}enter 열기 · alt-enter 새로 만들기 · alt-l 레이아웃 · tab 모드 · alt-h 키 안내${R}"; }
+create_hint() {  # 검색어가 있으면 늘 보이는 만들기 안내 (결과가 있어도 alt-enter 는 친 이름으로 만든다)
+  local q=${1%/} what="디렉토리"; st_get mode; [ "${ST:-repo}" = repo ] && what="저장소"
+  printf '%s' "alt-enter ${B}'$q'${R} 새 $what 만들기 ${D}· enter 열기 · alt-h 키 안내${R}"
+}
 help_keys() {
   cat <<EOF
 ${B}prefix S: 디렉토리 → 세션${R}
 
 enter         커서 항목의 세션으로 (없으면 만든다)
+alt-enter     친 이름으로 새로 만들기 → 위치 고르기
 alt-l         레이아웃을 골라서 열기
                 enter 이번만 · alt-enter 저장소 기본으로도
 tab           모드: 저장소 ↔ 디렉토리
 ctrl-]        커서 경로를 검색어에 채우기
 alt-p         미리보기 오른쪽 → 아래 → 숨김
 alt-h         이 안내 열고 닫기
-esc           한 단계 뒤 · 목록에서는 검색어 지우기
+esc           검색어 지우기 (겹쳐 뜬 목록에서는 돌아가기)
 ctrl-c        닫기
+
+${B}새로 만들기${R}
+이름을 치고 alt-enter. 위치를 고르는 목록이 겹쳐 뜬다.
+  enter       거기에 만들고 연다 (저장소 모드는 git init)
+  alt-l       레이아웃을 골라 만들고 연다
+  esc         돌아가기
+위쪽은 최근에 만든 곳, 그다음은 커서 항목의 부모.
 
 ${B}경로 입력${R}
 / 나 ~ 로 시작하면 경로 접두 일치로 거른다.
-걸리는 항목이 없을 때 enter 로 판정한다.
-  없음        만들지 묻는다 (저장소 모드는 git init 까지)
-  있음        목록에 없던 곳이면 열지 묻는다
-  파일        막는다
+  enter       그 경로가 있으면 연다 (목록 밖이어도)
+  alt-enter   그 경로에 바로 만든다
 끝 슬래시는 "이 디렉토리 아래" 다.
-  ~/dev/dot/  는 dotfiles 가 있어도 dot 을 새로 만든다.
 
 ${B}목록${R}
 ● 열린 세션 · ◷ 최근 고른 곳 · 나머지는 홈 전체 탐색
@@ -300,7 +318,7 @@ popup_border() {
     black|red|green|yellow|blue|magenta|cyan|white) BCOLOR=$fg ;;
   esac
 }
-style_opts() {  # STYLE 배열: 피커와 겹쳐 뜨는 레이아웃 목록이 같이 쓴다
+style_opts() {  # STYLE 배열: 피커와 겹쳐 뜨는 목록(위치, 레이아웃)이 같이 쓴다
   popup_border
   STYLE=(--border "$BORDER" --border-label-pos 3 --input-border "$BORDER" --list-border "$BORDER" --reverse --height=100%)
   [ -n "$BCOLOR" ] && STYLE+=(--color "border:$BCOLOR,label:$BCOLOR")
@@ -308,106 +326,104 @@ style_opts() {  # STYLE 배열: 피커와 겹쳐 뜨는 레이아웃 목록이 �
 }
 
 # --- 콜백 (fzf 가 이벤트마다 부른다. 액션 한 줄을 출력한다) -----------------------------
-footer_now() {  # 목록 단계의 푸터: 경로 모양 검색어에 걸리는 항목이 없으면 enter 가 할 일, 아니면 키 안내
-  if pathish "${FZF_QUERY:-}" && [ "${FZF_MATCH_COUNT:-1}" -eq 0 ]; then
-    local mode; st_get mode; mode=${ST:-repo}; judge "$FZF_QUERY" "$mode"; printf '%s' "$J_SAY"
-  else hint; fi
+footer_now() {  # 메인 목록의 푸터
+  local q=${FZF_QUERY:-}
+  if [ -z "$q" ]; then hint
+  elif pathish "$q"; then
+    if [ "${FZF_MATCH_COUNT:-1}" -eq 0 ]; then local mode; st_get mode; mode=${ST:-repo}; classify "$q" "$mode"; printf '%s' "$J_SAY"
+    else printf '%s' "enter 커서 항목 열기 ${D}· alt-enter 친 경로에 만들기${R}"; fi
+  else create_hint "$q"; fi
 }
-back_to_list() { st_set phase list; st_del pending origin; printf 'change-prompt(> )+%s' "$(act change-footer "$(footer_now)")"; }
+nope() { printf 'bell+%s' "$(act change-footer "$1")"; }   # 할 일이 없을 때: 벨과 안내만
 search_action() {  # 경로 모양 검색어 → 경로 접두 일치. /Users/<나>/... 도 ~/... 로 맞춘다. 공백은 fzf 검색 문법대로 \ 로
   local q=$1
   case $q in "$HOME") q='~' ;; "$HOME"/*) q="~${q#"$HOME"}" ;; esac
   q=${q// /\\ }
   printf 'search:^%s' "$q"    # search: 꼴은 액션 줄의 맨 끝이어야 한다
 }
-decide() {  # $1 경로 $2 만들기 → 결정 파일을 쓰고 fzf 를 끝낸다
+decide() {  # $1 경로 $2 만들기(none|dir|repo) [$3 위치 피커에서 고른 부모] → 결정 파일을 쓰고 fzf 를 끝낸다
   local l="" s=""; st_get layout; [ -n "$ST" ] && IFS=$'\t' read -r l s <<< "$ST"
-  st_set decision "$1"$'\t'"$2"$'\t'"$l"$'\t'"$s"
+  st_set decision "$1$US$2$US$l$US$s$US${3:-}"   # 빈 칸이 있으므로 US. 탭이면 read 가 연속 탭을 하나로 합친다
   printf 'accept'
 }
-ask() {  # 확인 단계로: pending 에 대상을 두고 프롬프트·푸터를 바꾼다
-  local text=$J_ASK; st_get layout; [ -n "$ST" ] && text+=" · 레이아웃 ${ST%%$'\t'*}"
-  st_set phase confirm; st_set pending "$J_KIND"$'\t'"$J_PATH"
-  printf 'change-prompt(%s)+%s' "확인> " "$(act change-footer "$text")"
-}
-# 대상을 정한다: 커서 항목이 있으면 그것, 없으면 경로 판정. J_KIND/J_PATH 를 채운다. 할 수 없으면 푸터 액션을 출력하고 1
-resolve_target() {  # $1 커서 항목의 실제 경로 (없으면 빈 값)
-  local mode; st_get mode; mode=${ST:-repo}
-  if [ -n "$1" ]; then
-    J_PATH=$1; if [ -f "$1/.git" ]; then J_KIND=worktree; else J_KIND=open; fi; return 0
+# 열 대상을 정한다: 커서 항목, 아니면 경로 모양 검색어가 가리키는 있는 디렉토리. J_KIND/J_PATH 를 채운다.
+# 열 것이 없으면 안내 액션을 출력하고 1 (만들기는 alt-enter 의 몫이다)
+open_target() {  # $1 커서 항목의 실제 경로 (없으면 빈 값)
+  local mode q=${FZF_QUERY:-}; st_get mode; mode=${ST:-repo}
+  if [ -n "$1" ]; then J_PATH=$1; if [ -f "$1/.git" ]; then J_KIND=worktree; else J_KIND=open; fi; return 0; fi
+  if pathish "$q"; then
+    classify "$q" "$mode"
+    case $J_KIND in open|worktree) return 0 ;; esac
+    nope "$J_SAY"; return 1
   fi
-  if pathish "${FZF_QUERY:-}"; then
-    judge "$FZF_QUERY" "$mode"
-    [ "$J_KIND" = block ] && { printf 'bell+%s' "$(act change-footer "$J_SAY")"; return 1; }
-    return 0
-  fi
-  printf 'bell+%s' "$(act change-footer "${Y}맞는 항목이 없다.${R} 새로 만들려면 / 나 ~ 로 시작하는 경로를 친다")"
+  if [ -n "$q" ]; then nope "${Y}맞는 항목이 없다${R} · $(create_hint "$q")"; else nope "$(hint)"; fi
   return 1
 }
 on_enter() {
-  st_get phase
-  if [ "$ST" = confirm ]; then   # 확인 단계의 enter = 예
-    local kind path; st_get pending; IFS=$'\t' read -r kind path <<< "$ST"
-    case $kind in confirm-dir) decide "$path" dir ;; confirm-repo) decide "$path" repo ;; *) decide "$path" none ;; esac
-    return
-  fi
-  st_del layout origin
-  resolve_target "${1:-}" || return 0
-  case $J_KIND in open|worktree) decide "$J_PATH" none ;; *) ask ;; esac
-}
-on_layout() {  # alt-l: 대상을 정해 두고 레이아웃 목록을 겹쳐 띄운다
   st_del layout
-  resolve_target "${1:-}" || return 0
-  st_set pending "$J_KIND"$'\t'"$J_PATH"; st_set origin layout
-  [ -n "$J_ASK" ] && st_set ask "$J_ASK" || st_del ask
+  open_target "${1:-}" || return 0
+  decide "$J_PATH" none
+}
+on_layout() {  # alt-l: 열 대상을 정해 두고 레이아웃 목록을 겹쳐 띄운다
+  st_del layout
+  open_target "${1:-}" || return 0
+  st_set pending none$'\t'"$J_PATH"
   printf 'execute(%s --choose-layout)+transform(%s --on after-layout)' "$SELF" "$SELF"
 }
+on_after_layout() {  # 레이아웃에서 esc 면 그대로 목록, 골랐으면 연다
+  local create path; st_get layout; [ -n "$ST" ] || return 0
+  st_get pending; IFS=$'\t' read -r create path <<< "$ST"
+  decide "$path" "$create"
+}
 choose_layout_step() {  # execute 안에서 돈다. 고른 것을 상태에 쓴다. esc·ctrl-c 면 아무것도 안 쓴다
-  local kind path can="" picked
-  st_get pending; IFS=$'\t' read -r kind path <<< "$ST"
-  { [ -d "$path/.git" ] || [ "$kind" = confirm-repo ]; } && can=save
+  local create path can="" picked
+  st_get pending; IFS=$'\t' read -r create path <<< "$ST"
+  { [ -d "$path/.git" ] || [ "$create" = repo ]; } && can=save
   style_opts
   LAYOUT_ESC=abort
   LAYOUT_FZF_OPTS=("${STYLE[@]}" --border-label " 레이아웃 · $(home_disp "$path") ")
   picked=$(choose_layout "$SELF --layout-art" "$can") || return 0
   st_set layout "$picked"
 }
-on_after_layout() {
-  st_get layout
-  if [ -z "$ST" ]; then back_to_list; return; fi   # 레이아웃에서 esc → 목록으로
-  local kind; st_get pending; IFS=$'\t' read -r kind J_PATH <<< "$ST"; J_KIND=$kind
-  case $kind in
-    open|worktree) decide "$J_PATH" none ;;
-    *) st_get ask; J_ASK=$ST; ask ;;
-  esac
-}
-on_esc() {
-  st_get phase
-  if [ "$ST" = confirm ]; then
-    st_get origin
-    if [ "$ST" = layout ]; then   # 레이아웃을 거쳐 왔으면 레이아웃으로 돌아간다
-      st_set phase list; st_del layout
-      printf 'change-prompt(> )+%s+execute(%s --choose-layout)+transform(%s --on after-layout)' "$(act change-footer "$(hint)")" "$SELF" "$SELF"
-    else back_to_list; fi
+on_create() {  # alt-enter: 경로를 쳤으면 그 자리에 바로, 이름을 쳤으면 위치 피커를 겹쳐 띄운다
+  local mode q=${FZF_QUERY:-}; st_get mode; mode=${ST:-repo}
+  st_del layout loc
+  if [ -z "$q" ]; then nope "${Y}만들 이름을 먼저 친다${R}"; return; fi
+  if pathish "$q"; then
+    classify "$q" "$mode"
+    case $J_KIND in
+      create) decide "$J_PATH" "$J_CREATE" ;;
+      open|worktree) decide "$J_PATH" none ;;       # 이미 있으면 연다
+      *) nope "$J_SAY" ;;
+    esac
     return
   fi
-  printf 'clear-query'
+  name_ok "$q" || { nope "${Y}이름으로 쓸 수 없다: $q${R} (.. 이나 빈 칸 없이)"; return; }
+  st_set name "${q%/}"
+  [ -n "${1:-}" ] && st_set near "$(dirname "$1")" || st_del near
+  printf 'execute(%s --choose-location)+transform(%s --on after-location)' "$SELF" "$SELF"
+}
+on_after_location() {  # 위치 피커에서 esc 면 그대로 목록, 골랐으면 만든다(이미 있으면 연다)
+  local mode parent name; st_get loc; parent=$ST; [ -n "$parent" ] || return 0
+  st_get name; name=$ST; st_get mode; mode=${ST:-repo}
+  classify "$parent/$name" "$mode"
+  case $J_KIND in
+    create) decide "$J_PATH" "$J_CREATE" "$parent" ;;
+    open|worktree) decide "$J_PATH" none ;;
+    *) nope "$J_SAY" ;;
+  esac
 }
 on_change() {
-  local out="bg-cancel+"   # 이전 검색어로 돌던 푸터 미리 보기(bg-transform)를 버린다. 늦게 끝난 낡은 결과가 덮지 않게
-  st_get phase; [ "$ST" = confirm ] && out+="$(back_to_list)+"   # 확인 중에 검색어를 고치면 질문을 접는다
+  local out="bg-cancel+"   # 이전 검색어로 돌던 푸터 판정(bg-transform)을 버린다. 늦게 끝난 낡은 결과가 덮지 않게
   if pathish "${FZF_QUERY:-}"; then printf '%srebind(result)+first+%s' "$out" "$(search_action "$FZF_QUERY")"
-  else printf '%sunbind(result)+first+%s' "$out" "$(act change-footer "$(hint)")"; fi
+  else printf '%sunbind(result)+first+%s' "$out" "$(act change-footer "$(footer_now)")"; fi
 }
-on_result() {  # 경로 모양 검색어일 때만 묶여 있다. 걸리는 항목이 없으면 enter 가 무엇을 할지 푸터에 미리 보여 준다
-  st_get phase; [ "$ST" = confirm ] && return 0   # 목록이 흘러 들어오는 동안에도 질문을 덮지 않는다
-  pathish "${FZF_QUERY:-}" || return 0
-  act change-footer "$(footer_now)"
-}
+on_result() { pathish "${FZF_QUERY:-}" && act change-footer "$(footer_now)"; return 0; }  # 경로 모양 검색어일 때만 묶인다
+on_esc() { printf 'clear-query'; }
 on_mode() {
   local mode; st_get mode; if [ "${ST:-repo}" = repo ]; then mode=dir; else mode=repo; fi
-  st_set mode "$mode"; st_set phase list; st_del pending origin layout
-  printf 'reload(%s --list %s)+%s+change-prompt(> )+first+%s' "$SELF" "$mode" "$(act change-border-label "$(tabs "$mode")")" "$(act change-footer "$(hint)")"
+  st_set mode "$mode"
+  printf 'reload(%s --list %s)+%s+first+%s' "$SELF" "$mode" "$(act change-border-label "$(tabs "$mode")")" "$(act change-footer "$(footer_now)")"
 }
 on_fill() {  # ctrl-]: 커서 항목의 경로를 검색어에 (끝 슬래시 없이. 이어서 /이름 을 치면 그 아래)
   [ -n "${1:-}" ] || return 0
@@ -419,15 +435,73 @@ on_help() {
   else st_set help 1; printf '%s+show-preview' "$(act change-preview "$SELF --help-keys")"; fi
 }
 
+# --- 위치 피커 (alt-enter 로 겹쳐 뜬다) ------------------------------------------------
+# 행은 메인 목록과 같은 꼴. 최근에 무언가를 만든 부모(◷) → 커서 항목의 부모(↳) → 디렉토리 탐색.
+parents_paths() {  # 최근 순, 중복 없이
+  [ -f "$TMUX_DEV_PARENTS" ] || return 0
+  { tail -r "$TMUX_DEV_PARENTS" 2>/dev/null || tac "$TMUX_DEV_PARENTS"; } | awk -F'\t' '{ p = NF > 1 ? $2 : $1; if (p != "" && !seen[p]++) print p }'
+}
+loc_rows() {
+  {
+    local p n=0
+    while IFS= read -r p; do [ "$n" -lt "$RECENT_MAX" ] || break; [ -d "$p" ] || continue; row "$p" "${D}◷${R}"; n=$((n + 1)); done < <(parents_paths)
+    st_get near; [ -n "$ST" ] && [ -d "$ST" ] && row "$ST" "${D}↳ 커서 옆${R}"
+    scan_rows dir
+  } | awk -F'\t' '!seen[$3]++ { print; fflush() }'
+}
+loc_preview() {  # $1 고를 부모 → 만들어질 경로와 판정, 그 아래 부모의 내용
+  local mode name; st_get name; name=$ST; st_get mode; mode=${ST:-repo}
+  [ -d "${1:-}" ] || return 0
+  classify "$1/$name" "$mode"
+  case $J_KIND in
+    create)  printf '%s새로 만든다%s  %s\n' "$B" "$R" "$(home_disp "$J_PATH")"; printf '%s\n' "${J_SAY#*: }" | sed 's/^[^ ]* *//' ;;
+    open|worktree) printf '%s이미 있다%s  %s  %s(enter 면 연다)%s\n' "$Y" "$R" "$(home_disp "$J_PATH")" "$D" "$R" ;;
+    *) printf '%s\n' "$J_SAY" ;;
+  esac
+  echo; dir_preview "$1"
+}
+on_loc_enter() {  # 위치 피커의 enter: 만들 수 있으면(또는 이미 있으면) 고르고 끝, 막히면 안내
+  local mode name; st_get name; name=$ST; st_get mode; mode=${ST:-repo}
+  [ -n "${1:-}" ] || { printf 'bell'; return; }
+  classify "$1/$name" "$mode"
+  [ "$J_KIND" = block ] && { nope "$J_SAY"; return; }
+  st_set loc "$1"; printf 'accept'
+}
+on_loc_layout() {  # 위치 피커의 alt-l: 레이아웃을 겹쳐 띄우고, 고르면 위치도 고른 것으로 끝낸다
+  local mode name; st_get name; name=$ST; st_get mode; mode=${ST:-repo}
+  [ -n "${1:-}" ] || { printf 'bell'; return; }
+  classify "$1/$name" "$mode"
+  [ "$J_KIND" = block ] && { nope "$J_SAY"; return; }
+  st_set pending "${J_CREATE:-none}"$'\t'"$J_PATH"; st_set near_pick "$1"; st_del layout
+  printf 'execute(%s --choose-layout)+transform(%s --on loc-after-layout)' "$SELF" "$SELF"
+}
+on_loc_after_layout() {  # 레이아웃에서 esc 면 위치 피커에 그대로 남는다
+  st_get layout; [ -n "$ST" ] || return 0
+  st_get near_pick; st_set loc "$ST"; printf 'accept'
+}
+choose_location_step() {  # execute 안에서 돈다. 고른 부모는 상태 loc 에 남는다 (esc 면 남기지 않는다)
+  local name what="디렉토리"; st_get name; name=$ST; st_get mode; [ "${ST:-repo}" = repo ] && what="저장소"
+  style_opts
+  fzf --ansi --delimiter '\t' --with-nth 1,2 --nth 1 --tabstop 2 --scheme path --tiebreak pathname,index \
+      "${STYLE[@]}" --border-label " 새 $what '$name' 를 어디에? " --prompt '위치> ' \
+      --footer "${D}enter 여기에 만들기 · alt-l 레이아웃 골라 만들기 · esc 돌아가기${R}" --footer-border line \
+      --preview "$SELF --loc-preview {3}" --preview-window 'right,45%,border-left' \
+      --bind 'change:first' --bind 'esc:abort' \
+      --bind "enter:transform($SELF --on loc-enter {3})" \
+      --bind "double-click:transform($SELF --on loc-enter {3})" \
+      --bind "alt-l:transform($SELF --on loc-layout {3})" \
+      --bind 'alt-p:change-preview-window(down,40%,border-top|hidden|right,45%,border-left)' \
+      < <(loc_rows) > /dev/null || true
+}
+
 pick() {
   command -v fzf >/dev/null || die "fzf 가 필요합니다"
   TMUX_DEV_STATE=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev-project.XXXXXX"); export TMUX_DEV_STATE
   # shellcheck disable=SC2064  # 지금 값의 디렉토리를 지운다
   trap "rm -rf '$TMUX_DEV_STATE'" EXIT
   find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmux-dev-project.*' -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true  # 비정상 종료 흔적
-  st_set mode repo; st_set phase list
+  st_set mode repo
   style_opts
-
   # 정렬: --scheme=path 의 점수에 동점이면 파일 이름 일치 → 입력 순서(열린 세션 → 최근 → 탐색). path 의 기본 length 대신 index.
   # 바인딩은 fzf 기본 키와 겹치지 않는 것만. enter·esc·tab·double-click 은 같은 뜻으로 덮는다(판정을 거치게).
   fzf --ansi --delimiter '\t' --with-nth 1,2 --nth 1 --tabstop 2 --scheme path --tiebreak pathname,index \
@@ -439,6 +513,7 @@ pick() {
       --bind "result:bg-transform($SELF --on result)" \
       --bind "enter:transform($SELF --on enter {3})" \
       --bind "double-click:transform($SELF --on enter {3})" \
+      --bind "alt-enter:transform($SELF --on create {3})" \
       --bind "alt-l:transform($SELF --on layout {3})" \
       --bind "esc:transform($SELF --on esc)" \
       --bind "tab:transform($SELF --on mode)" --bind "shift-tab:transform($SELF --on mode)" \
@@ -447,9 +522,9 @@ pick() {
       --bind "alt-h:transform($SELF --on help)" \
       < <(rows repo) > /dev/null || true
   [ -f "$TMUX_DEV_STATE/decision" ] || exit 0     # 결정 없이 끝남 = 취소 (ctrl-c 는 130)
-  local path create layout save
-  IFS=$'\t' read -r path create layout save < "$TMUX_DEV_STATE/decision"
-  apply_decision "$path" "$create" "$layout" "$save"
+  local path create layout save parent
+  IFS=$US read -r path create layout save parent < "$TMUX_DEV_STATE/decision"
+  apply_decision "$path" "$create" "$layout" "$save" "$parent"
 }
 
 # --- 인자 ------------------------------------------------------------------------
@@ -460,13 +535,18 @@ while [ $# -gt 0 ]; do
       # 콜백은 출력이 전부다. 마지막 조건식의 종료 코드로 set -e 가 끊지 않게 || true
       case $2 in
         enter) on_enter "${3:-}" || true ;; layout) on_layout "${3:-}" || true ;; after-layout) on_after_layout || true ;;
+        create) on_create "${3:-}" || true ;; after-location) on_after_location || true ;;
+        loc-enter) on_loc_enter "${3:-}" || true ;; loc-layout) on_loc_layout "${3:-}" || true ;;
+        loc-after-layout) on_loc_after_layout || true ;;
         esc) on_esc || true ;; change) on_change || true ;; result) on_result || true ;; mode) on_mode || true ;;
         fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
       esac; exit 0 ;;
-    --choose-layout) choose_layout_step; exit 0 ;;
+    --choose-layout)   choose_layout_step; exit 0 ;;
+    --choose-location) choose_location_step; exit 0 ;;
+    --loc-preview)     loc_preview "${2:-}"; exit 0 ;;
     --preview)    dir_preview "${2:-}"; exit 0 ;;
     --help-keys)  help_keys; exit 0 ;;
-    --list)       rows "${2:-repo}"; exit 0 ;;
+    --list)       if [ "${2:-}" = loc ]; then loc_rows; else rows "${2:-repo}"; fi; exit 0 ;;
     --layout)     LAYOUT=$2; shift 2 ;;
     --layouts)    layout_list; exit 0 ;;
     --layout-art) layout_art "${2:-}"; exit 0 ;;
