@@ -1,33 +1,40 @@
-# 디렉토리 검색과 미리보기. tmux-dev project 의 dir 모드(prefix S → 세션)와 tmux-dev worktree 의 dir 모드
-# (prefix W → 지금 세션의 윈도우)가 함께 source 한다. 같은 검색 범위를 쓰고, 다른 것은 "무엇을 여나" 뿐이다. bash 용.
+# 디렉토리 탐색과 미리보기. tmux-dev project(prefix S → 세션)와 tmux-dev worktree 의 dir 모드
+# (prefix W → 지금 세션의 윈도우)가 함께 source 한다. 같은 탐색을 쓰고, 다른 것은 "무엇을 여나" 뿐이다. bash 용.
 #
-# 검색 범위는 목록 파일($TMUX_DEV_CONFIG, ~/.config/tmux-dev/projects)의 두 줄로 정한다. 없으면 기본값.
-#   search <경로>:<깊이>   뒤질 범위. 여러 줄 가능 (기본 ~:4)
-#   exclude <이름>...      건너뛸 디렉토리 이름 (기본 .git node_modules Library .Trash .cache)
+# 탐색 범위는 미리 정하지 않는다. 시작점은 홈($TMUX_DEV_SCAN_ROOT, 기본 $HOME) 하나이고 깊이 제한이 없다.
+# 빼는 것은 두 가지다.
+#   - 숨김 디렉토리. 저장소 탐색은 .git 만 예외로 들어간다. 숨김 아래는 대부분 도구 캐시·데이터라
+#     홈 전체가 13초 → 1.4초로 준다 (2026-11-07 실측, session-picker.md). 숨김 아래를 열려면 경로를 직접 친다.
+#   - ignore 파일($TMUX_DEV_IGNORE, ~/.config/tmux-dev/ignore)의 패턴. gitignore 문법이고 fd --ignore-file 로
+#     넘긴다. / 로 시작하는 패턴은 탐색 시작점(홈) 기준이다. 파일이 없으면 Library, node_modules 를 뺀다.
+# 디렉토리 탐색은 .gitignore 도 따른다(빌드 산출물 등). 저장소 탐색은 따르지 않는다(무시된 곳의 저장소도 찾는다).
 
-DEFAULT_SEARCH="$HOME:4"
-DEFAULT_EXCLUDES=".git node_modules Library .Trash .cache"
+SCAN_ROOT=${TMUX_DEV_SCAN_ROOT:-$HOME}
+FD=$(command -v fd || command -v fdfind || true)   # 데비안·우분투 패키지는 fdfind 이름으로 설치된다
 
-config_lines() {  # 목록 파일에서 주석·빈 줄을 뺀 줄
-  [ -f "$TMUX_DEV_CONFIG" ] || return 0
-  sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$TMUX_DEV_CONFIG"
+ignore_args() {  # fd 에 넘길 제외 인자를 IGNORE_ARGS 배열에
+  IGNORE_ARGS=()
+  if [ -f "$TMUX_DEV_IGNORE" ]; then IGNORE_ARGS=(--ignore-file "$TMUX_DEV_IGNORE")
+  else IGNORE_ARGS=(--exclude Library --exclude node_modules); fi
 }
-config_search()   { local s; s=$(config_lines | sed -n 's/^search[[:space:]]\{1,\}//p'); printf '%s\n' "${s:-$DEFAULT_SEARCH}"; }
-config_excludes() { local e; e=$(config_lines | sed -n 's/^exclude[[:space:]]\{1,\}//p' | tr '\n' ' '); printf '%s\n' "${e:-$DEFAULT_EXCLUDES}"; }
+need_fd() { [ -n "$FD" ] || die "fd 가 필요합니다 (brew install fd)"; }
 
-# 검색 범위의 디렉토리를 "<~경로><TAB><절대경로>" 로. fd 로 평탄하게 뒤진다 (없으면 find). 후보가 많아 git 조회는 하지 않는다.
+# 저장소 = .git 이 디렉토리인 곳 (메인 체크아웃). .git 이 파일인 워크트리·서브모듈은 --type d 로 빠진다.
+# 숨김 중 .git 만 들어가도록 .git 이 아닌 숨김 이름을 모두 뺀다. --prune 은 .git 안으로 내려가지 않게 한다.
+scan_repos() {  # 한 줄에 절대 경로 하나. 찾는 대로 흘려 보낸다
+  need_fd; ignore_args
+  "$FD" --base-directory "$SCAN_ROOT" --absolute-path --type d --hidden --no-ignore --prune --glob .git \
+    --exclude '.[!g]*' --exclude '.g[!i]*' --exclude '.gi[!t]*' --exclude '.git?*' "${IGNORE_ARGS[@]}" 2>/dev/null \
+    | sed 's|/\.git/*$||'
+}
+scan_dirs() {   # 한 줄에 절대 경로 하나 (숨김 제외, .gitignore 존중)
+  need_fd; ignore_args
+  "$FD" --base-directory "$SCAN_ROOT" --absolute-path --type d "${IGNORE_ARGS[@]}" 2>/dev/null | sed 's|/$||'
+}
+
+# prefix W 의 dir 모드용: "<~경로><TAB><절대경로>". 후보가 많아(홈 전체 수만 개) git 조회는 하지 않는다.
 list_dirs() {
-  local entry root depth ex p args=()
-  for ex in $(config_excludes); do args+=(--exclude "$ex"); done
-  while IFS= read -r entry; do
-    root=$(expand_tilde "${entry%:*}"); depth=${entry##*:}
-    [ -d "$root" ] || continue
-    if command -v fd >/dev/null; then
-      fd --type d --hidden --max-depth "$depth" "${args[@]+"${args[@]}"}" --absolute-path . "$root" 2>/dev/null
-    else
-      find "$root" -mindepth 1 -maxdepth "$depth" -type d 2>/dev/null
-    fi
-  done < <(config_search) | sed 's|/$||' | while IFS= read -r p; do [ -n "$p" ] && printf '%s\t%s\n' "$(abbrev_home "$p")" "$p"; done
+  scan_dirs | awk -v home="$HOME" -v OFS='\t' '{ d = $0; if (index(d, home "/") == 1) d = "~" substr(d, length(home) + 1); else if (d == home) d = "~"; print d, $0 }'
 }
 
 # git 브랜치 이름. 후보마다 git 을 띄우면 팝업이 느려지므로 .git/HEAD 를 직접 읽는다.

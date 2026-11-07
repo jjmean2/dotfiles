@@ -143,12 +143,14 @@ resolve_layout() {
 # alt-enter 로 "저장소 기본값으로도 남기기" 를 고를 수 있다 (저장소일 때만 넘긴다).
 # "<이름>\t<save 또는 빈 값>" 을 출력, 취소면 1. enter 는 이번 윈도우만. 저장은 호출한 쪽이 git config 로 한다
 # (저장소 경로를 아는 건 그쪽). 대개는 이번만 다르게 열고 싶어서 고르므로 저장하는 쪽을 덜 쉬운 키에 둔다.
-# Esc 는 검색어만 지우고 닫기는 ctrl-c (tmux-dev 피커 공통 규칙, tmux-dev-project 의 pick 참고).
+# Esc 는 검색어만 지우고 닫기는 ctrl-c (tmux-dev 피커 공통 규칙). 다만 다른 fzf 위에 겹쳐 띄우는 쪽(prefix S)은
+# LAYOUT_ESC=abort 로 Esc 를 "한 단계 뒤로" 로 쓴다. LAYOUT_FZF_OPTS 배열로 테두리 같은 모양을 덧붙인다.
+LAYOUT_FZF_OPTS=()
 choose_layout() {
   local out key sel header='이 윈도우를 어떤 레이아웃으로 열까요'
   [ "${2:-}" = save ] && header+=$'\nenter: 이번만   alt-enter: 이 저장소의 기본으로도 저장 (git config tmux-dev.layout)'
   out=$(layout_list | fzf --delimiter=$'\t' --with-nth=1,2 --nth=1 --prompt='layout> ' --height=100% --reverse \
-        --bind 'esc:clear-query' --expect=alt-enter --header="$header" \
+        --bind "esc:${LAYOUT_ESC:-clear-query}" --expect=alt-enter --header="$header" "${LAYOUT_FZF_OPTS[@]+"${LAYOUT_FZF_OPTS[@]}"}" \
         --preview="$1 {1}" --preview-window='right,50%,border-left') || return 1
   { IFS= read -r key; IFS= read -r sel; } <<< "$out" || true
   [ -n "$sel" ] || return 1
