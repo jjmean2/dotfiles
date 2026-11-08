@@ -32,8 +32,13 @@
   어기면 경고한다 (`lazyvim/config/init.lua`). `lua/plugins/` 나 `.lazy.lua` 는 그보다 뒤에 붙으므로
   `{ import = "lazyvim.plugins.extras.lang.zig" }` 대신 extra 가 하는 일 중 필요한 spec 만 직접 쓴다.
   extra 내용은 `~/.local/share/nvim/lazy/LazyVim/lua/lazyvim/plugins/extras/` 에서 읽을 수 있다.
-- **프로젝트 설정은 그 디렉터리에서 띄워야 적용된다.** mise 는 셸의 현재 디렉터리로, lazy.nvim 의 `.lazy.lua` 는 nvim
-  시작 시 cwd 와 그 상위에서 찾는다. `cd <프로젝트> && nvim` (tmux-dev 레이아웃은 프로젝트 디렉터리에서 띄운다).
+- **프로젝트 설정은 그 디렉터리에서 띄워야 적용된다.** mise 는 셸의 현재 디렉터리로 PATH 를 정하고, lazy.nvim 은
+  `.lazy.lua` 를 **nvim 이 시작될 때의 cwd** 와 그 상위에서 찾는다 (`lazy/core/plugin.lua` 의 `find_local_spec`). 둘 다
+  시작할 때 한 번만 정해진다. `cd <프로젝트> && nvim` 으로 띄운다 (tmux-dev 레이아웃은 프로젝트 디렉터리에서 띄운다).
+  다음은 **적용되지 않는다** (신뢰 질문도 나오지 않는다):
+  - 다른 디렉터리에서 `nvim ~/dev/opensources/ghostty` 처럼 프로젝트 경로를 인자로 주기. 탐색기가 그 폴더를 열어
+    주지만 플러그인 spec 을 읽은 뒤의 일이다.
+  - nvim 안에서 `<leader>fp` (프로젝트 피커) 나 `:cd` 로 프로젝트를 옮기기. 이미 띄운 nvim 의 spec 과 PATH 는 그대로다.
 
 ---
 
@@ -170,7 +175,11 @@ nvim src/main.zig
 
 ```vim
 :checkhealth vim.lsp      " zls 가 붙었는지, 실행 파일 경로가 ~/.local/share/mise/installs/zls/... 인지
+:lua =require("lazy.core.config").spec.modules   " 목록 끝에 .lazy.lua 가 있으면 local spec 이 읽힌 것
+:echo exepath("zls")      " mise.local.toml 의 zls 가 PATH 에 있는지
 ```
+
+신뢰 질문이 안 나오면 대개 시작 위치 문제다 (위 "알아 둘 동작"). nvim 을 닫고 `cd ~/dev/opensources/ghostty && nvim`.
 
 2026-11-09 이 Mac 에서 확인한 결과: `zls 0.17.0` (mise) 이 `root=~/dev/opensources/ghostty` 로 붙고, zig treesitter
 강조 동작.
@@ -190,9 +199,24 @@ echo 'mise.local.toml' >> .git/info/exclude
 
 `.lazy.lua` 는 Lua 코드라 실행 전에 확인을 받는다. 처음 보는 저장소에서 질문이 나오면 **v** (view) 로 내용을 읽고,
 믿을 수 있으면 `:trust` 후 nvim 재시작, 아니면 그대로 닫는다 (또는 질문에서 **d** (deny): 다시 묻지 않고 계속 무시).
-신뢰 목록 관리는 `:trust` (현재 버퍼 허용), `:trust ++deny`, `:trust ++remove`. 목록 파일은
-`~/.local/state/nvim/trust`. `:trust <파일>` 처럼 파일을 인자로 주는 형태는 내용을 보지 않고 신뢰하게 되므로
-(도움말의 TOCTOU 경고) 쓰지 않는다.
+신뢰 목록 관리는 `:trust` (현재 버퍼 허용), `:trust ++deny`, `:trust ++remove`. `:trust <파일>` 처럼 파일을 인자로
+주는 형태는 내용을 보지 않고 신뢰하게 되므로 (도움말의 TOCTOU 경고) 쓰지 않는다.
+
+신뢰 상태 확인: 목록은 `~/.local/state/nvim/trust` (`stdpath("state")/trust`) 한 파일이고, 한 줄에 `<값> <절대 경로>` 다.
+
+| 값 | 뜻 |
+|---|---|
+| sha256 해시 | 허용. 파일 내용이 이 해시일 때만 읽는다 (내용이 바뀌면 다시 묻는다) |
+| `!` | 거부 (deny). 묻지 않고 계속 무시 |
+| 줄 없음 | 아직 결정 안 함. 다음에 읽을 때 묻는다 (파일이 아예 없으면 한 번도 결정한 적 없는 것) |
+
+```sh
+grep ghostty ~/.local/state/nvim/trust     # 셸에서
+```
+
+```vim
+:split ~/.local/state/nvim/trust           " nvim 에서 (줄을 지워도 되지만 :trust ++remove 가 안전하다)
+```
 
 ---
 
