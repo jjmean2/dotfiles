@@ -1,5 +1,6 @@
 #!/usr/bin/env zsh
-# nvim 플러그인 lockfile(lazy-lock.json) 만 커밋하고 push 한다. :Lazy update 뒤에 부른다.
+# nvim 상태 파일(lazy-lock.json, lazyvim.json) 만 커밋하고 push 한다. :Lazy update 나
+# :LazyExtras 로 extras 를 바꾼 뒤에 부른다.
 #
 # 왜 스크립트인가: 특정 저장소(dotfiles)의 특정 파일을, 변경이 있을 때만, 정해진 메시지로
 # 커밋하는 일이라 셸 alias(로직 없음)나 git alias(저장소 일반 작업)보다 여기가 맞다.
@@ -10,14 +11,15 @@
 #   nvim-lock-push "메시지"     # 커밋 제목을 바꿔서
 #   nvim-lock-push -n [메시지]  # 커밋만 하고 push 는 하지 않음
 #
-# 커밋에 경로를 주므로(git commit -- <파일>) 다른 파일이 스테이징돼 있어도 lockfile 만 들어간다.
+# 커밋에 경로를 주므로(git commit -- <파일>) 다른 파일이 스테이징돼 있어도 두 파일만 들어간다.
+# lazyvim.json 은 LazyVim 이 켠 extras 목록과 읽은 NEWS 버전을 기록한다 (lazy.lua.tmpl 참고).
 # main 이 아닌 브랜치에 있으면 멈춘다. 설정 변경 PR 브랜치에 lockfile 커밋이 섞이지 않게.
 
 emulate -L zsh
 setopt err_exit no_unset pipe_fail
 
 typeset prog=${0:t}   # 함수 안에서는 $0 이 함수 이름이 되므로 여기서 잡아 둔다
-typeset lock=home/dot_config/nvim/lazy-lock.json
+typeset -a files=(home/dot_config/nvim/lazy-lock.json home/dot_config/nvim/lazyvim.json)
 typeset default_msg="chore(nvim): 플러그인 업데이트"
 typeset push=1
 
@@ -44,13 +46,13 @@ if [[ $branch != main ]]; then
   exit 1
 fi
 
-if [[ -z "$(chezmoi git -- status --porcelain -- $lock)" ]]; then
-  print -r -- "lockfile 변경 없음: $lock"
+if [[ -z "$(chezmoi git -- status --porcelain -- $files)" ]]; then
+  print -r -- "변경 없음: ${(j:, :)files}"
   exit 0
 fi
 
-chezmoi git -- --no-pager diff -- $lock
-chezmoi git -- commit --quiet -m $msg -- $lock
+chezmoi git -- --no-pager diff -- $files
+chezmoi git -- commit --quiet -m $msg -- $files
 chezmoi git -- --no-pager log -1 --oneline
 
 if (( push )); then
