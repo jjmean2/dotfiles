@@ -15,6 +15,7 @@
 #
 # 피커 (fzf 순정 키는 그대로. 아래는 비어 있던 키와, 같은 뜻으로 덮은 enter·esc·tab)
 #   tab / shift-tab   모드 전환: 저장소(메인 체크아웃만) ↔ 디렉토리(모든 디렉토리)
+#   모드 이름 클릭    그 모드로 (맨 위 헤더의 탭. fzf 의 click-header)
 #   enter             커서 항목으로. 열기만 한다. 걸리는 항목이 없으면 벨과 안내 (경로를 쳤고 있으면 연다)
 #   alt-enter         친 이름으로 새로 만들기. 위치 피커가 겹쳐 뜬다(최근 만든 곳 → 커서 옆 → 디렉토리 전부).
 #                     거기서 enter 는 여기에 만들기, alt-l 은 레이아웃 골라 만들기, esc 는 돌아가기.
@@ -267,12 +268,15 @@ name_ok() {
 }
 
 # --- 피커 화면 -------------------------------------------------------------------
-tabs() {  # 바깥 테두리 라벨에 그리는 모드 탭
+# 맨 위 헤더(--header-first)에 그리는 모드 탭. 지금 모드는 굵게. 클릭하면 그 모드로 간다(click-header → on_tab_click).
+# 이름 사이는 탭 문자다: fzf 는 클릭한 단어(FZF_CLICK_HEADER_WORD)를 --delimiter 로 자르는데, 행 칸 구분 때문에
+# --delimiter '\t' 라서 공백으로 띄우면 "저장소  디렉토리" 가 한 단어로 온다. 화면에는 --tabstop 2 로 두 칸 간격이다.
+tabs() {
   local m out=""
   for m in repo dir; do
-    if [ "$m" = "$1" ]; then out+="${B}$(mode_name "$m")${R}  "; else out+="${D}$(mode_name "$m")${R}  "; fi
+    if [ "$m" = "$1" ]; then out+="${B}$(mode_name "$m")${R}"$'\t'; else out+="${D}$(mode_name "$m")${R}"$'\t'; fi
   done
-  printf ' %s' "${out%  } "
+  printf '%s' "${out%$'\t'}"
 }
 hint() { printf '%s' "${D}enter 열기 · alt-enter 새로 만들기 · alt-l 레이아웃 · tab 모드 · alt-h 키 안내${R}"; }
 create_hint() {  # 검색어가 있으면 늘 보이는 만들기 안내 (결과가 있어도 alt-enter 는 친 이름으로 만든다)
@@ -287,7 +291,7 @@ enter         커서 항목의 세션으로 (없으면 만든다)
 alt-enter     친 이름으로 새로 만들기 → 위치 고르기
 alt-l         레이아웃을 골라서 열기
                 enter 이번만 · alt-enter 저장소 기본으로도
-tab           모드: 저장소 ↔ 디렉토리
+tab           모드: 저장소 ↔ 디렉토리 (맨 위 모드 이름을 클릭해도)
 ctrl-]        커서 경로를 검색어에 채우기
 alt-p         미리보기 오른쪽 → 아래 → 숨김 (겹쳐 뜬 목록도)
 alt-h         이 안내 열고 닫기
@@ -431,10 +435,18 @@ on_change() {
 }
 on_result() { pathish "${FZF_QUERY:-}" && act change-footer "$(footer_now)"; return 0; }  # 경로 모양 검색어일 때만 묶인다
 on_esc() { printf 'clear-query'; }
-on_mode() {
-  local mode; st_get mode; if [ "${ST:-repo}" = repo ]; then mode=dir; else mode=repo; fi
-  st_set mode "$mode"
-  printf 'reload(%s --list %s)+%s+first+%s' "$SELF" "$mode" "$(act change-border-label "$(tabs "$mode")")" "$(act change-footer "$(footer_now)")"
+to_mode() {  # $1 새 모드 → 목록·탭·푸터를 바꾸는 액션 (푸터 판정이 모드를 읽으므로 상태를 먼저 바꾼다)
+  st_set mode "$1"
+  printf 'reload(%s --list %s)+%s+first+%s' "$SELF" "$1" "$(act change-header "$(tabs "$1")")" "$(act change-footer "$(footer_now)")"
+}
+on_mode() { st_get mode; if [ "${ST:-repo}" = repo ]; then to_mode dir; else to_mode repo; fi; }
+on_tab_click() {  # 헤더의 모드 이름을 클릭: 그 모드로. 이미 그 모드거나 이름 밖(빈 자리)이면 아무것도 안 한다
+  local want
+  case ${FZF_CLICK_HEADER_WORD:-} in
+    "$(mode_name repo)") want=repo ;; "$(mode_name dir)") want=dir ;; *) return 0 ;;
+  esac
+  st_get mode; [ "${ST:-repo}" = "$want" ] && return 0
+  to_mode "$want"
 }
 on_fill() {  # ctrl-]: 커서 항목의 경로를 검색어에 (끝 슬래시 없이. 이어서 /이름 을 치면 그 아래)
   [ -n "${1:-}" ] || return 0
@@ -515,8 +527,9 @@ pick() {
   style_opts
   # 정렬: --scheme=path 의 점수에 동점이면 파일 이름 일치 → 입력 순서(열린 세션 → 최근 → 탐색). path 의 기본 length 대신 index.
   # 바인딩은 fzf 기본 키와 겹치지 않는 것만. enter·esc·tab·double-click 은 같은 뜻으로 덮는다(판정을 거치게).
+  # 테두리 라벨은 화면 제목(겹쳐 뜨는 위치·레이아웃 목록과 같은 문법), 모드 탭은 맨 위 헤더 (session-picker.md 화면 절).
   fzf --ansi --delimiter '\t' --with-nth 1,2 --nth 1 --tabstop 2 --scheme path --tiebreak pathname,index \
-      "${STYLE[@]}" --border-label "$(tabs repo)" --prompt '> ' \
+      "${STYLE[@]}" --border-label ' 세션 열기 ' --header "$(tabs repo)" --header-first --prompt '> ' \
       --footer "$(hint)" --footer-border line \
       --preview "$SELF --preview {3}" --preview-window 'right,45%,border-left' \
       --bind 'start:unbind(result)' \
@@ -528,6 +541,7 @@ pick() {
       --bind "alt-l:transform($SELF --on layout {3})" \
       --bind "esc:transform($SELF --on esc)" \
       --bind "tab:transform($SELF --on mode)" --bind "shift-tab:transform($SELF --on mode)" \
+      --bind "click-header:transform($SELF --on tab-click)" \
       --bind "ctrl-]:transform($SELF --on fill {1})" \
       --bind 'alt-p:change-preview-window(down,40%,border-top|hidden|right,45%,border-left)' \
       --bind "alt-h:transform($SELF --on help)" \
@@ -550,7 +564,7 @@ while [ $# -gt 0 ]; do
         loc-enter) on_loc_enter "${3:-}" || true ;; loc-layout) on_loc_layout "${3:-}" || true ;;
         loc-after-layout) on_loc_after_layout || true ;;
         esc) on_esc || true ;; change) on_change || true ;; result) on_result || true ;; mode) on_mode || true ;;
-        fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
+        tab-click) on_tab_click || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
       esac; exit 0 ;;
     --choose-layout)   choose_layout_step; exit 0 ;;
     --choose-location) choose_location_step; exit 0 ;;
