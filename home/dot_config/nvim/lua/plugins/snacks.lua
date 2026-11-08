@@ -70,10 +70,33 @@ local function focus_explorer()
   explorer:focus("list")
 end
 
+-- <leader>sF: filetype 을 골라 현재 버퍼에 적용한다 (하이라이팅·Treesitter·LSP 가 그 언어로 다시 붙는다).
+-- snacks 에는 Telescope·fzf-lua 의 filetypes 같은 소스가 없어서 직접 만든다. :set ft=<Tab> 과 같은 목록이다.
+-- 키는 s(피커 모음: sk 키맵, sC 명령, sH 하이라이트 그룹) 그룹에 F(iletype). LazyVim 코어·모든 extras·snacks 가
+-- 안 쓰는 키다 (<leader>uF 는 버퍼 단위 자동 포맷 토글이라 쓸 수 없다).
+local function pick_filetype()
+  local items = vim.tbl_map(function(ft)
+    return { text = ft }
+  end, vim.fn.getcompletion("", "filetype"))
+  Snacks.picker({
+    title = "Filetypes",
+    items = items,
+    format = "text",
+    layout = { preset = "select" },
+    confirm = function(picker, item)
+      picker:close()
+      if item then
+        vim.bo.filetype = item.text
+      end
+    end,
+  })
+end
+
 return {
   "folke/snacks.nvim",
   keys = {
     { "<leader>fo", focus_explorer, desc = "Focus Explorer (reveal file)" },
+    { "<leader>sF", pick_filetype, desc = "Filetype (set for buffer)" },
   },
   -- 함수로 둔 이유는 위 "머신마다 다른 위치" 참고. lazy 의 merge 는 spec 병합과 같은 규칙(리스트는 교체)이다.
   opts = function(_, opts)
