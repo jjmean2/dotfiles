@@ -6,3 +6,21 @@
 .jongwan/share/tmux
 .config/tmux-sessionizer
 .local/state/tmux-sessionizer
+
+# nvim 직접 조립 설정 → LazyVim starter 로 전환. 소스에서 지운 파일은 대상에 남아 있으면
+# LazyVim 의 { import = "plugins" } 가 옛 plugins/*.lua 를 같이 읽으므로 명시적으로 지운다.
+# 이전 설정은 git 태그 pre-lazyvim 에 있다. 디렉터리를 exact_ 로 바꾸지 않은 이유: nvim 이
+# 설정 디렉터리에 스스로 쓰는 파일(spell/ 의 zg 단어장 등)까지 지워진다.
+.config/nvim/.luarc.json
+.config/nvim/doc
+.config/nvim/lua/config/core
+.config/nvim/lua/config/plugin
+.config/nvim/lua/plugins/formatter.lua
+.config/nvim/lua/plugins/git.lua
+.config/nvim/lua/plugins/lsp.lua
+.config/nvim/lua/plugins/markdown.lua
+.config/nvim/lua/plugins/outline.lua
+.config/nvim/lua/plugins/picker.lua
+.config/nvim/lua/plugins/spec.lua
+.config/nvim/lua/plugins/treesitter.lua
+.config/nvim/lua/plugins/whichkey.lua
