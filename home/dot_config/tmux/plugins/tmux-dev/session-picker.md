@@ -56,7 +56,7 @@
   chezmoi 가 처음 한 번 `/Library`, `node_modules` 로 만들어 준다(`create_ignore`).
 - 디렉토리 탐색은 각 저장소의 .gitignore 도 따른다. 저장소 탐색은 `--no-ignore` 라 무시된 곳의 저장소도 찾는다.
   `--no-ignore` 여도 `--ignore-file` 은 적용된다(2026-11-07 확인).
-- prefix W 의 dir 모드도 같은 탐색(`list_dirs`)을 쓴다. 그래서 W 의 dir 모드도 홈 전체가 후보다.
+- prefix W 의 directory 모드도 같은 탐색(`lib/picker.sh` 의 `dir_rows`)을 쓴다. subdirectory 모드는 시작점만 세션 디렉토리로 바꾼다.
 - 목록은 fd 가 찾는 대로 흘려 넣는다. 첫 결과는 바로 뜨고 나머지는 뒤따른다.
 
 숨김 디렉토리를 건너뛰는 근거 (2026-11-07, 이 머신 실측):
@@ -292,7 +292,7 @@ prefix S → run-shell -b "tmux-dev open project '#{client_name}' '#{pane_id}' #
   지우기" 와 부딪힌다. zoom 상태에서도 modal 은 위에 뜬다.
 - **팝업과 달라진 것.** 피커가 클라이언트가 아니라 창에 속한다. 같은 창을 보는 다른 클라이언트에도 보이고, 전환하는
   순간 원래 창에 잠깐 남았다가 스크립트가 끝나면 닫힌다. 피커가 자기 창이나 세션을 부수는 동작은 없어서(결정만 하고
-  만들기·전환은 fzf 뒤) 창에 속해도 문제가 없다. 자기 창을 닫는 동작이 있는 prefix W 는 UX 를 다시 짠 뒤 옮긴다.
+  만들기·전환은 fzf 뒤) 창에 속해도 문제가 없다. prefix W 도 UX 를 다시 짠 뒤 옮겼다(2026-11-09, worktree-picker.md).
 - 크기 옵션 이름은 `@tmux-dev-popup-size` 그대로다(W 와 같이 쓴다). S 는 키를 누를 때 읽어서 `prefix :` 로 바꾼 값이 바로 먹는다.
 
 ## 키
@@ -385,6 +385,6 @@ fzf 0.74 기본 키: ctrl-a b c d e f g h j k l n p q u w y, ctrl-/, alt-b d f, 
 
 - 미리보기 창의 대체 배치 기준값 `<60(down,...)` 은 피커 전체 폭이 아니라 **미리보기 창의 폭**을 잰다(fzf 매뉴얼).
   45% 에 기준 60 이면 피커 창 안쪽 폭이 약 134칸 이상이어야 오른쪽에 뜨고, 이 기준값이 있으면 `change-preview-window` 의
-  hidden 도 먹지 않는다. S 는 기준값을 빼고 alt-p 순환을 넣었다. **prefix W 는 아직 이 기준값을 쓴다.**
-- prefix W 피커도 같은 방향(헤더 탭, 푸터 확인, 상태 디렉토리)으로 정리할 차례다. W 의 ctrl-x 정리는 여러 단계를
-  묻는 흐름이라 푸터 확인으로 옮기려면 단계 상태가 더 필요하다.
+  hidden 도 먹지 않는다. S 는 기준값을 빼고 alt-p 순환을 넣었다. prefix W 도 다시 짜면서 같게 했다.
+- prefix W 피커도 같은 방향(헤더 탭, 푸터 확인, 상태 디렉토리)으로 다시 짰다(2026-11-08~09, PR #63·#64·#65 와 4단계).
+  ctrl-x 정리의 여러 단계는 확인 상태의 op(create | clean | clean2)로 풀었다. 설계는 worktree-picker.md.
