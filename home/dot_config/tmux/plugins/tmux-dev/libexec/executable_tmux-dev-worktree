@@ -216,84 +216,130 @@ hist_rank() {  # $1 경로 → RANK (0 부터, 없으면 -1)
   return 1
 }
 
-rows_worktree() {  # $1 = --marks 면 dirty/merged 마커까지 (없으면 빠른 목록)
-  local marks=${1:-} path branch flags ref track sha w=12 n
+rows_worktree() {  # $1 = --marks 면 상태 마커(dirty, merged/new/+N)까지 (없으면 빠른 목록)
+  local marks=${1:-} path branch flags ref track sha ts subj w=12 n
   local -a wt=() br=() rm=()
-  # 로컬 브랜치 표: 같은 인덱스의 세 배열 (이름, 업스트림 대비, 커밋). 긴 문자열에 ${var#*패턴} 글로브 매칭을 하면
+  # 로컬 브랜치 표: 같은 인덱스의 배열들 (이름, 업스트림 대비, 커밋, 커밋 시각). 긴 문자열에 ${var#*패턴} 글로브 매칭을 하면
   # 멀티바이트 로케일에서 아주 느리므로(행마다 수 ms) 배열을 단순 비교로 훑는다.
-  local -a names=() trks=() shas=()
+  local -a names=() trks=() shas=() tss=()
   while IFS=$'\t' read -r path branch flags; do
     wt+=("$path|$branch|$flags"); n=${#branch}; [ "$n" -gt "$w" ] && w=$n
   done <<< "$WT_LIST"
-  # worktreepath 는 비어 있을 수 있으므로 구분자는 US (git 포맷의 %1f). 최근 커밋 순
-  while IFS=$US read -r ref path track sha; do
-    names+=("$ref"); trks+=("$track"); shas+=("$sha")
-    [ -z "$path" ] && { br+=("$ref|$track"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n; }
-  done < <(git for-each-ref refs/heads --sort=-committerdate --format='%(refname:short)%1f%(worktreepath)%1f%(upstream:track)%1f%(objectname)')
+  # worktreepath 는 비어 있을 수 있으므로 구분자는 US (git 포맷의 %1f). 최근 커밋 순. 제목은 마지막 칸 (US 가 들어 있을 리 없다)
+  while IFS=$US read -r ref path track sha ts subj; do
+    names+=("$ref"); trks+=("$track"); shas+=("$sha"); tss+=("$ts")
+    [ -z "$path" ] && { br+=("$ref|$ts|$subj"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n; }
+  done < <(git for-each-ref refs/heads --sort=-committerdate --format='%(refname:short)%1f%(worktreepath)%1f%(upstream:track)%1f%(objectname)%1f%(committerdate:unix)%1f%(subject)')
   find_branch() {  # 이름 → IDX (없으면 -1). 서브셸 없이 전역에 둔다
     local i; IDX=-1
     for ((i = 0; i < ${#names[@]}; i++)); do [ "${names[$i]}" = "$1" ] && { IDX=$i; return 0; }; done
     return 1
   }
-  while IFS= read -r ref; do
+  while IFS=$US read -r ref ts subj; do
     case $ref in */HEAD) continue ;; esac       # origin/HEAD 는 브랜치가 아니다
     ref=${ref#refs/remotes/}; branch=${ref#origin/}
     find_branch "$branch" && continue           # 같은 이름의 로컬 브랜치가 있으면 그쪽 행이 대표한다
-    rm+=("$ref"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n
-  done < <(git for-each-ref refs/remotes/origin --sort=-committerdate --format='%(refname)')
-  [ "$w" -gt 40 ] && w=40
-  # 행 마커(dirty, merged)는 행마다 git 을 띄워야 해서 비용이 크다. 그래서 (1) 마커 없는 목록을 먼저 띄우고 fzf 의 load
-  # 이벤트에서 --marks 로 다시 읽으며, (2) --marks 때는 베이스 쪽 계산을 한 번만 하고(merge_prepare) 행마다는 작은 일만 남기며
-  # 그것도 캐시하고(is_merged), (3) 행 작업은 코어 수만큼만 동시에 띄운다. 결과는 임시 파일로.
+    rm+=("$ref|$ts|$subj"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n
+  done < <(git for-each-ref refs/remotes/origin --sort=-committerdate --format='%(refname)%1f%(committerdate:unix)%1f%(subject)')
+  [ "$w" -gt 30 ] && w=30                       # 이름 칸. 더 긴 이름은 그 행만 밀린다 (모든 행을 가장 긴 이름에 맞추지 않는다)
+  # 상태 마커는 행마다 git 을 띄워야 해서 비용이 크다. 그래서 (1) 마커 없는 목록을 먼저 띄우고 fzf 의 load 이벤트에서
+  # --marks 로 다시 읽으며, (2) --marks 때는 베이스 쪽 계산을 한 번만 하고(merge_prepare) 행마다는 작은 일만 남기며
+  # 그것도 캐시하고(is_merged), (3) 행 작업은 코어 수만큼만 동시에 띄운다. 결과는 임시 파일로 ("<dirty 수>\t<상태>").
   find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmux-dev.*' -type d -mmin +60 -exec /bin/rm -rf {} + 2>/dev/null || true
-  local tmp b bsha i; tmp=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev.XXXXXX")
+  local tmp b bsha lb lbsha i; tmp=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev.XXXXXX")
   # shellcheck disable=SC2064  # 지금 값의 tmp 를 지우는 것이 맞다
   trap "/bin/rm -rf '$tmp'" EXIT
   if [ "$marks" = --marks ]; then
     b=$(judge_ref); bsha=$(git rev-parse -q --verify "$b^{commit}" 2>/dev/null || true)
+    lb=$(base); lbsha=$(git rev-parse -q --verify "$lb^{commit}" 2>/dev/null || true)
     [ -n "$bsha" ] && merge_prepare "$bsha"     # 자식들이 상속받도록 fork 전에
-    local jobs running=0 lb; lb=$(base); jobs=${TMUX_DEV_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8)}
+    local jobs running=0; jobs=${TMUX_DEV_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8)}
     i=0; for e in "${wt[@]+"${wt[@]}"}"; do
       path=${e%%|*}; branch=${e#*|}; branch=${branch%%|*}
       sha=""; find_branch "$branch" && sha=${shas[$IDX]}
-      ( marks_for "$path" "$branch" "$b" "$sha" "$bsha" "$lb" > "$tmp/w$i" ) & i=$((i + 1))
+      ( marks_for "$path" "$branch" "$b" "$sha" "$bsha" "$lb" "$lbsha" > "$tmp/w$i" ) & i=$((i + 1))
       running=$((running + 1)); [ "$running" -ge "$jobs" ] && { wait; running=0; }
     done
     i=0; for e in "${br[@]+"${br[@]}"}"; do
       sha=""; find_branch "${e%%|*}" && sha=${shas[$IDX]}
-      ( marks_for "" "${e%%|*}" "$b" "$sha" "$bsha" "$lb" > "$tmp/b$i" ) & i=$((i + 1))
+      ( marks_for "" "${e%%|*}" "$b" "$sha" "$bsha" "$lb" "$lbsha" > "$tmp/b$i" ) & i=$((i + 1))
       running=$((running + 1)); [ "$running" -ge "$jobs" ] && { wait; running=0; }
     done
     wait
     cache_prune
   fi
   load_hist
-  # 정렬 키: 0 윈도우 열림(창 번호 순), 1 최근 고른 것(최근 순), 2 나머지 워크트리(메인 먼저), 3 브랜치, 4 원격
+  NOW=$(date +%s); PDIR=$(project_dir 2>/dev/null || true); [ -n "$PDIR" ] || PDIR=/nonexistent
+  # 정렬 키 (묶음, 묶음 안 순서): 0 창 열림(창 번호) · 1 최근(최근 순) · 2 진행 중 워크트리(메인 먼저, 그다음 최근 커밋 순)
+  #   · 3 끝난 워크트리(merged) · 4 진행 중 브랜치 · 5 끝난 브랜치 · 6 원격. 상태는 마커를 읽은 뒤에야 알므로 끝난 것이
+  #   아래로 내려가는 것은 --marks 로 다시 읽을 때다.
   {
+    local dirty st key sub kind name_style
+    local -a parts
     i=0; for e in "${wt[@]+"${wt[@]}"}"; do
       path=${e%%|*}; branch=${e#*|}; flags=${branch#*|}; branch=${branch%%|*}
-      local key=2 sub=$i kind=worktree m loc
-      local -a parts=()
+      kind=worktree; parts=(); dirty=0; st=""; ts=0
+      find_branch "$branch" && ts=${tss[$IDX]:-0}
+      [ "$marks" = --marks ] && { IFS=$'\t' read -r dirty st < "$tmp/w$i" || true; }; i=$((i + 1))
+      if [ "$path" = "$MAIN" ]; then key=2 sub=-9999999999; elif [ "$st" = merged ]; then key=3 sub=$((-ts)); else key=2 sub=$((-ts)); fi
       if window_for "$path"; then parts+=("${G}●${WIN_IDX}${R}"); key=0; sub=$WIN_IDX
       elif hist_rank "$path"; then parts+=("${D}◷${R}"); key=1; sub=$RANK; fi
       case " $flags " in *" prunable "*) kind=prunable; parts+=("${Y}missing${R}") ;; esac
       case " $flags " in *" locked "*) parts+=("${D}locked${R}") ;; esac
-      m=""; [ "$marks" = --marks ] && { IFS= read -r m < "$tmp/w$i" || true; }; [ -n "$m" ] && parts+=("$m"); i=$((i + 1))
-      track=""; find_branch "$branch" && track=${trks[$IDX]}; [ -n "$track" ] && parts+=("${D}$track${R}")
-      case $path in "$HOME") loc='~' ;; "$HOME"/*) loc="~${path#"$HOME"}" ;; *) loc=$path ;; esac
-      printf '%s\t%s\t%-*s\t%s%s%s  %s\t%s\t%s\t%s\n' "$key" "$sub" "$w" "$branch" "$D" "$loc" "$R" "${parts[*]+"${parts[*]}"}" "$kind" "$path" "$branch"
+      state_marks "$st" "$dirty"
+      [ "$ts" -gt 0 ] && { age_of "$ts"; parts+=("${D}$AGE${R}"); }
+      short_loc "$path"; [ -n "$LOC" ] && parts+=("${D}$LOC${R}")
+      name_style=""; [ "$key" = 3 ] && name_style=$D
+      printf '%s\t%s\t%s%-*s%s\t%s\t%s\t%s\t%s\n' "$key" "$sub" "$name_style" "$w" "$branch" "$R" "${parts[*]+"${parts[*]}"}" "$kind" "$path" "$branch"
     done
     i=0; for e in "${br[@]+"${br[@]}"}"; do
-      ref=${e%%|*}; track=${e#*|}
-      m=""; [ "$marks" = --marks ] && { IFS= read -r m < "$tmp/b$i" || true; }
-      printf '3\t%s\t%-*s\t%s(branch)%s  %s %s%s%s\tbranch\t\t%s\n' "$i" "$w" "$ref" "$D" "$R" "$m" "$D" "$track" "$R" "$ref"; i=$((i + 1))
+      ref=${e%%|*}; ts=${e#*|}; subj=${ts#*|}; ts=${ts%%|*}
+      parts=(); dirty=0; st=""
+      [ "$marks" = --marks ] && { IFS=$'\t' read -r dirty st < "$tmp/b$i" || true; }; i=$((i + 1))
+      key=4; name_style=""; [ "$st" = merged ] && { key=5; name_style=$D; }
+      state_marks "$st" 0
+      age_of "${ts:-$NOW}"; parts+=("${D}$AGE (branch) $(trim "$subj" 50)${R}")
+      printf '%s\t%s\t%s%-*s%s\t%s\tbranch\t\t%s\n' "$key" "$((-${ts:-0}))" "$name_style" "$w" "$ref" "$R" "${parts[*]}" "$ref"
     done
-    i=0; for ref in "${rm[@]+"${rm[@]}"}"; do
-      printf '4\t%s\t%s%-*s%s\t%s(remote)%s\tremote\t%s\t%s\n' "$i" "$D" "$w" "$ref" "$R" "$D" "$R" "$ref" "${ref#origin/}"; i=$((i + 1))
+    for e in "${rm[@]+"${rm[@]}"}"; do
+      ref=${e%%|*}; ts=${e#*|}; subj=${ts#*|}; ts=${ts%%|*}
+      age_of "${ts:-$NOW}"
+      printf '6\t%s\t%s%-*s%s\t%s\tremote\t%s\t%s\n' "$((-${ts:-0}))" "$D" "$w" "$ref" "$R" "${D}$AGE (remote) $(trim "$subj" 50)${R}" "$ref" "${ref#origin/}"
     done
   } | sort -s -t$'\t' -k1,1n -k2,2n | cut -f3-
   /bin/rm -rf "$tmp"
 }
+# 상태 마커를 parts 에 더한다: $1 상태(merged | new | +N | 빈 값) $2 dirty 수. 베이스 기준 하나만 행에 둔다
+# (브랜치 자신의 업스트림 대비 ahead/behind/gone 은 미리보기에서 말로 보여 준다).
+state_marks() {
+  case $1 in
+    merged) parts+=("${G}merged${R}") ;;
+    new)    parts+=("${D}new${R}") ;;
+    +*)     parts+=("${Y}$1${R}") ;;
+  esac
+  [ "${2:-0}" -gt 0 ] 2>/dev/null && parts+=("${Y}dirty $2${R}")
+  return 0
+}
+age_of() {  # $1 커밋 시각(unix) → AGE (5m 3h 2d 3w 4mo 2y)
+  local s=$(( NOW - ${1:-0} ))
+  if [ "$s" -lt 3600 ]; then AGE="$(( s / 60 ))m"
+  elif [ "$s" -lt 86400 ]; then AGE="$(( s / 3600 ))h"
+  elif [ "$s" -lt 1209600 ]; then AGE="$(( s / 86400 ))d"
+  elif [ "$s" -lt 5184000 ]; then AGE="$(( s / 604800 ))w"
+  elif [ "$s" -lt 63072000 ]; then AGE="$(( s / 2592000 ))mo"
+  else AGE="$(( s / 31536000 ))y"; fi
+}
+# 위치를 짧게: 표준 모음 위치(tmux-dev.worktree.*)는 생략, Claude Code 의 .claude/worktrees 는 claude:<이름>. 전체 경로는 미리보기에
+short_loc() {
+  case $1 in
+    "$PDIR"/*) LOC="" ;;
+    "$MAIN"/.claude/worktrees/*) LOC="claude:${1#"$MAIN"/.claude/worktrees/}" ;;
+    "$HOME") LOC='~' ;;
+    "$HOME"/*) LOC="~${1#"$HOME"}" ;;   # 행마다 $(...) 를 띄우지 않으려고 home_disp 대신 직접
+    *) LOC=$1 ;;
+  esac
+}
+trim() { if [ "${#1}" -gt "$2" ]; then printf '%s…' "${1:0:$(( $2 - 1 ))}"; else printf '%s' "$1"; fi; }
 # subdirectory / directory: 이 세션에 열린 윈도우의 디렉토리(●N) → 최근(◷) → 탐색. 앞에 나온 것이 이긴다 (경로 기준)
 rows_dir() {  # $1 모드
   local idx _id tag _pane dir p n=0
@@ -370,11 +416,20 @@ is_merged() {
   cache_put "$rsha" "$bsha $result"
   [ "$result" = 1 ]
 }
-marks_for() {  # $1 워크트리 경로 $2 브랜치 $3 기준 ref $4 브랜치 커밋 $5 기준 커밋 $6 로컬 베이스 이름
-  local m=""
-  if [ -n "$1" ] && [ -d "$1" ] && [ -n "$(git -C "$1" status --porcelain 2>/dev/null | head -1)" ]; then m="${Y}dirty${R}"; fi
-  case $2 in "(detached "*|"$3"|"${6:-}") ;; *) is_merged "$2" "$3" "${4:-}" "${5:-}" && m="$m ${G}merged${R}" ;; esac
-  printf '%s' "${m# }"
+# 브랜치에서 커밋한 적이 없나 (reflog 에 commit 항목이 없다). 끝이 베이스 끝과 같은 브랜치는 "막 만든 것" 과
+# "커밋한 뒤 ff 로 머지된 것" 이 같아 보여서 이것으로 가른다. reflog 가 없으면(꺼 두었거나 지워졌으면) 커밋한 적 없는 것으로 본다.
+never_committed() { ! git reflog show --format=%gs "refs/heads/$1" 2>/dev/null | grep -q '^commit'; }
+marks_for() {  # $1 워크트리 경로 $2 브랜치 $3 기준 ref $4 브랜치 커밋 $5 기준 커밋 $6 로컬 베이스 이름 $7 로컬 베이스 커밋
+  # 출력 "<dirty 수>\t<상태>". 상태: new(브랜치 끝이 베이스 끝과 같다 = 아직 커밋이 없다), merged(변경이 기준에 모두 들어 있다),
+  # +N(기준에 없는 커밋 수). 베이스 브랜치 자신과 detached 는 상태가 없다. new 는 커밋한 적도 없어야 한다(never_committed).
+  local dirty=0 st="" n
+  if [ -n "$1" ] && [ -d "$1" ]; then dirty=$(git -C "$1" status --porcelain 2>/dev/null | wc -l | tr -d ' '); fi
+  case $2 in "(detached "*|"$3"|"${6:-}") ;; *)
+    if [ -n "${4:-}" ] && { [ "$4" = "${5:-}" ] || [ "$4" = "${7:-}" ]; } && never_committed "$2"; then st=new
+    elif is_merged "$2" "$3" "${4:-}" "${5:-}"; then st=merged
+    else n=$(git rev-list --count "${5:-$3}..${4:-$2}" 2>/dev/null || echo '?'); st="+$n"; fi ;;
+  esac
+  printf '%s\t%s\n' "$dirty" "$st"
 }
 
 # --- 피커 화면 -------------------------------------------------------------------
@@ -421,10 +476,13 @@ archive ref and how to restore it. Refused for the main checkout, the
 base branch, remote branches and locked worktrees; fails if dirty.
 
 ${B}worktree list${R}
-● open window · ◷ recently opened · then other worktrees,
-local branches (recent commits first), remote branches (origin/*).
-merged = all commits are in $(base) (or its upstream if $(base) is behind)
-dirty = uncommitted changes · missing = worktree directory is gone
+● open window · ◷ recently opened · then worktrees in progress, finished
+(merged, dimmed), local branches, remote branches (origin/*), recent first.
+merged = all changes are in $(base) (or its upstream if $(base) is behind)
+new = no commits yet · +N = commits not in $(base) · dirty N = uncommitted
+missing = worktree directory is gone · claude:x = .claude/worktrees/x
+5m 3h 2d 3w 4mo 2y = age of the last commit. The preview shows the full
+path and the branch's own upstream (pushed / not pushed / deleted).
 EOF
 }
 
@@ -626,12 +684,31 @@ w_choose_layout_step() {
 }
 
 # --- 미리보기 -----------------------------------------------------------------------
-merge_summary() {  # $1 = ref. 머지됐는지, 아니면 기준에 없는 커밋 수
+merge_summary() {  # $1 = 브랜치. 기준(judge_ref)에 대한 상태: merged / new / 기준에 없는 커밋 수
   local j n; j=$(judge_ref)
   [ "$1" = "$(base)" ] && return 0
+  if [ "$(git rev-parse -q --verify "$1^{commit}" 2>/dev/null)" = "$(git rev-parse -q --verify "$j^{commit}" 2>/dev/null)" ] && never_committed "$1"; then
+    echo "${D}new: no commits yet (same as $j)${R}"; return 0
+  fi
   if is_merged "$1" "$j"; then echo "${G}merged into $j${R}"; return 0; fi
-  n=$(git cherry "$j" "$1" 2>/dev/null | grep -c '^+' || true)
-  echo "${B}${n:-?}${R} commits not in $j"
+  n=$(git rev-list --count "$j..$1" 2>/dev/null || echo '?')
+  echo "${Y}+$n${R} commits not in $j"
+}
+upstream_summary() {  # $1 = 브랜치. 자신의 업스트림 대비를 말로 (행에서는 뺀 정보)
+  local up track
+  IFS=$US read -r up track < <(git for-each-ref "refs/heads/$1" --format='%(upstream:short)%1f%(upstream:track)') || true
+  if [ -z "$up" ]; then echo "${D}not pushed (no upstream)${R}"; return; fi
+  case $track in
+    "[gone]") echo "${D}upstream $up was deleted (usually after the PR merged)${R}" ;;
+    "") echo "${D}in sync with $up${R}" ;;
+    *) # "[ahead 1]" "[behind 3]" "[ahead 1, behind 3]"
+       local a="" bh="" out=""
+       case $track in *ahead*) a=${track#*ahead }; a=${a%%[],]*} ;; esac
+       case $track in *behind*) bh=${track#*behind }; bh=${bh%%]*} ;; esac
+       [ -n "$a" ] && out="$a not pushed to $up"
+       [ -n "$bh" ] && out="${out:+$out, }$bh behind $up"
+       echo "${D}$out${R}" ;;
+  esac
 }
 preview() {  # $1 종류 $2 경로 $3 브랜치
   local kind=$1 path=$2 branch=$3
@@ -642,12 +719,12 @@ preview() {  # $1 종류 $2 경로 $3 브랜치
       [ -d "$path" ] || return 0
       local st; st=$(git -C "$path" status --short 2>/dev/null | head -12)
       [ -n "$st" ] && printf '\n%suncommitted changes%s\n%s\n' "$Y" "$R" "$st"
-      echo; merge_summary "$branch"
+      echo; merge_summary "$branch"; upstream_summary "$branch"
       echo; git -C "$path" log --oneline --color=always -8 2>/dev/null ;;
     branch)
       printf '%s%s%s  %sno worktree%s\n' "$B" "$branch" "$R" "$D" "$R"
       printf 'would create: %s\n\n' "$(abbrev_home "$(wt_dir "$branch")")"
-      merge_summary "$branch"; echo; git log --oneline --color=always -8 "$branch" 2>/dev/null ;;
+      merge_summary "$branch"; upstream_summary "$branch"; echo; git log --oneline --color=always -8 "$branch" 2>/dev/null ;;
     remote)
       printf '%s%s%s  %sremote only%s\n' "$B" "$path" "$R" "$D" "$R"
       printf 'would create: branch %s tracking it → %s\n\n' "$branch" "$(abbrev_home "$(wt_dir "$branch")")"

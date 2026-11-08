@@ -41,11 +41,12 @@ tmux 세션 (세션 디렉토리 = @tmux-dev-path, 없으면 session_path)
 │ │ >                                │  │ merged into origin/main  │  ← 미리보기: 상태·판정·로그
 │ ╰──────────────────────────────────╯  │ a1b2c3 fix: ...          │
 │ ╭──────────────────────────────────╮  │                          │
-│ │ main      ~/dev/jwlee/dotfiles  ●0                            │  ← 열린 윈도우 (창 번호 순)
-│ │ feat-x    ~/.local/…/feat-x     ●3 merged                     │
-│ │ fix-y     ~/.local/…/fix-y      ◷ dirty [ahead 2]             │  ← 최근 고른 것
-│ │ spike     (branch)                                            │  ← 로컬 브랜치 (최근 커밋 순)
-│ │ origin/pr-12  (remote)                                        │  ← 원격 (같은 이름 로컬 있으면 숨김)
+│ │ main      ●0 2h ~/dev/jwlee/dotfiles                          │  ← 열린 윈도우 (창 번호 순)
+│ │ fix-y     ◷ +2 dirty 3 1d                                     │  ← 최근 고른 것
+│ │ feat-z    +5 3d claude:feat-z                                 │  ← 진행 중 워크트리 (최근 커밋 순)
+│ │ feat-x    merged 2d                                           │  ← 끝난 워크트리 (흐리게)
+│ │ spike     +1 2w (branch) try another layout                   │  ← 로컬 브랜치 (진행 중 → 끝남)
+│ │ origin/pr-12  4d (remote) fix: ...                            │  ← 원격 (같은 이름 로컬 있으면 숨김)
 │ ╰──────────────────────────────────╯  │                          │
 │ ─────────────────────────────────────│                          │
 │     enter open · alt-enter new branch · alt-l layout · ctrl-x …  │  ← 푸터: 안내 · 확인 · 결과
@@ -54,7 +55,13 @@ tmux 세션 (세션 디렉토리 = @tmux-dev-path, 없으면 session_path)
 
 - 행은 5칸 `"<이름>\t<표시>\t<종류>\t<경로>\t<브랜치>"`. fzf 는 1·2칸을 보이고 1칸만 검색한다. 종류는
   `worktree | prunable | branch | remote | dir`.
-- 마커: `●N` 열린 창 · `◷` 최근 · `dirty` · `merged` · `[ahead n, behind m]` · `missing`(디렉토리가 사라진 워크트리) · `locked`.
+- 행 모양 `<이름 30칸> <창·최근> <상태> <dirty N> <나이> <짧은 위치 | (branch) 제목 | (remote) 제목>` (2026-11-09).
+  마커를 위치보다 앞에 둔다: 위치가 길어(50~70자) 미리보기가 켜진 목록 폭에서는 뒤에 붙인 마커가 잘려 안 보였다.
+- 마커: `●N` 열린 창 · `◷` 최근 · 상태는 **베이스 기준 하나**: `merged`(모두 들어감) · `new`(브랜치 끝이 베이스 끝과 같다 =
+  아직 커밋이 없다) · `+N`(베이스에 없는 커밋 수) · `dirty N`(커밋 안 된 변경 수) · `missing` · `locked` · 나이(마지막 커밋,
+  `5m 3h 2d 3w 4mo 2y`). 브랜치 자신의 업스트림 대비(ahead/behind/gone)는 행에서 빼고 미리보기에 말로 쓴다
+  ("2 not pushed to origin/x", "upstream … was deleted"). 두 기준이 한 행에 섞여 헷갈렸다.
+- 위치: 표준 모음 위치는 생략(미리보기에 전체 경로), Claude Code 의 `<메인>/.claude/worktrees/x` 는 `claude:x`, 나머지는 `~/…`.
   마커 없는 목록을 먼저 그리고 fzf 의 `load` 이벤트에서 `--marks` 로 바꿔 끼운다(행마다 git 이 돌아 비싸다).
 
 ## worktree 모드의 동작
@@ -139,7 +146,9 @@ prefix S 와 같다 (session-picker.md "띄우기" 절): `run-shell -b "tmux-dev
 
 1. **W 가 만드는 것은 윈도우다.** 워크트리는 그중 흔한 경우. 모드는 worktree · subdirectory · directory (사용자 정리).
 2. **저장소 판정은 세션 디렉토리.** 패널 cwd 기준이던 것을 바꿨다. subdirectory 의 시작점도 같다.
-3. **목록 순서**: 열린 창 → 최근 → 나머지 워크트리 → 로컬 브랜치 → `origin/*`. 메인 체크아웃도 워크트리 행이다.
+3. **목록 순서**: 열린 창 → 최근 → 진행 중 워크트리 → 끝난 워크트리(merged, 흐리게) → 로컬 브랜치(진행 중 → 끝남) →
+   `origin/*`, 묶음 안은 최근 커밋 순. 메인 체크아웃도 워크트리 행이다. 끝난 것이 아래로 가는 것은 마커를 읽은 뒤다
+   (2026-11-09: 실제 dotfiles 에서 59행 중 48행이 끝난 에이전트 워크트리라 진행 중인 작업이 묻혔다).
 4. **만들기는 푸터에서 먼저 묻는다.** enter / alt-l(레이아웃) / esc. 예전 "후보가 없으면 Enter = 새 브랜치" 는 없앴다
    (S 의 "enter 는 열기만, 만들기는 alt-enter" 와 같은 방향).
 5. **백업 이름은 날짜 경로 + 충돌 시 -2, -3** (사용자 결정).
@@ -147,6 +156,8 @@ prefix S 와 같다 (session-picker.md "띄우기" 절): `run-shell -b "tmux-dev
 7. **정리는 피커 안에서, 피커 유지.** 피커가 정리할 창 안에 있으면 다른 패널만 닫는다(modal pane 은 옮길 수 없다).
 8. **pane 전환은 맨 마지막에.** 자기 창을 닫는 정리를 먼저 패널 친화적으로 바꾼 뒤 옮겼다.
 9. **화면 문구는 영어**, 주석·문서는 한국어.
+10. **행 표시 (2026-11-09)**: 마커를 위치 앞으로, 상태는 베이스 기준 하나(merged / new / +N), 업스트림은 미리보기로,
+    위치 줄이기(표준 생략, claude:), 브랜치·원격 행에 나이와 제목, `dirty N`, 이름 칸 최대 30.
 
 ## 구현 구조와 시험
 
