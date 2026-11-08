@@ -7,14 +7,15 @@
 
 ## 기본 흐름: 워크트리를 먼저, 에이전트는 그 안에서
 
-1. 저장소 세션에서 `prefix W`, 브랜치 이름을 치고 Enter. 워크트리와 윈도우(왼쪽 셸 / 오른쪽 nvim)가 생긴다.
+1. 저장소 세션에서 `prefix W`, 브랜치 이름을 치고 alt-enter, 푸터의 확인에 Enter. 워크트리와 윈도우(왼쪽 셸 / 오른쪽 nvim)가
+   생긴다. 이미 있는 브랜치는 그 행에서 Enter (역시 푸터에서 한 번 묻는다).
 2. 왼쪽 셸에서 `claude`. 에이전트는 그 트리에서 커밋·푸시하고 `gh pr create --draft` 로 리뷰 화면을 연다.
 3. 머지는 GitHub 버튼이나 `gh pr merge --rebase`. 원격 브랜치 삭제는 GitHub 의 자동 삭제에 맡긴다
    (`--delete-branch` 는 워크트리에 체크아웃된 로컬 브랜치를 지우려다 실패한다).
-4. `prefix W` 에서 그 행에 ctrl-x. 먼저 main 을 origin 에 맞출지 묻고(PR 로 머지했으면 여기서 y. 판정이 로컬 main
-   기준이라 이 순서다), 워크트리 제거, 윈도우 닫기, 브랜치는 `refs/archive/<날짜>/<브랜치>` 에 보관한 뒤 삭제.
-   로컬에서 머지했어도 같은 ctrl-x 다(동기화 질문이 "이미 최신" 으로 끝난다). ff·rebase·merge commit·squash 어느
-   방식이든 판정된다.
+4. `prefix W` 에서 그 행에 ctrl-x. 워크트리 제거, 윈도우 닫기, 브랜치는 `refs/archive/<날짜>/<브랜치>` 에 보관한 뒤 삭제.
+   머지 판정은 로컬 main 이 origin 보다 뒤처져 있으면 origin/main 으로 하고, 피커가 뜰 때 백그라운드로 fetch 하므로
+   PR 로 머지한 뒤 pull 하지 않아도 `merged` 로 보인다. 로컬에서 머지했어도 같은 ctrl-x 다. ff·rebase·merge commit·squash
+   어느 방식이든 판정된다.
 
 손으로 할 때도 같은 네 단계다. 수동 워크트리에서 띄운 `claude` 에는 메인 체크아웃 편집을 막는 격리 검사가 없으므로
 전역 `~/.claude/CLAUDE.md` 에 아래 지침을 둔다.
