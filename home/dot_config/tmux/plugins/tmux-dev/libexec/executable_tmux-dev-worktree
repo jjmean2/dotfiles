@@ -409,7 +409,8 @@ is_merged() {
     ids=$(git log -p --format=%H "$rsha" --not "$bsha" 2>/dev/null | git patch-id --stable | cut -d' ' -f1)
     if [ -n "$ids" ] && [ -z "$(grep -vxF -f "$PATCHIDS" <<< "$ids")" ]; then result=1; fi
     if [ "$result" = 0 ] && mb=$(git merge-base "$bsha" "$rsha" 2>/dev/null); then
-      id=$(git diff "$mb" "$rsha" 2>/dev/null | git patch-id --stable | cut -d' ' -f1)
+      # --no-ext-diff: diff.external(difft) 출력은 patch 가 아니라 patch-id 가 비고, 빈 id 는 "머지됨"이 된다
+      id=$(git diff --no-ext-diff "$mb" "$rsha" 2>/dev/null | git patch-id --stable | cut -d' ' -f1)
       if [ -z "$id" ] || grep -qxF "$id" "$PATCHIDS"; then result=1; fi
     fi
   fi
