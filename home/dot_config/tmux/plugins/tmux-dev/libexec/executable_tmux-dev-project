@@ -90,7 +90,7 @@ worktree_main() {
   return 0
 }
 fits_mode() { if [ "$1" = repo ]; then [ -d "$2/.git" ]; else [ -d "$2" ]; fi; }
-mode_name() { if [ "$1" = repo ]; then printf '저장소'; else printf '디렉토리'; fi; }
+mode_name() { if [ "$1" = repo ]; then printf 'repository'; else printf 'directory'; fi; }
 
 # --- 상태 (피커 하나당 디렉토리 하나) ----------------------------------------------
 # fzf 가 띄우는 콜백은 매번 새 프로세스라 상태를 파일로 주고받는다. 경로는 환경변수로 물려받는다.
@@ -217,10 +217,10 @@ record_parent() {  # 위치 피커로 무언가를 만든 부모. 다음 위치 
 apply_decision() {
   local path=$1 create=$2
   case $create in
-    dir)  mkdir -p "$path" || die "만들 수 없습니다: $(home_disp "$path")" ;;
-    repo) mkdir -p "$path" && git -C "$path" init -q || die "저장소를 만들 수 없습니다: $(home_disp "$path")" ;;
+    dir)  mkdir -p "$path" || die "cannot create: $(home_disp "$path")" ;;
+    repo) mkdir -p "$path" && git -C "$path" init -q || die "cannot create repository: $(home_disp "$path")" ;;
   esac
-  path=$(canon_dir "$path") || die "디렉토리가 아닙니다: $1"
+  path=$(canon_dir "$path") || die "not a directory: $1"
   LAYOUT=$3
   [ -n "$4" ] && [ -n "$LAYOUT" ] && [ -d "$path/.git" ] && git -C "$path" config tmux-dev.layout "$LAYOUT"
   record_history "$path"
@@ -234,30 +234,30 @@ apply_decision() {
 classify() {  # $1 경로 글자 $2 모드
   local p a rest="" top d extra=""
   J_KIND=block J_PATH="" J_CREATE="" J_SAY=""
-  p=$(norm_path "$1") || { J_SAY="${Y}절대 경로가 아니다${R}"; return; }
+  p=$(norm_path "$1") || { J_SAY="${Y}not an absolute path${R}"; return; }
   d=$(home_disp "$p")
-  if [ -e "$p" ] && [ ! -d "$p" ]; then J_SAY="${Y}파일이 이미 있다: $d${R}"; return; fi
+  if [ -e "$p" ] && [ ! -d "$p" ]; then J_SAY="${Y}a file already exists: $d${R}"; return; fi
   if [ -d "$p" ]; then
     J_PATH=$(canon_dir "$p"); d=$(home_disp "$J_PATH")
-    if [ -f "$J_PATH/.git" ]; then J_KIND=worktree; J_SAY="enter 워크트리로 이동: $d"
+    if [ -f "$J_PATH/.git" ]; then J_KIND=worktree; J_SAY="enter go to worktree: $d"
     else
-      J_KIND=open; J_SAY="enter 열기: $d"
-      [ "$2" = repo ] && [ ! -d "$J_PATH/.git" ] && J_SAY+=" ${D}(저장소 아님. git init 은 하지 않는다)${R}"
+      J_KIND=open; J_SAY="enter open: $d"
+      [ "$2" = repo ] && [ ! -d "$J_PATH/.git" ] && J_SAY+=" ${D}(not a repository; no git init)${R}"
     fi
     return
   fi
   a=$p; while [ ! -e "$a" ]; do rest="/$(basename "$a")$rest"; a=$(dirname "$a"); done   # 있는 가장 가까운 조상
-  [ -d "$a" ] || { J_SAY="${Y}중간 경로가 파일이다: $(home_disp "$a")${R}"; return; }
-  [ -w "$a" ] || { J_SAY="${Y}쓸 수 없다: $(home_disp "$a")${R}"; return; }
-  [ "$rest" = "/$(basename "$p")" ] || extra=" · 중간 디렉토리도"
+  [ -d "$a" ] || { J_SAY="${Y}a parent is a file: $(home_disp "$a")${R}"; return; }
+  [ -w "$a" ] || { J_SAY="${Y}not writable: $(home_disp "$a")${R}"; return; }
+  [ "$rest" = "/$(basename "$p")" ] || extra=" · with missing parents"
   top=$(git -C "$a" rev-parse --show-toplevel 2>/dev/null || true)
   a=$(canon_dir "$a"); [ "$a" = / ] && a=""; J_PATH=$a$rest; d=$(home_disp "$J_PATH")
   J_KIND=create
   if [ "$2" = repo ]; then
     J_CREATE=repo; extra=" (git init)$extra"
-    [ -n "$top" ] && extra+=" · ${Y}저장소 $(home_disp "$top") 안${R}"
+    [ -n "$top" ] && extra+=" · ${Y}inside repository $(home_disp "$top")${R}"
   else J_CREATE=dir; fi
-  J_SAY="${D}없는 경로${R} · alt-enter 만들기: $d$extra"
+  J_SAY="${D}does not exist${R} · alt-enter create: $d$extra"
 }
 # 새로 만들 이름 (경로 모양이 아닌 검색어). 위치 피커에서 고른 디렉토리 아래에 붙는다. a/b 처럼 / 를 넣어도 된다
 name_ok() {
@@ -270,7 +270,8 @@ name_ok() {
 # --- 피커 화면 -------------------------------------------------------------------
 # 맨 위 헤더(--header-first)에 그리는 모드 탭. 지금 모드는 굵게. 클릭하면 그 모드로 간다(click-header → on_tab_click).
 # 이름 사이는 탭 문자다: fzf 는 클릭한 단어(FZF_CLICK_HEADER_WORD)를 --delimiter 로 자르는데, 행 칸 구분 때문에
-# --delimiter '\t' 라서 공백으로 띄우면 "저장소  디렉토리" 가 한 단어로 온다. 화면에는 --tabstop 2 로 두 칸 간격이다.
+# --delimiter '\t' 라서 공백으로 띄우면 "repository  directory" 가 한 단어로 온다. 화면에는 --tabstop 2 로 두 칸 간격이다.
+# 탭 이름은 영어다: fzf 의 클릭 단어 계산이 한글 같은 여러 바이트 글자 뒤에서 어긋난다 (session-picker.md 화면 절).
 tabs() {
   local m out=""
   for m in repo dir; do
@@ -278,42 +279,42 @@ tabs() {
   done
   printf '%s' "${out%$'\t'}"
 }
-hint() { printf '%s' "${D}enter 열기 · alt-enter 새로 만들기 · alt-l 레이아웃 · tab 모드 · alt-h 키 안내${R}"; }
+hint() { printf '%s' "${D}enter open · alt-enter new · alt-l layout · tab mode · alt-h keys${R}"; }
 create_hint() {  # 검색어가 있으면 늘 보이는 만들기 안내 (결과가 있어도 alt-enter 는 친 이름으로 만든다)
-  local q=${1%/} what="디렉토리"; st_get mode; [ "${ST:-repo}" = repo ] && what="저장소"
-  printf '%s' "alt-enter ${B}'$q'${R} 새 $what 만들기 ${D}· enter 열기 · alt-h 키 안내${R}"
+  local q=${1%/} what="directory"; st_get mode; [ "${ST:-repo}" = repo ] && what="repository"
+  printf '%s' "alt-enter create $what ${B}'$q'${R} ${D}· enter open · alt-h keys${R}"
 }
 help_keys() {
   cat <<EOF
-${B}prefix S: 디렉토리 → 세션${R}
+${B}prefix S: directory → session${R}
 
-enter         커서 항목의 세션으로 (없으면 만든다)
-alt-enter     친 이름으로 새로 만들기 → 위치 고르기
-alt-l         레이아웃을 골라서 열기
-                enter 이번만 · alt-enter 저장소 기본으로도
-tab           모드: 저장소 ↔ 디렉토리 (맨 위 모드 이름을 클릭해도)
-ctrl-]        커서 경로를 검색어에 채우기
-alt-p         미리보기 오른쪽 → 아래 → 숨김 (겹쳐 뜬 목록도)
-alt-h         이 안내 열고 닫기
-esc           검색어 지우기 (겹쳐 뜬 목록에서는 돌아가기)
-ctrl-c        닫기
+enter         go to the item's session (created if missing)
+alt-enter     create new from the typed name → pick a location
+alt-l         open with a chosen layout
+                enter this time only · alt-enter also save as repo default
+tab           mode: repository ↔ directory (or click a mode name at the top)
+ctrl-]        put the item's path into the query
+alt-p         preview right → bottom → hidden (overlaid lists too)
+alt-h         toggle this help
+esc           clear the query (in overlaid lists: go back)
+ctrl-c        close
 
-${B}새로 만들기${R}
-이름을 치고 alt-enter. 위치를 고르는 목록이 겹쳐 뜬다.
-  enter       거기에 만들고 연다 (저장소 모드는 git init)
-  alt-l       레이아웃을 골라 만들고 연다
-  esc         돌아가기
-위쪽은 최근에 만든 곳, 그다음은 커서 항목의 부모.
+${B}create new${R}
+Type a name and press alt-enter. A location list opens on top.
+  enter       create there and open (repository mode runs git init)
+  alt-l       create with a chosen layout and open
+  esc         go back
+Recently used locations first, then the item's parent.
 
-${B}경로 입력${R}
-/ 나 ~ 로 시작하면 경로 접두 일치로 거른다.
-  enter       그 경로가 있으면 연다 (목록 밖이어도)
-  alt-enter   그 경로에 바로 만든다
-끝 슬래시는 "이 디렉토리 아래" 다.
+${B}path input${R}
+A query starting with / or ~ filters by path prefix.
+  enter       open that path if it exists (even outside the list)
+  alt-enter   create at that path directly
+A trailing slash means "under this directory".
 
-${B}목록${R}
-● 열린 세션 · ◷ 최근 고른 곳 · 나머지는 홈 전체 탐색
-탐색 제외: ~/.config/tmux-dev/ignore (gitignore 문법)
+${B}list${R}
+● open session · ◷ recently picked · the rest scans your home
+excluded from scan: ~/.config/tmux-dev/ignore (gitignore syntax)
 EOF
 }
 # tmux 의 떠 있는 창 테두리와 같은 모양으로 그린다 (피커 창은 테두리 없이 띄운다). 런타임에 읽어 tmux.conf 를 따라간다.
@@ -346,7 +347,7 @@ footer_now() {  # 메인 목록의 푸터
   if [ -z "$q" ]; then hint
   elif pathish "$q"; then
     if [ "${FZF_MATCH_COUNT:-1}" -eq 0 ]; then local mode; st_get mode; mode=${ST:-repo}; classify "$q" "$mode"; printf '%s' "$J_SAY"
-    else printf '%s' "enter 커서 항목 열기 ${D}· alt-enter 친 경로에 만들기${R}"; fi
+    else printf '%s' "enter open the item ${D}· alt-enter create at the typed path${R}"; fi
   else create_hint "$q"; fi
 }
 nope() { printf 'bell+%s' "$(act change-footer "$1")"; }   # 할 일이 없을 때: 벨과 안내만
@@ -371,7 +372,7 @@ open_target() {  # $1 커서 항목의 실제 경로 (없으면 빈 값)
     case $J_KIND in open|worktree) return 0 ;; esac
     nope "$J_SAY"; return 1
   fi
-  if [ -n "$q" ]; then nope "${Y}맞는 항목이 없다${R} · $(create_hint "$q")"; else nope "$(hint)"; fi
+  if [ -n "$q" ]; then nope "${Y}no match${R} · $(create_hint "$q")"; else nope "$(hint)"; fi
   return 1
 }
 on_enter() {
@@ -396,14 +397,14 @@ choose_layout_step() {  # execute 안에서 돈다. 고른 것을 상태에 쓴�
   { [ -d "$path/.git" ] || [ "$create" = repo ]; } && can=save
   style_opts
   LAYOUT_ESC=abort
-  LAYOUT_FZF_OPTS=("${STYLE[@]}" --border-label " 레이아웃 · $(home_disp "$path") ")
+  LAYOUT_FZF_OPTS=("${STYLE[@]}" --border-label " layout · $(home_disp "$path") ")
   picked=$(choose_layout "$SELF --layout-art" "$can") || return 0
   st_set layout "$picked"
 }
 on_create() {  # alt-enter: 경로를 쳤으면 그 자리에 바로, 이름을 쳤으면 위치 피커를 겹쳐 띄운다
   local mode q=${FZF_QUERY:-}; st_get mode; mode=${ST:-repo}
   st_del layout loc
-  if [ -z "$q" ]; then nope "${Y}만들 이름을 먼저 친다${R}"; return; fi
+  if [ -z "$q" ]; then nope "${Y}type a name first${R}"; return; fi
   if pathish "$q"; then
     classify "$q" "$mode"
     case $J_KIND in
@@ -413,7 +414,7 @@ on_create() {  # alt-enter: 경로를 쳤으면 그 자리에 바로, 이름을 
     esac
     return
   fi
-  name_ok "$q" || { nope "${Y}이름으로 쓸 수 없다: $q${R} (.. 이나 빈 칸 없이)"; return; }
+  name_ok "$q" || { nope "${Y}not a valid name: $q${R} (no .. or empty parts)"; return; }
   st_set name "${q%/}"
   [ -n "${1:-}" ] && st_set near "$(dirname "$1")" || st_del near
   printf 'execute(%s --choose-location)+transform(%s --on after-location)' "$SELF" "$SELF"
@@ -468,7 +469,7 @@ loc_rows() {
   {
     local p n=0
     while IFS= read -r p; do [ "$n" -lt "$RECENT_MAX" ] || break; [ -d "$p" ] || continue; row "$p" "${D}◷${R}"; n=$((n + 1)); done < <(parents_paths)
-    st_get near; [ -n "$ST" ] && [ -d "$ST" ] && row "$ST" "${D}↳ 커서 옆${R}"
+    st_get near; [ -n "$ST" ] && [ -d "$ST" ] && row "$ST" "${D}↳ next to the item${R}"
     scan_rows dir
   } | awk -F'\t' '!seen[$3]++ { print; fflush() }'
 }
@@ -477,8 +478,8 @@ loc_preview() {  # $1 고를 부모 → 만들어질 경로와 판정, 그 아�
   [ -d "${1:-}" ] || return 0
   classify "$1/$name" "$mode"
   case $J_KIND in
-    create)  printf '%s새로 만든다%s  %s\n' "$B" "$R" "$(home_disp "$J_PATH")"; printf '%s\n' "${J_SAY#*: }" | sed 's/^[^ ]* *//' ;;
-    open|worktree) printf '%s이미 있다%s  %s  %s(enter 면 연다)%s\n' "$Y" "$R" "$(home_disp "$J_PATH")" "$D" "$R" ;;
+    create)  printf '%swill create%s  %s\n' "$B" "$R" "$(home_disp "$J_PATH")"; printf '%s\n' "${J_SAY#*: }" | sed 's/^[^ ]* *//' ;;
+    open|worktree) printf '%salready exists%s  %s  %s(enter opens it)%s\n' "$Y" "$R" "$(home_disp "$J_PATH")" "$D" "$R" ;;
     *) printf '%s\n' "$J_SAY" ;;
   esac
   echo; dir_preview "$1"
@@ -503,11 +504,11 @@ on_loc_after_layout() {  # 레이아웃에서 esc 면 위치 피커에 그대로
   st_get near_pick; st_set loc "$ST"; printf 'accept'
 }
 choose_location_step() {  # execute 안에서 돈다. 고른 부모는 상태 loc 에 남는다 (esc 면 남기지 않는다)
-  local name what="디렉토리"; st_get name; name=$ST; st_get mode; [ "${ST:-repo}" = repo ] && what="저장소"
+  local name what="directory"; st_get name; name=$ST; st_get mode; [ "${ST:-repo}" = repo ] && what="repository"
   style_opts
   fzf --ansi --delimiter '\t' --with-nth 1,2 --nth 1 --tabstop 2 --scheme path --tiebreak pathname,index \
-      "${STYLE[@]}" --border-label " 새 $what '$name' 를 어디에? " --prompt '위치> ' \
-      --footer "${D}enter 여기에 만들기 · alt-l 레이아웃 골라 만들기 · esc 돌아가기${R}" --footer-border line \
+      "${STYLE[@]}" --border-label " new $what '$name': where? " --prompt 'location> ' \
+      --footer "${D}enter create here · alt-l create with a layout · esc back${R}" --footer-border line \
       --preview "$SELF --loc-preview {3}" --preview-window 'right,45%,border-left' \
       --bind 'change:first' --bind 'esc:abort' \
       --bind "enter:transform($SELF --on loc-enter {3})" \
@@ -518,7 +519,7 @@ choose_location_step() {  # execute 안에서 돈다. 고른 부모는 상태 lo
 }
 
 pick() {
-  command -v fzf >/dev/null || die "fzf 가 필요합니다"
+  command -v fzf >/dev/null || die "fzf is required"
   TMUX_DEV_STATE=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev-project.XXXXXX"); export TMUX_DEV_STATE
   # shellcheck disable=SC2064  # 지금 값의 디렉토리를 지운다
   trap "rm -rf '$TMUX_DEV_STATE'" EXIT
@@ -529,7 +530,7 @@ pick() {
   # 바인딩은 fzf 기본 키와 겹치지 않는 것만. enter·esc·tab·double-click 은 같은 뜻으로 덮는다(판정을 거치게).
   # 테두리 라벨은 화면 제목(겹쳐 뜨는 위치·레이아웃 목록과 같은 문법), 모드 탭은 맨 위 헤더 (session-picker.md 화면 절).
   fzf --ansi --delimiter '\t' --with-nth 1,2 --nth 1 --tabstop 2 --scheme path --tiebreak pathname,index \
-      "${STYLE[@]}" --border-label ' 세션 열기 ' --header "$(tabs repo)" --header-first --prompt '> ' \
+      "${STYLE[@]}" --border-label ' open session ' --header "$(tabs repo)" --header-first --prompt '> ' \
       --footer "$(hint)" --footer-border line \
       --preview "$SELF --preview {3}" --preview-window 'right,45%,border-left' \
       --bind 'start:unbind(result)' \
@@ -576,11 +577,11 @@ while [ $# -gt 0 ]; do
     --layouts)    layout_list; exit 0 ;;
     --layout-art) layout_art "${2:-}"; exit 0 ;;
     -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    -*) die "모르는 옵션: $1" ;;
+    -*) die "unknown option: $1" ;;
     *) target=$1; shift ;;
   esac
 done
 
 if [ -z "$target" ]; then pick; exit 0; fi
-target=$(canon_dir "$target") || die "디렉토리가 아닙니다: $target"   # CLI 는 있는 디렉토리만. 최근 내역에 남기지 않는다
+target=$(canon_dir "$target") || die "not a directory: $target"   # CLI 는 있는 디렉토리만. 최근 내역에 남기지 않는다
 open_path "$target"

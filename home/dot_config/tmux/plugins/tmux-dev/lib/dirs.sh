@@ -17,7 +17,7 @@ ignore_args() {  # fd 에 넘길 제외 인자를 IGNORE_ARGS 배열에
   if [ -f "$TMUX_DEV_IGNORE" ]; then IGNORE_ARGS=(--ignore-file "$TMUX_DEV_IGNORE")
   else IGNORE_ARGS=(--exclude Library --exclude node_modules); fi
 }
-need_fd() { [ -n "$FD" ] || die "fd 가 필요합니다 (brew install fd)"; }
+need_fd() { [ -n "$FD" ] || die "fd is required (brew install fd)"; }
 
 # 저장소 = .git 이 디렉토리인 곳 (메인 체크아웃). .git 이 파일인 워크트리·서브모듈은 --type d 로 빠진다.
 # 숨김 중 .git 만 들어가도록 .git 이 아닌 숨김 이름을 모두 뺀다. --prune 은 .git 안으로 내려가지 않게 한다.
