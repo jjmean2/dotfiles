@@ -1,60 +1,132 @@
 {
-    "profiles": [
-        {
-            "complex_modifications": {
-                "rules": [
-                    {
-                        "description": "Ghostty: 한글 입력 상태에서 tmux prefix(ctrl+b) / Esc / ctrl+[ 를 누르면 영문으로 바꾼 뒤 그 키를 보낸다",
-                        "manipulators": [
-                            {
-                                "type": "basic",
-                                "from": {
-                                    "key_code": "b",
-                                    "modifiers": { "mandatory": ["control"] }
-                                },
-                                "to": [
-                                    { "select_input_source": { "language": "^en$" } },
-                                    { "key_code": "b", "modifiers": ["left_control"] }
-                                ],
-                                "conditions": [
-                                    { "type": "input_source_if", "input_sources": [{ "language": "^ko$" }] },
-                                    { "type": "frontmost_application_if", "bundle_identifiers": ["^com\\.mitchellh\\.ghostty$"] }
-                                ]
-                            },
-                            {
-                                "type": "basic",
-                                "from": { "key_code": "escape" },
-                                "to": [
-                                    { "select_input_source": { "language": "^en$" } },
-                                    { "key_code": "escape" }
-                                ],
-                                "conditions": [
-                                    { "type": "input_source_if", "input_sources": [{ "language": "^ko$" }] },
-                                    { "type": "frontmost_application_if", "bundle_identifiers": ["^com\\.mitchellh\\.ghostty$"] }
-                                ]
-                            },
-                            {
-                                "type": "basic",
-                                "from": {
-                                    "key_code": "open_bracket",
-                                    "modifiers": { "mandatory": ["control"] }
-                                },
-                                "to": [
-                                    { "select_input_source": { "language": "^en$" } },
-                                    { "key_code": "open_bracket", "modifiers": ["left_control"] }
-                                ],
-                                "conditions": [
-                                    { "type": "input_source_if", "input_sources": [{ "language": "^ko$" }] },
-                                    { "type": "frontmost_application_if", "bundle_identifiers": ["^com\\.mitchellh\\.ghostty$"] }
-                                ]
-                            }
-                        ]
+  "profiles": [
+    {
+      "complex_modifications": {
+        "rules": [
+          {
+            "description": "Ghostty: 한글 입력 상태에서 tmux prefix(ctrl+b) / Esc / ctrl+[ 를 누르면 영문으로 바꾼 뒤 그 키를 보낸다",
+            "manipulators": [
+              {
+                "conditions": [
+                  {
+                    "input_sources": [
+                      {
+                        "language": "^ko$"
+                      }
+                    ],
+                    "type": "input_source_if"
+                  },
+                  {
+                    "bundle_identifiers": [
+                      "^com\\.mitchellh\\.ghostty$"
+                    ],
+                    "type": "frontmost_application_if"
+                  }
+                ],
+                "from": {
+                  "key_code": "b",
+                  "modifiers": {
+                    "mandatory": [
+                      "control"
+                    ]
+                  }
+                },
+                "to": [
+                  {
+                    "select_input_source": {
+                      "language": "^en$"
                     }
-                ]
-            },
-            "name": "Default profile",
-            "selected": true,
-            "virtual_hid_keyboard": { "keyboard_type_v2": "ansi" }
-        }
-    ]
+                  },
+                  {
+                    "key_code": "b",
+                    "modifiers": [
+                      "left_control"
+                    ]
+                  }
+                ],
+                "type": "basic"
+              },
+              {
+                "conditions": [
+                  {
+                    "input_sources": [
+                      {
+                        "language": "^ko$"
+                      }
+                    ],
+                    "type": "input_source_if"
+                  },
+                  {
+                    "bundle_identifiers": [
+                      "^com\\.mitchellh\\.ghostty$"
+                    ],
+                    "type": "frontmost_application_if"
+                  }
+                ],
+                "from": {
+                  "key_code": "escape"
+                },
+                "to": [
+                  {
+                    "select_input_source": {
+                      "language": "^en$"
+                    }
+                  },
+                  {
+                    "key_code": "escape"
+                  }
+                ],
+                "type": "basic"
+              },
+              {
+                "conditions": [
+                  {
+                    "input_sources": [
+                      {
+                        "language": "^ko$"
+                      }
+                    ],
+                    "type": "input_source_if"
+                  },
+                  {
+                    "bundle_identifiers": [
+                      "^com\\.mitchellh\\.ghostty$"
+                    ],
+                    "type": "frontmost_application_if"
+                  }
+                ],
+                "from": {
+                  "key_code": "open_bracket",
+                  "modifiers": {
+                    "mandatory": [
+                      "control"
+                    ]
+                  }
+                },
+                "to": [
+                  {
+                    "select_input_source": {
+                      "language": "^en$"
+                    }
+                  },
+                  {
+                    "key_code": "open_bracket",
+                    "modifiers": [
+                      "left_control"
+                    ]
+                  }
+                ],
+                "type": "basic"
+              }
+            ]
+          }
+        ]
+      },
+      "name": "Default profile",
+      "selected": true,
+      "virtual_hid_keyboard": {
+        "keyboard_type_v2": "ansi"
+      }
+    }
+  ]
 }
