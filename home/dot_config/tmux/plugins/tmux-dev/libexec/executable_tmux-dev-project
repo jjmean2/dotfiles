@@ -8,7 +8,7 @@
 #   순정 대응은 `tmux new -s 이름 -c 경로` + `prefix s`. 이 스크립트는 "없으면 만들어 준다" 와 레이아웃만 보탠다.
 #
 # 사용
-#   tmux-dev project                  피커 (tmux 안에서는 prefix S 가 팝업으로 띄운다)
+#   tmux-dev project                  피커 (tmux 안에서는 prefix S 가 modal floating pane 으로 띄운다. tmux-dev open)
 #   tmux-dev project <디렉토리>       바로 그 디렉토리의 세션으로 (있는 디렉토리만. 최근 내역에는 남기지 않는다)
 #   tmux-dev project --layout <이름>  새 세션의 레이아웃. 없으면 저장소 설정 → 전역 → ide (lib/layout.sh). --layouts 로 목록
 #   tmux-dev project --list [repo|dir|loc]  후보 목록만 출력 (디버그. loc 은 위치 피커)
@@ -91,7 +91,7 @@ worktree_main() {
 fits_mode() { if [ "$1" = repo ]; then [ -d "$2/.git" ]; else [ -d "$2" ]; fi; }
 mode_name() { if [ "$1" = repo ]; then printf '저장소'; else printf '디렉토리'; fi; }
 
-# --- 상태 (팝업 하나당 디렉토리 하나) ----------------------------------------------
+# --- 상태 (피커 하나당 디렉토리 하나) ----------------------------------------------
 # fzf 가 띄우는 콜백은 매번 새 프로세스라 상태를 파일로 주고받는다. 경로는 환경변수로 물려받는다.
 # 읽기·쓰기는 bash 내장(read, printf 리다이렉션)이라 프로세스를 더 띄우지 않는다.
 #   mode     repo | dir             help    1 이면 미리보기 자리에 키 안내
@@ -182,7 +182,12 @@ ensure_session() {  # $1 실제 경로 → 세션 id (없으면 만들고 레이
   fi
   printf '%s' "$sid"
 }
-switch_to() { if [ -n "${TMUX:-}" ]; then tmux switch-client -t "$1"; else tmux attach-session -t "$1"; fi; }
+# 피커는 창 안의 패널이라, -c 없는 switch-client 는 "가장 최근에 쓴 클라이언트" 를 옮긴다. prefix S 를 누른 클라이언트를
+# 런처가 TMUX_DEV_CLIENT 로 넘겨 준다 (libexec/tmux-dev-open). 셸에서 부르면 비어 있어 순정 동작 그대로다.
+switch_to() {
+  if [ -n "${TMUX:-}" ]; then tmux switch-client ${TMUX_DEV_CLIENT:+-c "$TMUX_DEV_CLIENT"} -t "$1"
+  else tmux attach-session -t "$1"; fi
+}
 # 워크트리를 고르면 그 워크트리로 이동한다 (session-picker.md 결정 3). 읽기를 바꾸려면 이 함수만 고친다.
 open_worktree() {
   local path=$1 sid _t win tag main
@@ -307,14 +312,17 @@ ${B}목록${R}
 탐색 제외: ~/.config/tmux-dev/ignore (gitignore 문법)
 EOF
 }
-# tmux 팝업 테두리와 같은 모양으로 그린다 (팝업은 -B 로 테두리 없이 띄운다). 런타임에 읽어 tmux.conf 를 따라간다
-popup_border() {
+# tmux 의 떠 있는 창 테두리와 같은 모양으로 그린다 (피커 창은 테두리 없이 띄운다). 런타임에 읽어 tmux.conf 를 따라간다.
+# 읽는 곳: @float-border-lines·@float-border-style (tmux.conf 가 팝업과 floating pane 공용으로 둔다), 없으면 popup-border-*.
+# popup-* 옵션은 tmux 3.9 에서 없어진다.
+float_opt() { local v; v=$(tmux show -gqv "@float-$1" 2>/dev/null); [ -n "$v" ] || v=$(tmux show -gqv "popup-$1" 2>/dev/null); printf '%s' "$v"; }
+float_border() {
   BORDER=rounded BCOLOR=""
   [ -n "${TMUX:-}" ] || return 0
-  case $(tmux show -gqv popup-border-lines 2>/dev/null) in
+  case $(float_opt border-lines) in
     rounded) BORDER=rounded ;; double) BORDER=double ;; heavy) BORDER=bold ;; *) BORDER=sharp ;;
   esac
-  local fg; fg=$(tmux show -gqv popup-border-style 2>/dev/null | sed -n 's/.*fg=\([^,]*\).*/\1/p')
+  local fg; fg=$(float_opt border-style | sed -n 's/.*fg=\([^,]*\).*/\1/p')
   case $fg in   # fzf 가 모르는 색 이름을 넘기면 fzf 가 뜨지 않으므로 아는 꼴만 넘긴다
     colour[0-9]*|color[0-9]*) BCOLOR=${fg#colo*r} ;;
     '#'[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]|[0-9]|[0-9][0-9]|[0-9][0-9][0-9]) BCOLOR=$fg ;;
@@ -322,7 +330,7 @@ popup_border() {
   esac
 }
 style_opts() {  # STYLE 배열: 피커와 겹쳐 뜨는 목록(위치, 레이아웃)이 같이 쓴다
-  popup_border
+  float_border
   STYLE=(--border "$BORDER" --border-label-pos 3 --input-border "$BORDER" --list-border "$BORDER" --reverse --height=100%)
   [ -n "$BCOLOR" ] && STYLE+=(--color "border:$BCOLOR,label:$BCOLOR")
   return 0

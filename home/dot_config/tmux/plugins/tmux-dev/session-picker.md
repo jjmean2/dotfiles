@@ -38,7 +38,8 @@
 | 모드 표시 | 헤더 3줄 중 첫 줄 | 바깥 테두리 라벨의 탭 |
 | 키 안내 | 헤더 2줄 | 푸터 한 줄 + 도움말 키 |
 | 미리보기 | 오른쪽 고정 (좁으면 아래) | alt-p 로 오른쪽 → 아래 → 숨김 순환 |
-| 상태 보관 | 프롬프트 문자열 | 팝업마다 상태 디렉토리 |
+| 상태 보관 | 프롬프트 문자열 | 피커마다 상태 디렉토리 |
+| 띄우기 | `display-popup` (클라이언트 위 overlay) | modal floating pane (창 안의 패널). 아래 "띄우기" 절 |
 
 ## 모드와 후보
 
@@ -144,7 +145,7 @@ GitHub 라벨, Notion 멘션)이 쓰는 방식이다. 그 앱들은 만들기를
   하위 디렉토리보다 위에 오므로, 채운 직후 enter 는 그 항목을 연다. 이어서 `/이름` 을 치고 alt-enter 면 그 아래에 만든다.
 - **검색 대상은 경로 칸 하나다.** 행은 `<~경로>\t<표시>\t<실제 경로>` 이고 `--nth=1` 로 첫 칸만 검색한다. 표시(●, ◷, 브랜치)는
   경로 **뒤**에 붙인다. 앞에 붙이면 `^~/...` 접두 일치가 깨진다.
-- 상대 경로는 받지 않는다. 팝업을 띄운 패널의 디렉토리에 따라 결과가 달라지는 것이 이전 혼란의 원인이었다.
+- 상대 경로는 받지 않는다. 피커를 띄운 패널의 디렉토리에 따라 결과가 달라지는 것이 이전 혼란의 원인이었다.
 - 치는 동안 enter·alt-enter 가 할 일을 푸터에 미리 보여 준다. `result` 이벤트에 `bg-transform` 을 묶되 경로 모양 검색어일 때만
   `rebind(result)` 로 켠다(목록이 흘러 들어오는 동안 이벤트가 많이 나서). 검색어가 바뀌면 `bg-cancel` 로 이전 검색어의 판정을 버린다.
   빠르게 치면 낡은 결과가 늦게 도착해 최신 판정을 덮었다(시험에서 확인).
@@ -226,19 +227,54 @@ GitHub 라벨, Notion 멘션)이 쓰는 방식이다. 그 앱들은 만들기를
 - 모드 탭은 바깥 테두리 라벨이라 미리보기가 켜져 있어도 전체 폭이다. tab 이 `change-border-label` 로 바꾼다.
 - 푸터는 평소에 짧은 키 안내 한 줄이다. 검색어가 있으면 "alt-enter 'xxx' 새로 만들기" 가, 경로를 치면 enter·alt-enter 의 판정이, 할 일이 없으면 이유가 그 자리를 차지한다.
   미리보기가 오른쪽에 있으면 푸터는 목록 폭이다(fzf 배치 규칙. 바꿀 수 없다).
-- tmux 팝업은 테두리 없이(`display-popup -B`) 띄운다. 테두리는 fzf 가 그리되 tmux 팝업 테두리와 똑같이 맞춘다
-  (2026-11-07 확인: 모서리·선 글자, 테두리 색, 배경, 제목 위치가 같게 그려진다).
-  - 선 모양: tmux `popup-border-lines` → fzf `--border`. rounded→rounded, single→sharp, double→double, heavy→bold.
-  - 색: tmux `popup-border-style` 의 fg → fzf `--color border:<색>,label:<색>`.
-  - 배경: 따로 줄 것 없다. fzf 의 기본 배경이 팝업의 `popup-style` 배경을 그대로 물려받는다.
+- 피커 창(modal floating pane)은 테두리 없이(`new-pane -B none`) 띄운다. **테두리는 fzf 가 그린다.** 모드 탭(바깥 라벨),
+  겹쳐 뜨는 목록의 제목, 입력·목록 구획, 푸터가 모두 fzf 액션 안에서 한 번에 바뀌고, tmux 밖 셸에서도 같은 화면이
+  나오기 때문이다. 한 화면은 한 주인이 그린다.
+  - pane 테두리(`pane-border-status` + `pane-border-format`)로 바깥만 넘기는 안은 택하지 않았다(2026-11-08). tmux 가 맡을 수
+    있는 건 바깥 테두리와 그 한 줄뿐이라 입력·목록 테두리를 위한 모양 번역은 그대로 남고, 탭 갱신은 `tmux set -p`
+    호출로 갈라져 fzf 와 다시 그리는 때가 어긋날 수 있으며, 겹쳐 뜬 목록에서 돌아올 때 제목을 되돌려야 한다.
+    tmux 3.8 의 pane 테두리에는 rounded 도 없다(3.9 에 들어간다). 처음에 fzf 가 그린 이유는 "팝업 제목은 띄운 뒤 바꿀 수
+    없다" 였는데, 패널은 바꿀 수 있어도 위 이유로 결론은 같다.
+  - 모양은 tmux 의 떠 있는 창 테두리와 똑같이 맞춘다 (2026-11-07 팝업으로 확인: 모서리·선 글자, 테두리 색, 배경, 제목 위치).
+  - 선 모양: tmux `@float-border-lines` → fzf `--border`. rounded→rounded, single→sharp, double→double, heavy→bold.
+  - 색: tmux `@float-border-style` 의 fg → fzf `--color border:<색>,label:<색>`.
+  - 배경: 런처가 `@float-style` 을 `new-pane -s` 로 넘기고, fzf 의 기본 배경이 그것을 물려받는다.
   - 제목 위치: tmux 는 `╭─ 제목 ─` 이다. fzf 는 `--border-label-pos 3` 이 같다.
-  - 색과 선 모양은 피커가 뜰 때 tmux 옵션에서 읽는다(`popup_border`). tmux.conf 의 값을 바꾸면 피커도 따라간다.
-    fzf 가 모르는 색 이름을 넘기면 fzf 가 뜨지 않으므로 `#rrggbb`, `colourN`, 숫자, 기본 8색 이름만 넘긴다.
-  - tmux 팝업 제목은 띄운 뒤 바꿀 수 없다(팝업 안에서 다시 부른 display-popup 은 `-T` 를 무시한다). fzf 라벨은 바꿀 수 있어 모드 탭에 쓸 수 있다.
+  - 색과 선 모양은 피커가 뜰 때 tmux 옵션에서 읽는다(`float_border`). `@float-*` 가 없으면 `popup-*` 를 읽는다.
+    `@float-*` 는 tmux.conf 가 팝업과 floating pane 공용으로 두는 사용자 옵션이다(floating pane 에는 전역 스타일 옵션이
+    없고, `popup-*` 는 tmux 3.9 에서 없어진다). fzf 가 모르는 색 이름을 넘기면 fzf 가 뜨지 않으므로 `#rrggbb`, `colourN`,
+    숫자, 기본 8색 이름만 넘긴다.
 - fzf 에 도움말 팝업 기능은 없다. alt-h 를 누르면 미리보기 창을 키 안내로 바꿔 보여 주고(`change-preview`+`show-preview`),
   다시 누르면 원래 미리보기로 돌아간다.
 - 목록 행은 `--with-nth 1,2 --nth 1` 이다. `--with-nth '{1}  {2}'` 같은 템플릿을 쓰면 `--nth` 가 합친 문자열 전체에 걸려
   브랜치 이름까지 검색됐다(시험에서 확인). 칸 사이 정렬은 `--tabstop 2` 로 맞춘다.
+
+## 띄우기
+
+prefix S 는 피커를 **modal floating pane** 으로 띄운다(2026-11-08, 그전엔 `display-popup`). tmux 메인테이너가 팝업을
+deprecated 로 밝혔고(tmux#5135: "Popups are … going away"), 3.9 부터 `display-popup` 은 floating pane 을 여는 문서 없는
+호환 명령으로만 남는다. `popup-*` 옵션은 없어진다. floating pane 과 modal pane(`new-pane -O`)은 3.8 에 이미 있다.
+
+```
+prefix S → run-shell -b "tmux-dev open project '#{client_name}' '#{pane_id}' #{q:pane_current_path}"
+         → libexec/tmux-dev-open: 크기·가운데 자리·스타일을 계산해
+           new-pane -O -K -B none -t <패널> -c <디렉토리> -x/-y/-X/-Y -s <@float-style> -e TMUX_DEV_CLIENT=… tmux-dev project
+         → 피커(fzf)는 결정만 → fzf 가 끝나면 만들기·전환 → 스크립트가 끝나면 패널도 닫힌다
+```
+
+- **왜 런처를 거치나.** 키를 누른 클라이언트를 알 길이 `run-shell` 의 `#{client_name}` 뿐이다(3.8 에서 시험). `new-pane` 은
+  `-e` 값과 명령 문자열의 `#{}` 를 펼치지 않고, 뒤에 이어 붙인 `set -pF @client …` 는 피커가 읽을 때 아직 비어 있었다.
+  피커는 패널이라 `-c` 없는 `switch-client` 는 "가장 최근에 쓴 클라이언트" 를 옮긴다. 보통은 키를 누른 클라이언트가
+  그것이지만 우연에 기대지 않고 `switch-client -c "$TMUX_DEV_CLIENT"` 로 정한다(`die` 의 상태줄 메시지도 같다).
+- **가운데 자리.** floating pane 의 기본 위치는 왼쪽 위 계단식(4,2)이고 `-X/-Y` 는 정수 % 만 받는다(`7.5%` 는 거부).
+  런처가 크기와 자리를 칸으로 계산해 넘긴다(% 로 넘기면 크기와 위치가 따로 버림돼 한 칸씩 어긋났다).
+- **플래그.** `-O` modal(포커스를 붙잡는다. 창마다 하나), `-K` prefix 까지 피커로(팝업과 같다. 피커 안에서 prefix S 를
+  다시 눌러도 겹치지 않는다), `-B none`(테두리는 fzf, 화면 절). `-D` 는 쓰지 않는다: Esc 로 패널이 닫혀 "Esc 는 검색어
+  지우기" 와 부딪힌다. zoom 상태에서도 modal 은 위에 뜬다.
+- **팝업과 달라진 것.** 피커가 클라이언트가 아니라 창에 속한다. 같은 창을 보는 다른 클라이언트에도 보이고, 전환하는
+  순간 원래 창에 잠깐 남았다가 스크립트가 끝나면 닫힌다. 피커가 자기 창이나 세션을 부수는 동작은 없어서(결정만 하고
+  만들기·전환은 fzf 뒤) 창에 속해도 문제가 없다. 자기 창을 닫는 동작이 있는 prefix W 는 UX 를 다시 짠 뒤 옮긴다.
+- 크기 옵션 이름은 `@tmux-dev-popup-size` 그대로다(W 와 같이 쓴다). S 는 키를 누를 때 읽어서 `prefix :` 로 바꾼 값이 바로 먹는다.
 
 ## 키
 
@@ -306,10 +342,16 @@ fzf 0.74 기본 키: ctrl-a b c d e f g h j k l n p q u w y, ctrl-/, alt-b d f, 
 10. **위치 피커 후보는 디렉토리 전부.** 저장소 모드에서도 위치는 아무 디렉토리나 될 수 있다.
 11. **레이아웃은 위치 피커에서 alt-l.** 메인의 alt-l 은 있는 항목을 레이아웃 골라 열기다.
 
+2026-11-08:
+
+12. **팝업 대신 modal floating pane.** prefix S 만 먼저 옮긴다. 나머지 팝업(lazygit, nvim, 치트시트)과 prefix W 는 그대로다.
+    W 는 S 처럼 UX 를 다시 짠 뒤 옮길지 본다. 방식과 이유는 "띄우기" 절.
+13. **테두리는 계속 fzf 가 그린다.** pane 테두리로 바깥만 넘기는 안은 더 간결해지지 않는다(화면 절).
+
 ## 남은 것
 
 - 미리보기 창의 대체 배치 기준값 `<60(down,...)` 은 피커 전체 폭이 아니라 **미리보기 창의 폭**을 잰다(fzf 매뉴얼).
-  45% 에 기준 60 이면 팝업 안쪽 폭이 약 134칸 이상이어야 오른쪽에 뜨고, 이 기준값이 있으면 `change-preview-window` 의
+  45% 에 기준 60 이면 피커 창 안쪽 폭이 약 134칸 이상이어야 오른쪽에 뜨고, 이 기준값이 있으면 `change-preview-window` 의
   hidden 도 먹지 않는다. S 는 기준값을 빼고 alt-p 순환을 넣었다. **prefix W 는 아직 이 기준값을 쓴다.**
 - prefix W 피커도 같은 방향(테두리 라벨 탭, 푸터 확인, 상태 디렉토리)으로 정리할 차례다. W 의 ctrl-x 정리는 여러 단계를
   묻는 흐름이라 푸터 확인으로 옮기려면 단계 상태가 더 필요하다.
