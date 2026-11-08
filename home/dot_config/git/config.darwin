@@ -1,3 +1,8 @@
+# git diff 를 difftastic(구문 단위 비교)으로 본다. show / log -p 는 --ext-diff 를 붙여야 쓰고,
+# 한 번만 끄려면 --no-ext-diff. patch 를 파싱하는 스크립트(patch-id, apply)는 반드시 --no-ext-diff 를 붙인다.
+# add -p 와 commit -v 는 external diff 를 쓰지 않는다.
+[diff]
+	external = difft
 [difftool "vscode"]
 	cmd = code --wait --diff $LOCAL $REMOTE
 [interactive]
