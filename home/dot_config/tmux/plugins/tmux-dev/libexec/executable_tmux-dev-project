@@ -115,7 +115,10 @@ session_list() {  # "<최근 붙은 시각>US<id>US<이름>US<@tmux-dev-path>US<
 session_rows() {
   local _t _id name tag sp p
   while IFS=$US read -r _t _id name tag sp; do
-    p=${tag:-$(canon_dir "$sp")}; [ -n "$p" ] || continue
+    # 세션 디렉토리가 지워졌으면 canon_dir 이 실패한다. set -e 아래서 대입이 그 실패를 받으면
+    # 스크립트 전체가 끝나 목록이 비므로, || p="" 로 받아 그 세션만 건너뛴다
+    p=$tag; [ -n "$p" ] || p=$(canon_dir "$sp") || p=""
+    [ -n "$p" ] || continue
     fits_mode "$1" "$p" || continue
     row "$p" "${G}●${R} ${D}$name${R}$(branch_mark "$p")"
   done < <(session_list)
