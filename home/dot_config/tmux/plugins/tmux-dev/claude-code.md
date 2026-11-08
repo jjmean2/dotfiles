@@ -12,7 +12,9 @@
 2. 왼쪽 셸에서 `claude`. 에이전트는 그 트리에서 커밋·푸시하고 `gh pr create --draft` 로 리뷰 화면을 연다.
 3. 머지는 GitHub 버튼이나 `gh pr merge --rebase`. 원격 브랜치 삭제는 GitHub 의 자동 삭제에 맡긴다
    (`--delete-branch` 는 워크트리에 체크아웃된 로컬 브랜치를 지우려다 실패한다).
-4. `prefix W` 에서 그 행에 ctrl-x. 워크트리 제거, 윈도우 닫기, 브랜치는 `refs/archive/<날짜>/<브랜치>` 에 보관한 뒤 삭제.
+4. `prefix W` 에서 그 행에 ctrl-x, 푸터의 확인에 Enter. 윈도우 닫기, 워크트리 제거, 브랜치는 `refs/archive/<날짜>/<브랜치>`
+   (같은 날 같은 이름이 있으면 `-2`, `-3`)에 보관한 뒤 삭제. 머지 안 된 브랜치면 한 번 더 묻는다. 푸터에 보관 ref 와 복구
+   명령이 나오고 피커는 열린 채로 남는다.
    머지 판정은 로컬 main 이 origin 보다 뒤처져 있으면 origin/main 으로 하고, 피커가 뜰 때 백그라운드로 fetch 하므로
    PR 로 머지한 뒤 pull 하지 않아도 `merged` 로 보인다. 로컬에서 머지했어도 같은 ctrl-x 다. ff·rebase·merge commit·squash
    어느 방식이든 판정된다.
