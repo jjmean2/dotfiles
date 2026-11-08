@@ -26,18 +26,18 @@ layout_ide() {   # 왼쪽 셸(여기서 claude 등을 띄운다), 오른쪽 nvim
   tmux send-keys -t "$win.1" 'nvim' Enter   # 셸 위에서 띄워 nvim 을 닫아도 패널이 남는다
   tmux select-pane -t "$win.0"
 }
-layout_register ide "왼쪽 셸 / 오른쪽 nvim" \
+layout_register ide "shell left / nvim right" \
 '┌────────────┬────────────┐
-│ 셸         │ nvim       │
-│ (claude 등)│            │
+│ shell      │ nvim       │
+│ (claude)   │            │
 └────────────┴────────────┘'
 
 layout_plain() { # 셸 하나
   :
 }
-layout_register plain "셸 하나" \
+layout_register plain "a single shell" \
 '┌─────────────────────────┐
-│ 셸                      │
+│ shell                   │
 │                         │
 └─────────────────────────┘'
 
@@ -82,18 +82,18 @@ layout_ide-dev() {   # 왼쪽 셸, 오른쪽 위 nvim, 오른쪽 아래 dev 서�
   dev_pane "$dev" "$dir"
   tmux select-pane -t "$shell"
 }
-layout_register ide-dev "왼쪽 셸 / 오른쪽 nvim + dev 서버" \
+layout_register ide-dev "shell left / nvim + dev server right" \
 '┌────────────┬────────────┐
-│ 셸         │ nvim       │
-│ (claude 등)│            │
+│ shell      │ nvim       │
+│ (claude)   │            │
 │            ├────────────┤
-│            │ dev 서버   │
+│            │ dev server │
 └────────────┴────────────┘'
 
 layout_nvim() {   # nvim 하나 (셸 위에서 띄우므로 :q 하면 셸이 남는다)
   tmux send-keys -t "$1" 'nvim' Enter
 }
-layout_register nvim "nvim 하나" \
+layout_register nvim "nvim only" \
 '┌─────────────────────────┐
 │ nvim                    │
 │                         │
@@ -107,12 +107,12 @@ layout_nvim-dev() {  # 위 nvim, 아래 dev 서버. 포커스는 nvim
   dev_pane "$dev" "$dir"
   tmux select-pane -t "$nvim"
 }
-layout_register nvim-dev "위 nvim / 아래 dev 서버" \
+layout_register nvim-dev "nvim top / dev server bottom" \
 '┌─────────────────────────┐
 │ nvim                    │
 │                         │
 ├─────────────────────────┤
-│ dev 서버                │
+│ dev server              │
 └─────────────────────────┘'
 
 # 개인 레이아웃 (있으면)
@@ -129,7 +129,7 @@ layout_list() {   # "<이름>\t<설명>" 한 줄씩
 }
 layout_art() { layout_index "$1" && printf '%s\n' "${LAYOUT_ARTS[$LAYOUT_IDX]}"; }
 apply_layout() {
-  layout_index "$1" || { echo "모르는 레이아웃 '$1' ($(layout_list | cut -f1 | tr '\n' ' '))" >&2; return 1; }
+  layout_index "$1" || { echo "unknown layout '$1' ($(layout_list | cut -f1 | tr '\n' ' '))" >&2; return 1; }
   "layout_$1" "$2" "$3"
 }
 # 쓸 레이아웃을 정한다: $1 명령줄 값(비어 있을 수 있음) $2 저장소 디렉토리(비어 있거나 저장소가 아닐 수 있음)
@@ -149,8 +149,8 @@ resolve_layout() {
 # 미리보기 모양과 같은 곳에 둔다.
 LAYOUT_FZF_OPTS=()
 choose_layout() {
-  local out key sel header='이 윈도우를 어떤 레이아웃으로 열까요'
-  [ "${2:-}" = save ] && header+=$'\nenter: 이번만   alt-enter: 이 저장소의 기본으로도 저장 (git config tmux-dev.layout)'
+  local out key sel header='which layout for this window?'
+  [ "${2:-}" = save ] && header+=$'\nenter: this time only   alt-enter: also save as this repo\'s default (git config tmux-dev.layout)'
   out=$(layout_list | fzf --delimiter=$'\t' --with-nth=1,2 --nth=1 --prompt='layout> ' --height=100% --reverse \
         --bind "esc:${LAYOUT_ESC:-clear-query}" --expect=alt-enter --header="$header" "${LAYOUT_FZF_OPTS[@]+"${LAYOUT_FZF_OPTS[@]}"}" \
         --preview="$1 {1}" --preview-window='right,50%,border-left' \
