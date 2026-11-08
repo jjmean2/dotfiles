@@ -193,11 +193,14 @@ choose_layout_step() {  # execute 안에서 돈다. 고른 것을 상태에 쓴�
 
 # --- 위치 피커 (alt-enter 로 겹쳐 뜬다) ------------------------------------------------
 # 행은 메인 목록과 같은 꼴. 최근에 무언가를 만든 부모(◷) → 커서 항목의 부모(↳) → 디렉토리 탐색(SCAN_ROOT 아래).
+# LOC_ROOT 가 있으면 최근 부모·커서 옆도 그 아래만 (prefix W 의 subdirectory 모드). 없으면 제한 없음 (prefix S).
+under_loc_root() { [ -z "${LOC_ROOT:-}" ] && return 0; case $1 in "$LOC_ROOT"|"$LOC_ROOT"/*) return 0 ;; *) return 1 ;; esac; }
 loc_rows() {
   {
     local p n=0
-    while IFS= read -r p; do [ "$n" -lt "$RECENT_MAX" ] || break; [ -d "$p" ] || continue; row "$p" "${D}◷${R}"; n=$((n + 1)); done < <(hist_paths "$TMUX_DEV_PARENTS")
-    st_get near; [ -n "$ST" ] && [ -d "$ST" ] && row "$ST" "${D}↳ next to the item${R}"
+    while IFS= read -r p; do [ "$n" -lt "$RECENT_MAX" ] || break; [ -d "$p" ] && under_loc_root "$p" || continue; row "$p" "${D}◷${R}"; n=$((n + 1)); done < <(hist_paths "$TMUX_DEV_PARENTS")
+    st_get near; [ -n "$ST" ] && [ -d "$ST" ] && under_loc_root "$ST" && row "$ST" "${D}↳ next to the item${R}"
+    [ -n "${LOC_ROOT:-}" ] && row "$LOC_ROOT" "${D}⌂ session directory${R}"   # 탐색은 그 아래만 나오므로 시작점 자체를 넣는다
     dir_rows
   } | awk -F'\t' '!seen[$3]++ { print; fflush() }'
 }

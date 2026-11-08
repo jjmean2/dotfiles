@@ -32,11 +32,6 @@ scan_dirs() {   # 한 줄에 절대 경로 하나 (숨김 제외, .gitignore 존
   "$FD" --base-directory "$SCAN_ROOT" --absolute-path --type d "${IGNORE_ARGS[@]}" 2>/dev/null | sed 's|/$||'
 }
 
-# prefix W 의 dir 모드용: "<~경로><TAB><절대경로>". 후보가 많아(홈 전체 수만 개) git 조회는 하지 않는다.
-list_dirs() {
-  scan_dirs | awk -v home="$HOME" -v OFS='\t' '{ d = $0; if (index(d, home "/") == 1) d = "~" substr(d, length(home) + 1); else if (d == home) d = "~"; print d, $0 }'
-}
-
 # git 브랜치 이름. 후보마다 git 을 띄우면 팝업이 느려지므로 .git/HEAD 를 직접 읽는다.
 # 저장소가 아니면 빈 문자열, detached 면 짧은 해시.
 git_branch() {
@@ -64,18 +59,4 @@ dir_preview() {  # 저장소면 브랜치와 최근 커밋, 그리고 내용
     git -C "$d" log --oneline --color=always -8 2>/dev/null; echo
   fi
   ls -1Ap "$d" 2>/dev/null | head -40
-}
-
-# 친 글자를 디렉토리로: ~ 를 풀고, 상대 경로는 지금 디렉토리 기준(팝업은 패널의 디렉토리에서 열린다, display-popup -d).
-# 없으면 만들지 묻는다. 결과는 출력. 취소면 1.
-query_dir() {
-  local t; t=$(expand_tilde "$1")
-  [ -n "$t" ] || return 1
-  [[ $t = /* ]] || t=$PWD/$t
-  if [ ! -d "$t" ]; then
-    printf '%s 가 없습니다. 만들까요? [y/N] ' "$(abbrev_home "$t")" >&2
-    local ans; IFS= read -r ans || return 1
-    case $ans in y|Y) mkdir -p "$t" ;; *) return 1 ;; esac
-  fi
-  (cd "$t" && pwd)
 }
