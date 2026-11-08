@@ -135,6 +135,24 @@ chezmoi unmanaged ~/.config/nvim
 
 git 기록이 없어 잊기 쉬우므로 이름을 `local-*.lua` 로 맞춰 둔다. 지우려면 파일만 지우고 nvim 재시작.
 
+### 예 C-3. 이 머신의 프로젝트 피커(`<leader>fp`)에 경로 추가
+
+공용 목록(`lua/plugins/snacks.lua` 의 `project_patterns`)은 없는 경로를 자동으로 빼므로, 여러 머신의 경로를 함께 적어
+둬도 된다. 그 머신에만 있거나 공개 저장소에 올리기 싫은 경로(회사 저장소 등)만 머신 파일에 둔다.
+
+```lua
+-- ~/.config/nvim/lua/plugins/local-projects.lua  (chezmoi 관리 밖. 이 머신에만 있다)
+-- 마지막 * 가 프로젝트 자리다. ~/work/<저장소> 는 "~/work/*", ~/work/<묶음>/<저장소> 는 "~/work/*/*".
+vim.g.local_project_patterns = { "~/work/*" }
+return {}
+```
+
+공용 목록에 **더해진다** (공용 목록을 대체하지 않는다). 패턴은 nvim 을 시작할 때 펼치므로 바꾸면 nvim 재시작.
+
+snacks 의 `dev` 를 이 파일에서 직접 정하지 않는 이유: lazy.nvim 은 `lua/plugins/` 파일을 이름순으로 읽어서
+`local-projects.lua` 가 `snacks.lua` 보다 먼저 병합되고, opts 의 리스트는 통째로 교체되므로 뒤의 `snacks.lua` 가 덮어쓴다.
+`vim.g` 값은 spec 파일을 읽을 때 정해지고 `snacks.lua` 의 opts 함수는 그 뒤에 돌아서 순서와 상관없다.
+
 ---
 
 ## D. 이 프로젝트만: 프로젝트 안에 둔다 (dotfiles 수정 없음)
