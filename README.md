@@ -11,6 +11,7 @@
 | `home/.chezmoiscripts/` | 패키지/도구 설치 스크립트. `run_onchange_` 라서 내용이 바뀔 때만 다시 실행된다 |
 | `docos/<project>/docker-compose.yml` | 로컬에서 띄우는 docker compose 서비스. `doco <project> up` 으로 실행 |
 | `snippets/` | 기억해 두고 싶은 코드 스니펫 |
+| `docs/` | 설계·운영 문서. [`docs/tool-scope.md`](docs/tool-scope.md): 개발 도구를 모든 머신 / 일부 머신 / 이 머신 / 이 프로젝트 중 어디에 둘지 |
 
 `home/` 밖의 파일은 chezmoi 가 배포하지 않는다.
 
@@ -122,6 +123,9 @@ extras 를 바꿨으면 제목을 주어 `nvim-lock-push "chore(nvim): lang.type
 뒤 `:Lazy restore` 로 같은 commit 에 맞추고, 새로 켠 extra 는 nvim 을 다시 띄우면 설치된다. 업데이트가 뭔가를
 깨뜨리면 lockfile 커밋을 되돌리고 `:Lazy restore`.
 
+그래서 `:LazyExtras` 는 머신별 설정이 아니다 (어느 머신에서 켜든 저장소가 바뀐다). 한 머신이나 한 프로젝트에서만 쓰는
+언어는 관리 밖 `lua/plugins/local-*.lua` 나 프로젝트의 `.lazy.lua` 에 spec 으로 쓴다: [`docs/tool-scope.md`](docs/tool-scope.md).
+
 ### 자주 하는 조정
 
 - 이메일을 바꾸려면: `chezmoi init --prompt` (다시 묻는다). 옵션 없이 `chezmoi init` 을 다시 실행하면 기존 값을 유지한다.
@@ -144,6 +148,10 @@ extras 를 바꿨으면 제목을 주어 `nvim-lock-push "chore(nvim): lang.type
   (관리만 멈춘다). 필요하면 `brew uninstall --cask <이름>` 과 설정 디렉터리 삭제를 손으로 한다.
   새 기능은 `packages.yaml` 에 묶음을, `.chezmoi.toml.tmpl` 에 묻는 줄을, 필요하면 `.chezmoiignore` 에 경로를 추가한다.
   지금 있는 기능: `karabiner` (macOS. 가상 HID 드라이버 확장을 설치하므로 보안 소프트웨어가 관리하는 머신에서는 끈다).
+- **도구의 범위**: 다른 머신에서도 똑같이 필요한 도구만 dotfiles 에 넣는다. 한 머신에서만 쓰면 머신 전용 파일
+  (`mise use -g` → `~/.config/mise/config.toml`, `~/.config/nvim/lua/plugins/local-*.lua`), 한 프로젝트에서만 쓰면
+  그 프로젝트의 `mise.local.toml` + `.lazy.lua` (`.git/info/exclude` 로 무시) 에 둔다. 범위별 절차와 예시는
+  [`docs/tool-scope.md`](docs/tool-scope.md).
 - **로컬 오버라이드**: `*.local` 파일은 gitignore 대상이며 chezmoi 가 관리하지 않는다. 머신별 설정은 여기에 둔다.
 - **초기값만 제공하는 파일**: `create_` 접두사(빈 파일은 `create_empty_`). 대상에 파일이 없을 때만 만들고 이후에는 건드리지 않는다.
   (예: `git config --global` 이 기록하는 `~/.config/git/config`)
