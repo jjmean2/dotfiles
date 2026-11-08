@@ -32,12 +32,56 @@ for _, pattern in ipairs(project_patterns) do
   end
 end
 
+-- explorer 키 세 개. 기존 키의 짝이 되게 고르고, LazyVim 코어·모든 extras·snacks 피커가 안 쓰는 키로 했다.
+--   L          (explorer 목록) l(열고 편집 창으로) 의 변형: 열되 포커스는 explorer 에 남긴다.
+--   O          (explorer 목록) o(시스템 앱으로 열기) 의 변형: Finder 에서 그 파일을 선택해 보여 준다.
+--   <leader>fo (전역) <leader>fe(explorer 토글) 옆: explorer 로 "가기". 닫혀 있으면 <leader>e 처럼 열고,
+--              열려 있으면 현재 파일을 트리에서 찾아 그 위로 포커스를 옮긴다.
+--              (<leader>e 는 열려 있으면 닫아 버려서 포커스 이동에 못 쓴다.)
+
+-- 편집 창에서 explorer 로 포커스를 옮기고 현재 파일을 트리에서 보여 준다.
+local function focus_explorer()
+  local explorer = Snacks.picker.get({ source = "explorer" })[1]
+  if not explorer then
+    -- 새로 열 때는 follow_file 이 현재 파일 위치를 펼쳐 주고, 포커스도 목록에 간다.
+    Snacks.explorer({ cwd = LazyVim.root() })
+    return
+  end
+  -- explorer 안이나 터미널처럼 파일이 아닌 버퍼에서 부르면 보여 줄 파일이 없으니 포커스만 옮긴다.
+  local buf = vim.api.nvim_get_current_buf()
+  if vim.bo[buf].buftype == "" and vim.api.nvim_buf_get_name(buf) ~= "" then
+    Snacks.explorer.reveal({ buf = buf })
+  end
+  explorer:focus("list")
+end
+
 return {
   "folke/snacks.nvim",
+  keys = {
+    { "<leader>fo", focus_explorer, desc = "Focus Explorer (reveal file)" },
+  },
   opts = {
     picker = {
       sources = {
         projects = { dev = dev },
+        explorer = {
+          actions = {
+            reveal_in_finder = function(_, item)
+              if item then
+                vim.system({ "open", "-R", item.file })
+              end
+            end,
+          },
+          win = {
+            list = {
+              keys = {
+                -- confirm 이 편집 창으로 포커스를 옮겨 파일을 연 뒤, focus_list 가 explorer 로 되돌린다.
+                ["L"] = { { "confirm", "focus_list" }, desc = "Open (keep focus)" },
+                ["O"] = { "reveal_in_finder", desc = "Reveal in Finder" },
+              },
+            },
+          },
+        },
       },
     },
   },
