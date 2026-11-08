@@ -21,6 +21,9 @@
 
 #font-family = "Cascadia Code Light"
 font-family = "Fira Code Light"
+# 한글 등 특정 글리프를 다른 폰트로 대체 (font-family 를 여러 번 쓰면 fallback 순서가 됨)
+font-family = "D2Coding"
+#font-family = "Noto Sans CJK KR"
 
 # 폰트 크기 (기본값: macOS 13)
 font-size = 11
@@ -36,9 +39,6 @@ font-size = 11
 
 # 줄 간격 조정 (퍼센트 또는 픽셀 단위)
 #adjust-cell-height = 10%
-
-# 한글 등 특정 글리프를 다른 폰트로 대체 (font-family 를 여러 번 쓰면 fallback 순서가 됨)
-font-family = "D2Coding"
 
 # macOS에서 폰트를 약간 더 굵게 렌더링 (Retina에서 얇게 보일 때)
 #font-thicken = true
@@ -162,13 +162,13 @@ quick-terminal-size = 50%
 # -----------------------------------------------------------------------------
 
 # Quick Terminal 토글
-keybind = global:ctrl+alt+9=toggle_quick_terminal
+# keybind = global:ctrl+alt+9=toggle_quick_terminal
 
 # Ghostty 전체 창 표시/숨김 토글
 # opt+space 는 iTerm2 에서 오래 쓰던 hotkey 를 그대로 가져온 것이다. Alfred/Raycast 의
 # 기본 호출 키와 같고, global 이라 다른 앱에서 Option+Space 로 NBSP 를 입력하는 것도
 # 가로채지만, 해당 런처를 쓰지 않고 손에 익은 키를 우선하기로 한 의도적 선택이다.
-keybind = global:opt+space=toggle_visibility
+# keybind = global:opt+space=toggle_visibility
 
 
 # -----------------------------------------------------------------------------
@@ -222,6 +222,24 @@ keybind = global:opt+space=toggle_visibility
 #   ssh-env      : ssh 접속 시 TERM 등 환경변수 호환 처리
 # ssh-* 는 원격 서버에서 "unknown terminal type" 에러가 날 때 유용 (최신 버전 필요)
 #shell-integration-features = sudo,title,ssh-terminfo,ssh-env
+
+
+# -----------------------------------------------------------------------------
+# 로케일 (LANG / LC_*)
+# -----------------------------------------------------------------------------
+
+# Ghostty 는 macOS 에서 LANG 이 비어 있으면 시스템 지역 설정(NSLocale)으로
+# "<언어>_<국가>.UTF-8" 을 만들어 넣는다 (src/os/locale.zig). 이 머신은 ko_KR 이라
+# 기본값도 ko_KR.UTF-8 이지만, 머신/계정 설정에 흔들리지 않도록 명시한다.
+# env 는 키=값 맵이라 terminfo.darwin.ghostty 의 TERMINFO 항목과 공존한다.
+#
+# 주의: tmux 는 서버 시작 시점의 LANG 을 새 창에도 그대로 물려준다. 여기 값을 바꾼 뒤
+# tmux 안에서 반영을 보려면 `tmux kill-server` 또는
+# `tmux set-environment -g LANG ko_KR.UTF-8` 후 새 창을 열어야 한다.
+env = LANG=ko_KR.UTF-8
+
+# 지역/인코딩은 한국으로 두고 CLI 메시지만 영어로 보고 싶으면 주석 해제
+env = LC_MESSAGES=en_US.UTF-8
 
 
 # -----------------------------------------------------------------------------
