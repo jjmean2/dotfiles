@@ -44,70 +44,28 @@ LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
 . "$LIB/dirs.sh"             # 홈 탐색(scan_repos, scan_dirs)·미리보기. worktree 의 dir 모드와 공유
 # shellcheck source=../lib/layout.sh
 . "$LIB/layout.sh"           # 새 세션의 첫 윈도우에 한 번 적용. worktree 와 공유
+# shellcheck source=../lib/picker.sh
+. "$LIB/picker.sh"           # 상태 디렉토리·판정·탭·테두리·위치 피커·레이아웃 목록. worktree 와 공유
 WORKTREE_BIN="$(dirname "$SELF")/tmux-dev-worktree"
 
 LAYOUT=""          # --layout 으로 명시한 값, 또는 피커의 alt-l. 비어 있으면 resolve_layout
 RECENT_MAX=20      # 목록 위쪽에 보여 줄 최근 항목 수
 HISTORY_MAX=500    # 히스토리 파일 상한 (줄)
-TMUX_DEV_PARENTS="${TMUX_DEV_HISTORY%/*}/parents"   # 위치 피커로 무언가를 만든 부모 디렉토리 (최근 순)
-US=$'\x1f'         # tmux 포맷 출력의 칸 구분자 (빈 칸이 있을 수 있다)
 C=$'\033[36m'      # 브랜치 색
 
-# --- 작은 도구 -------------------------------------------------------------------
-# fzf 액션 한 개. 인자에 괄호가 있어도 깨지지 않게, 인자에 없는 구분 기호 쌍을 고른다 (man fzf: ACTION ARGUMENT)
-act() {
-  local name=$1 text=$2 pair
-  for pair in '()' '[]' '{}' '<>' '~~' '!!' '@@' '##' '%%' '^^' '&&' '**' ';;' '||'; do
-    case $text in *"${pair:0:1}"*|*"${pair:1:1}"*) continue ;; esac
-    printf '%s%s%s%s' "$name" "${pair:0:1}" "$text" "${pair:1:1}"; return
-  done
-  printf '%s:%s' "$name" "$text"   # 마지막 수단. 액션 줄의 맨 끝에만 써야 한다
-}
-home_disp() { case $1 in "$HOME") printf '~' ;; "$HOME"/*) printf '~%s' "${1#"$HOME"}" ;; *) printf '%s' "$1" ;; esac; }
-# 경로 모양 검색어: / 나 ~/ 로 시작하거나 ~ 하나
-pathish() { case ${1:-} in /*|'~'|'~/'*) return 0 ;; *) return 1 ;; esac; }
-# ~ 를 풀고 . .. // 끝 슬래시를 글자로만 정리한다 (파일시스템을 보지 않는다). 절대 경로가 아니면 1
-norm_path() {
-  local p=$1 seg out=""
-  case $p in '~') p=$HOME ;; '~/'*) p=$HOME/${p#'~/'} ;; esac
-  [[ $p = /* ]] || return 1
-  local -a parts=()
-  local IFS=/
-  for seg in $p; do
-    case $seg in ''|.) ;; ..) [ ${#parts[@]} -gt 0 ] && unset "parts[$((${#parts[@]} - 1))]" ;; *) parts+=("$seg") ;; esac
-  done
-  for seg in "${parts[@]+"${parts[@]}"}"; do out+="/$seg"; done
-  printf '%s' "${out:-/}"
-}
-canon_dir() { (cd "$1" 2>/dev/null && pwd -P); }
-# 워크트리의 메인 체크아웃. .git 파일의 "gitdir: <메인>/.git/worktrees/<이름>" 에서 역산한다 (git 프로세스 없음)
-worktree_main() {
-  local g=$1/.git line
-  [ -f "$g" ] || return 0
-  IFS= read -r line < "$g" || return 0
-  g=${line#gitdir: }; [[ $g = /* ]] || g=$1/$g
-  case $g in */.git/worktrees/*) g=${g%/.git/worktrees/*}; [ -d "$g/.git" ] && printf '%s' "$g" ;; esac
-  return 0
-}
+# --- 모드 ------------------------------------------------------------------------
+# 작은 도구(act, pathish, norm_path, canon_dir, worktree_main, ...)는 lib/picker.sh 에 있다.
 fits_mode() { if [ "$1" = repo ]; then [ -d "$2/.git" ]; else [ -d "$2" ]; fi; }
 mode_name() { if [ "$1" = repo ]; then printf 'repository'; else printf 'directory'; fi; }
 
-# --- 상태 (피커 하나당 디렉토리 하나) ----------------------------------------------
-# fzf 가 띄우는 콜백은 매번 새 프로세스라 상태를 파일로 주고받는다. 경로는 환경변수로 물려받는다.
-# 읽기·쓰기는 bash 내장(read, printf 리다이렉션)이라 프로세스를 더 띄우지 않는다.
+# --- 상태 (피커 하나당 디렉토리 하나. st_get/st_set/st_del 은 lib/picker.sh) -------------------
 #   mode     repo | dir             help    1 이면 미리보기 자리에 키 안내
 #   layout   고른 레이아웃 "<이름>\t<save 또는 빈 값>"
 #   pending  레이아웃을 고를 대상 "<만들기: none|dir|repo>\t<경로>"
 #   name     새로 만들 이름 (alt-enter)      near  커서 항목의 부모 (위치 피커 후보)      loc  위치 피커에서 고른 부모
 #   decision fzf 를 끝낼 때 쓰는 결정 "<경로>US<만들기>US<레이아웃>US<save>US<고른 부모>" (빈 칸이 있어 US)
-st_get() { ST=""; [ -f "${TMUX_DEV_STATE:-/nonexistent}/$1" ] && IFS= read -r ST < "$TMUX_DEV_STATE/$1" || true; }
-st_set() { printf '%s\n' "$2" > "$TMUX_DEV_STATE/$1"; }
-st_del() { local k; for k in "$@"; do rm -f "$TMUX_DEV_STATE/$k"; done; }
 
-# --- 후보 ------------------------------------------------------------------------
-# 행: "<~경로>\t<표시>\t<실제 경로>". fzf 는 1·2칸을 보여 주고(--with-nth 1,2) 1칸(경로)만 검색한다(--nth 1).
-# 표시를 경로 뒤에 두어야 경로 접두 일치(^~/...)가 맞는다.
-row() { printf '%s\t%s\t%s\n' "$(home_disp "$1")" "$2" "$1"; }
+# --- 후보 (행 꼴은 lib/picker.sh 의 row) ------------------------------------------------
 branch_mark() { local b; b=$(git_branch "$1"); [ -n "$b" ] && printf ' %s%s%s' "$C" "$b" "$R"; return 0; }
 session_list() {  # "<최근 붙은 시각>US<id>US<이름>US<@tmux-dev-path>US<session_path>", 최근 붙은 순
   tmux list-sessions -F "#{session_last_attached}${US}#{session_id}${US}#{session_name}${US}#{@tmux-dev-path}${US}#{session_path}" 2>/dev/null \
@@ -124,33 +82,23 @@ session_rows() {
     row "$p" "${G}●${R} ${D}$name${R}$(branch_mark "$p")"
   done < <(session_list)
 }
-history_paths() {  # 최근 순, 중복 없이. 옛 형식(경로만)과 새 형식(<epoch>\t<경로>) 둘 다 읽는다
-  [ -f "$TMUX_DEV_HISTORY" ] || return 0
-  { tail -r "$TMUX_DEV_HISTORY" 2>/dev/null || tac "$TMUX_DEV_HISTORY"; } | awk -F'\t' '{ p = NF > 1 ? $2 : $1; if (p != "" && !seen[p]++) print p }'
-}
 recent_rows() {
   local p n=0
   while IFS= read -r p; do
     [ "$n" -lt "$RECENT_MAX" ] || break
     fits_mode "$1" "$p" || continue   # 지금 없는 곳은 건너뛴다 (파일에서는 지우지 않는다)
     row "$p" "${D}◷${R}$(branch_mark "$p")"; n=$((n + 1))
-  done < <(history_paths)
+  done < <(hist_paths "$TMUX_DEV_HISTORY")
 }
 scan_rows() {
   if [ "$1" = repo ]; then
     local p; while IFS= read -r p; do row "$p" "$(branch_mark "$p")"; done < <(scan_repos)
   else
-    scan_dirs | awk -v home="$HOME" -v OFS='\t' '{ d = $0; if (index(d, home "/") == 1) d = "~" substr(d, length(home) + 1); else if (d == home) d = "~"; print d, "", $0 }'
+    dir_rows
   fi
 }
 rows() {  # 앞에 나온 것이 이긴다. fflush 로 한 줄씩 흘려 보내 fzf 가 찾는 대로 그린다
   { session_rows "$1"; recent_rows "$1"; scan_rows "$1"; } | awk -F'\t' '!seen[$3]++ { print; fflush() }'
-}
-record_history() {  # 피커로 고른 것만 기록한다 (CLI 는 기록하지 않는다)
-  mkdir -p "$(dirname "$TMUX_DEV_HISTORY")"
-  local tmp; tmp=$(mktemp "$TMUX_DEV_HISTORY.XXXXXX")
-  { [ -f "$TMUX_DEV_HISTORY" ] && awk -F'\t' -v p="$1" '{ q = NF > 1 ? $2 : $1; if (q != p) print (NF > 1 ? $0 : "0\t" $1) }' "$TMUX_DEV_HISTORY"
-    printf '%s\t%s\n' "$(date +%s)" "$1"; } | tail -n "$HISTORY_MAX" > "$tmp" && mv -f "$tmp" "$TMUX_DEV_HISTORY"
 }
 
 # --- 세션 찾기·만들기 --------------------------------------------------------------
@@ -207,12 +155,6 @@ open_worktree() {
 open_path() {  # $1 실제 경로
   if [ -f "$1/.git" ]; then open_worktree "$1"; else switch_to "$(ensure_session "$1")"; fi
 }
-record_parent() {  # 위치 피커로 무언가를 만든 부모. 다음 위치 피커의 위쪽에 둔다
-  mkdir -p "$(dirname "$TMUX_DEV_PARENTS")"
-  local tmp; tmp=$(mktemp "$TMUX_DEV_PARENTS.XXXXXX")
-  { [ -f "$TMUX_DEV_PARENTS" ] && awk -F'\t' -v p="$1" '{ q = NF > 1 ? $2 : $1; if (q != p) print }' "$TMUX_DEV_PARENTS"
-    printf '%s\t%s\n' "$(date +%s)" "$1"; } | tail -n 100 > "$tmp" && mv -f "$tmp" "$TMUX_DEV_PARENTS"
-}
 # 결정을 실행한다: $1 경로 $2 만들기(none|dir|repo) $3 레이아웃 $4 save $5 위치 피커에서 고른 부모
 apply_decision() {
   local path=$1 create=$2
@@ -223,62 +165,14 @@ apply_decision() {
   path=$(canon_dir "$path") || die "not a directory: $1"
   LAYOUT=$3
   [ -n "$4" ] && [ -n "$LAYOUT" ] && [ -d "$path/.git" ] && git -C "$path" config tmux-dev.layout "$LAYOUT"
-  record_history "$path"
-  [ -n "${5:-}" ] && record_parent "$5"
+  hist_record "$TMUX_DEV_HISTORY" "$path" "$HISTORY_MAX"   # 피커로 고른 것만 기록한다 (CLI 는 기록하지 않는다)
+  [ -n "${5:-}" ] && hist_record "$TMUX_DEV_PARENTS" "$5" 100   # 다음 위치 피커의 위쪽에 둔다
   open_path "$path"
 }
 
-# --- 판정: 경로 모양 검색어 ----------------------------------------------------------
-# 결과: J_KIND (block | open | worktree | create), J_PATH (실제 경로, create 면 만들 경로), J_CREATE (dir | repo),
-#       J_SAY (푸터에 보여 줄 판정). 있는 디렉토리는 목록에 있었든 없었든 묻지 않고 연다(생성이 아니므로).
-classify() {  # $1 경로 글자 $2 모드
-  local p a rest="" top d extra=""
-  J_KIND=block J_PATH="" J_CREATE="" J_SAY=""
-  p=$(norm_path "$1") || { J_SAY="${Y}not an absolute path${R}"; return; }
-  d=$(home_disp "$p")
-  if [ -e "$p" ] && [ ! -d "$p" ]; then J_SAY="${Y}a file already exists: $d${R}"; return; fi
-  if [ -d "$p" ]; then
-    J_PATH=$(canon_dir "$p"); d=$(home_disp "$J_PATH")
-    if [ -f "$J_PATH/.git" ]; then J_KIND=worktree; J_SAY="enter go to worktree: $d"
-    else
-      J_KIND=open; J_SAY="enter open: $d"
-      [ "$2" = repo ] && [ ! -d "$J_PATH/.git" ] && J_SAY+=" ${D}(not a repository; no git init)${R}"
-    fi
-    return
-  fi
-  a=$p; while [ ! -e "$a" ]; do rest="/$(basename "$a")$rest"; a=$(dirname "$a"); done   # 있는 가장 가까운 조상
-  [ -d "$a" ] || { J_SAY="${Y}a parent is a file: $(home_disp "$a")${R}"; return; }
-  [ -w "$a" ] || { J_SAY="${Y}not writable: $(home_disp "$a")${R}"; return; }
-  [ "$rest" = "/$(basename "$p")" ] || extra=" · with missing parents"
-  top=$(git -C "$a" rev-parse --show-toplevel 2>/dev/null || true)
-  a=$(canon_dir "$a"); [ "$a" = / ] && a=""; J_PATH=$a$rest; d=$(home_disp "$J_PATH")
-  J_KIND=create
-  if [ "$2" = repo ]; then
-    J_CREATE=repo; extra=" (git init)$extra"
-    [ -n "$top" ] && extra+=" · ${Y}inside repository $(home_disp "$top")${R}"
-  else J_CREATE=dir; fi
-  J_SAY="${D}does not exist${R} · alt-enter create: $d$extra"
-}
-# 새로 만들 이름 (경로 모양이 아닌 검색어). 위치 피커에서 고른 디렉토리 아래에 붙는다. a/b 처럼 / 를 넣어도 된다
-name_ok() {
-  local n=${1%/}
-  case $n in ''|/*|'~'*) return 1 ;; esac
-  case "/$n/" in */../*|*/./*|*//*) return 1 ;; esac
-  return 0
-}
-
 # --- 피커 화면 -------------------------------------------------------------------
-# 맨 위 헤더(--header-first)에 그리는 모드 탭. 지금 모드는 굵게. 클릭하면 그 모드로 간다(click-header → on_tab_click).
-# 이름 사이는 탭 문자다: fzf 는 클릭한 단어(FZF_CLICK_HEADER_WORD)를 --delimiter 로 자르는데, 행 칸 구분 때문에
-# --delimiter '\t' 라서 공백으로 띄우면 "repository  directory" 가 한 단어로 온다. 화면에는 --tabstop 2 로 두 칸 간격이다.
-# 탭 이름은 영어다: fzf 의 클릭 단어 계산이 한글 같은 여러 바이트 글자 뒤에서 어긋난다 (session-picker.md 화면 절).
-tabs() {
-  local m out=""
-  for m in repo dir; do
-    if [ "$m" = "$1" ]; then out+="${B}$(mode_name "$m")${R}"$'\t'; else out+="${D}$(mode_name "$m")${R}"$'\t'; fi
-  done
-  printf '%s' "${out%$'\t'}"
-}
+# 경로 판정(classify, name_ok), 탭(picker_tabs), 테두리(style_opts)는 lib/picker.sh 에 있다.
+tabs() { picker_tabs "$1" repo dir; }   # 맨 위 헤더의 모드 탭. 클릭하면 그 모드로 (on_tab_click)
 hint() { printf '%s' "${D}enter open · alt-enter new · alt-l layout · tab mode · alt-h keys${R}"; }
 create_hint() {  # 검색어가 있으면 늘 보이는 만들기 안내 (결과가 있어도 alt-enter 는 친 이름으로 만든다)
   local q=${1%/} what="directory"; st_get mode; [ "${ST:-repo}" = repo ] && what="repository"
@@ -317,29 +211,6 @@ ${B}list${R}
 excluded from scan: ~/.config/tmux-dev/ignore (gitignore syntax)
 EOF
 }
-# tmux 의 떠 있는 창 테두리와 같은 모양으로 그린다 (피커 창은 테두리 없이 띄운다). 런타임에 읽어 tmux.conf 를 따라간다.
-# 읽는 곳: @float-border-lines·@float-border-style (tmux.conf 가 팝업과 floating pane 공용으로 둔다), 없으면 popup-border-*.
-# popup-* 옵션은 tmux 3.9 에서 없어진다.
-float_opt() { local v; v=$(tmux show -gqv "@float-$1" 2>/dev/null); [ -n "$v" ] || v=$(tmux show -gqv "popup-$1" 2>/dev/null); printf '%s' "$v"; }
-float_border() {
-  BORDER=rounded BCOLOR=""
-  [ -n "${TMUX:-}" ] || return 0
-  case $(float_opt border-lines) in
-    rounded) BORDER=rounded ;; double) BORDER=double ;; heavy) BORDER=bold ;; *) BORDER=sharp ;;
-  esac
-  local fg; fg=$(float_opt border-style | sed -n 's/.*fg=\([^,]*\).*/\1/p')
-  case $fg in   # fzf 가 모르는 색 이름을 넘기면 fzf 가 뜨지 않으므로 아는 꼴만 넘긴다
-    colour[0-9]*|color[0-9]*) BCOLOR=${fg#colo*r} ;;
-    '#'[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]|[0-9]|[0-9][0-9]|[0-9][0-9][0-9]) BCOLOR=$fg ;;
-    black|red|green|yellow|blue|magenta|cyan|white) BCOLOR=$fg ;;
-  esac
-}
-style_opts() {  # STYLE 배열: 피커와 겹쳐 뜨는 목록(위치, 레이아웃)이 같이 쓴다
-  float_border
-  STYLE=(--border "$BORDER" --border-label-pos 3 --input-border "$BORDER" --list-border "$BORDER" --reverse --height=100%)
-  [ -n "$BCOLOR" ] && STYLE+=(--color "border:$BCOLOR,label:$BCOLOR")
-  return 0
-}
 
 # --- 콜백 (fzf 가 이벤트마다 부른다. 액션 한 줄을 출력한다) -----------------------------
 footer_now() {  # 메인 목록의 푸터
@@ -349,13 +220,6 @@ footer_now() {  # 메인 목록의 푸터
     if [ "${FZF_MATCH_COUNT:-1}" -eq 0 ]; then local mode; st_get mode; mode=${ST:-repo}; classify "$q" "$mode"; printf '%s' "$J_SAY"
     else printf '%s' "enter open the item ${D}· alt-enter create at the typed path${R}"; fi
   else create_hint "$q"; fi
-}
-nope() { printf 'bell+%s' "$(act change-footer "$1")"; }   # 할 일이 없을 때: 벨과 안내만
-search_action() {  # 경로 모양 검색어 → 경로 접두 일치. /Users/<나>/... 도 ~/... 로 맞춘다. 공백은 fzf 검색 문법대로 \ 로
-  local q=$1
-  case $q in "$HOME") q='~' ;; "$HOME"/*) q="~${q#"$HOME"}" ;; esac
-  q=${q// /\\ }
-  printf 'search:^%s' "$q"    # search: 꼴은 액션 줄의 맨 끝이어야 한다
 }
 decide() {  # $1 경로 $2 만들기(none|dir|repo) [$3 위치 피커에서 고른 부모] → 결정 파일을 쓰고 fzf 를 끝낸다
   local l="" s=""; st_get layout; [ -n "$ST" ] && IFS=$'\t' read -r l s <<< "$ST"
@@ -390,16 +254,6 @@ on_after_layout() {  # 레이아웃에서 esc 면 그대로 목록, 골랐으면
   local create path; st_get layout; [ -n "$ST" ] || return 0
   st_get pending; IFS=$'\t' read -r create path <<< "$ST"
   decide "$path" "$create"
-}
-choose_layout_step() {  # execute 안에서 돈다. 고른 것을 상태에 쓴다. esc·ctrl-c 면 아무것도 안 쓴다
-  local create path can="" picked
-  st_get pending; IFS=$'\t' read -r create path <<< "$ST"
-  { [ -d "$path/.git" ] || [ "$create" = repo ]; } && can=save
-  style_opts
-  LAYOUT_ESC=abort
-  LAYOUT_FZF_OPTS=("${STYLE[@]}" --border-label " layout · $(home_disp "$path") ")
-  picked=$(choose_layout "$SELF --layout-art" "$can") || return 0
-  st_set layout "$picked"
 }
 on_create() {  # alt-enter: 경로를 쳤으면 그 자리에 바로, 이름을 쳤으면 위치 피커를 겹쳐 띄운다
   local mode q=${FZF_QUERY:-}; st_get mode; mode=${ST:-repo}
@@ -459,71 +313,11 @@ on_help() {
   else st_set help 1; printf '%s+show-preview' "$(act change-preview "$SELF --help-keys")"; fi
 }
 
-# --- 위치 피커 (alt-enter 로 겹쳐 뜬다) ------------------------------------------------
-# 행은 메인 목록과 같은 꼴. 최근에 무언가를 만든 부모(◷) → 커서 항목의 부모(↳) → 디렉토리 탐색.
-parents_paths() {  # 최근 순, 중복 없이
-  [ -f "$TMUX_DEV_PARENTS" ] || return 0
-  { tail -r "$TMUX_DEV_PARENTS" 2>/dev/null || tac "$TMUX_DEV_PARENTS"; } | awk -F'\t' '{ p = NF > 1 ? $2 : $1; if (p != "" && !seen[p]++) print p }'
-}
-loc_rows() {
-  {
-    local p n=0
-    while IFS= read -r p; do [ "$n" -lt "$RECENT_MAX" ] || break; [ -d "$p" ] || continue; row "$p" "${D}◷${R}"; n=$((n + 1)); done < <(parents_paths)
-    st_get near; [ -n "$ST" ] && [ -d "$ST" ] && row "$ST" "${D}↳ next to the item${R}"
-    scan_rows dir
-  } | awk -F'\t' '!seen[$3]++ { print; fflush() }'
-}
-loc_preview() {  # $1 고를 부모 → 만들어질 경로와 판정, 그 아래 부모의 내용
-  local mode name; st_get name; name=$ST; st_get mode; mode=${ST:-repo}
-  [ -d "${1:-}" ] || return 0
-  classify "$1/$name" "$mode"
-  case $J_KIND in
-    create)  printf '%swill create%s  %s\n' "$B" "$R" "$(home_disp "$J_PATH")"; printf '%s\n' "${J_SAY#*: }" | sed 's/^[^ ]* *//' ;;
-    open|worktree) printf '%salready exists%s  %s  %s(enter opens it)%s\n' "$Y" "$R" "$(home_disp "$J_PATH")" "$D" "$R" ;;
-    *) printf '%s\n' "$J_SAY" ;;
-  esac
-  echo; dir_preview "$1"
-}
-on_loc_enter() {  # 위치 피커의 enter: 만들 수 있으면(또는 이미 있으면) 고르고 끝, 막히면 안내
-  local mode name; st_get name; name=$ST; st_get mode; mode=${ST:-repo}
-  [ -n "${1:-}" ] || { printf 'bell'; return; }
-  classify "$1/$name" "$mode"
-  [ "$J_KIND" = block ] && { nope "$J_SAY"; return; }
-  st_set loc "$1"; printf 'accept'
-}
-on_loc_layout() {  # 위치 피커의 alt-l: 레이아웃을 겹쳐 띄우고, 고르면 위치도 고른 것으로 끝낸다
-  local mode name; st_get name; name=$ST; st_get mode; mode=${ST:-repo}
-  [ -n "${1:-}" ] || { printf 'bell'; return; }
-  classify "$1/$name" "$mode"
-  [ "$J_KIND" = block ] && { nope "$J_SAY"; return; }
-  st_set pending "${J_CREATE:-none}"$'\t'"$J_PATH"; st_set near_pick "$1"; st_del layout
-  printf 'execute(%s --choose-layout)+transform(%s --on loc-after-layout)' "$SELF" "$SELF"
-}
-on_loc_after_layout() {  # 레이아웃에서 esc 면 위치 피커에 그대로 남는다
-  st_get layout; [ -n "$ST" ] || return 0
-  st_get near_pick; st_set loc "$ST"; printf 'accept'
-}
-choose_location_step() {  # execute 안에서 돈다. 고른 부모는 상태 loc 에 남는다 (esc 면 남기지 않는다)
-  local name what="directory"; st_get name; name=$ST; st_get mode; [ "${ST:-repo}" = repo ] && what="repository"
-  style_opts
-  fzf --ansi --delimiter '\t' --with-nth 1,2 --nth 1 --tabstop 2 --scheme path --tiebreak pathname,index \
-      "${STYLE[@]}" --border-label " new $what '$name': where? " --prompt 'location> ' \
-      --footer "${D}enter create here · alt-l create with a layout · esc back${R}" --footer-border line \
-      --preview "$SELF --loc-preview {3}" --preview-window 'right,45%,border-left' \
-      --bind 'change:first' --bind 'esc:abort' \
-      --bind "enter:transform($SELF --on loc-enter {3})" \
-      --bind "double-click:transform($SELF --on loc-enter {3})" \
-      --bind "alt-l:transform($SELF --on loc-layout {3})" \
-      --bind 'alt-p:change-preview-window(down,40%,border-top|hidden|right,45%,border-left)' \
-      < <(loc_rows) > /dev/null || true
-}
+# 위치 피커(alt-enter 로 겹쳐 뜬다)와 레이아웃 목록(alt-l)은 lib/picker.sh 에 있다. 콜백은 아래 인자 처리로 돌아온다.
 
 pick() {
   command -v fzf >/dev/null || die "fzf is required"
-  TMUX_DEV_STATE=$(mktemp -d "${TMPDIR:-/tmp}/tmux-dev-project.XXXXXX"); export TMUX_DEV_STATE
-  # shellcheck disable=SC2064  # 지금 값의 디렉토리를 지운다
-  trap "rm -rf '$TMUX_DEV_STATE'" EXIT
-  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'tmux-dev-project.*' -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true  # 비정상 종료 흔적
+  picker_state_init tmux-dev-project
   st_set mode repo
   style_opts
   # 정렬: --scheme=path 의 점수에 동점이면 파일 이름 일치 → 입력 순서(열린 세션 → 최근 → 탐색). path 의 기본 length 대신 index.
