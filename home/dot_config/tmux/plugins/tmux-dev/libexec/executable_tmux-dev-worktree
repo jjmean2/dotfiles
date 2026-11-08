@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tmux-dev worktree: 지금 세션에 윈도우를 연다 (prefix W). 출처는 세 모드다.
 #
-# 멘탈 모델 (자세히: ../worktree-picker.md 는 4단계에서. 지금은 이 머리말과 session-picker.md 의 공용 규칙)
+# 멘탈 모델 (자세히: ../worktree-picker.md. 공용 규칙은 ../session-picker.md)
 #   W 가 만드는 것은 윈도우다. 세션은 그대로 두고 그 안에 윈도우를 연다(이미 있으면 그리로 간다).
 #   worktree      세션 디렉토리가 git 저장소일 때만. 워크트리 = 브랜치 = 윈도우. 없으면 워크트리를 만들어 준다
 #   subdirectory  세션 디렉토리 아래의 아무 디렉토리. directory 와 같은 흐름이고 시작 경로만 제한한다
