@@ -14,6 +14,16 @@
 -- 없는 경로는 빼야 한다: fd 는 검색 경로 하나라도 없으면 통째로 실패한다.
 --
 -- 주의: lazy.nvim·snacks 의 opts 병합은 리스트를 통째로 바꾼다. 아래 목록이 기본값을 대체한다.
+--
+-- 머신마다 다른 위치: 없는 경로는 자동으로 빠지므로 여러 머신의 경로를 여기 함께 적어도 된다.
+-- 한 머신에만 있거나 공개 저장소에 올리기 싫은 경로는 그 머신의 관리 밖 파일에 둔다
+-- (docs/tool-scope.md 의 예 C-3):
+--   -- ~/.config/nvim/lua/plugins/local-projects.lua
+--   vim.g.local_project_patterns = { "~/work/*" }
+--   return {}
+-- local-*.lua 는 이름순으로 이 파일보다 먼저 읽혀서, 거기서 snacks 의 dev 를 직접 정하면 이 파일이 덮어쓴다.
+-- 그래서 값은 vim.g 로 받고, 펼치기는 아래 opts 함수에서 한다. opts 함수는 모든 spec 파일을 읽은 뒤
+-- snacks 를 불러올 때 실행되므로 파일 순서와 상관없다.
 local project_patterns = {
   "~/dev/jwlee/*",
   "~/dev/opensources/*",
@@ -22,14 +32,19 @@ local project_patterns = {
   "~/dev/workspaces/*/*",
 }
 
-local dev = {}
-for _, pattern in ipairs(project_patterns) do
-  local parent = pattern:gsub("/%*$", "")
-  for _, dir in ipairs(vim.fn.glob(parent, false, true)) do
-    if vim.fn.isdirectory(dir) == 1 then
-      dev[#dev + 1] = dir
+-- 패턴들의 마지막 * 앞부분을 glob 으로 펼쳐, 실제로 있는 디렉터리만 중복 없이 돌려준다.
+local function expand_project_parents(patterns)
+  local dirs, seen = {}, {}
+  for _, pattern in ipairs(patterns) do
+    local parent = pattern:gsub("/%*$", "")
+    for _, dir in ipairs(vim.fn.glob(parent, false, true)) do
+      if vim.fn.isdirectory(dir) == 1 and not seen[dir] then
+        seen[dir] = true
+        dirs[#dirs + 1] = dir
+      end
     end
   end
+  return dirs
 end
 
 -- explorer 키 세 개. 기존 키의 짝이 되게 고르고, LazyVim 코어·모든 extras·snacks 피커가 안 쓰는 키로 했다.
@@ -60,29 +75,37 @@ return {
   keys = {
     { "<leader>fo", focus_explorer, desc = "Focus Explorer (reveal file)" },
   },
-  opts = {
-    picker = {
-      sources = {
-        projects = { dev = dev },
-        explorer = {
-          actions = {
-            reveal_in_finder = function(_, item)
-              if item then
-                vim.system({ "open", "-R", item.file })
-              end
-            end,
-          },
-          win = {
-            list = {
-              keys = {
-                -- confirm 이 편집 창으로 포커스를 옮겨 파일을 연 뒤, focus_list 가 explorer 로 되돌린다.
-                ["L"] = { { "confirm", "focus_list" }, desc = "Open (keep focus)" },
-                ["O"] = { "reveal_in_finder", desc = "Reveal in Finder" },
+  -- 함수로 둔 이유는 위 "머신마다 다른 위치" 참고. lazy 의 merge 는 spec 병합과 같은 규칙(리스트는 교체)이다.
+  opts = function(_, opts)
+    local local_patterns = vim.g.local_project_patterns or {}
+    if type(local_patterns) == "string" then
+      local_patterns = { local_patterns }
+    end
+    local patterns = vim.list_extend(vim.deepcopy(project_patterns), local_patterns)
+    return require("lazy.core.util").merge(opts, {
+      picker = {
+        sources = {
+          projects = { dev = expand_project_parents(patterns) },
+          explorer = {
+            actions = {
+              reveal_in_finder = function(_, item)
+                if item then
+                  vim.system({ "open", "-R", item.file })
+                end
+              end,
+            },
+            win = {
+              list = {
+                keys = {
+                  -- confirm 이 편집 창으로 포커스를 옮겨 파일을 연 뒤, focus_list 가 explorer 로 되돌린다.
+                  ["L"] = { { "confirm", "focus_list" }, desc = "Open (keep focus)" },
+                  ["O"] = { "reveal_in_finder", desc = "Reveal in Finder" },
+                },
               },
             },
           },
         },
       },
-    },
-  },
+    })
+  end,
 }
