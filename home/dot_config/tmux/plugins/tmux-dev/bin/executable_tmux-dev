@@ -11,6 +11,8 @@
 # 사용
 #   tmux-dev project  [...]    프로젝트 → 세션 (자세히: tmux-dev project --help)
 #   tmux-dev worktree [...]    워크트리 → 윈도우. dir 모드로 아무 디렉토리도 (자세히: tmux-dev worktree --help)
+#   tmux-dev open project <클라이언트> <패널> <디렉토리>
+#                              피커를 modal floating pane 으로 띄운다. prefix S 가 run-shell 로 부른다 (libexec/tmux-dev-open)
 #   tmux-dev help
 #
 # 설치: tmux.conf 에 `run-shell ~/.config/tmux/plugins/tmux-dev/tmux-dev.tmux` 한 줄. 셸에서 쓰려면
@@ -21,7 +23,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 
 cmd=${1:-help}; [ $# -gt 0 ] && shift
 case $cmd in
-  project|worktree) exec "$ROOT/libexec/tmux-dev-$cmd" "$@" ;;
+  project|worktree|open) exec "$ROOT/libexec/tmux-dev-$cmd" "$@" ;;
   help|-h|--help)   sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-  *) echo "tmux-dev: 모르는 서브커맨드 '$cmd' (project, worktree, help)" >&2; exit 1 ;;
+  *) echo "tmux-dev: 모르는 서브커맨드 '$cmd' (project, worktree, open, help)" >&2; exit 1 ;;
 esac

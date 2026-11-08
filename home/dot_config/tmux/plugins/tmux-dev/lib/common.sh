@@ -17,10 +17,11 @@ TMUX_DEV_LAYOUT="${TMUX_DEV_LAYOUT:-ide}"
 # 색 (fzf --ansi 용)
 B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[0m'
 
-# 오류: stderr 와 (tmux 안이면) 상태줄 메시지에 함께 적는다. 팝업은 -E 로 바로 닫혀 stderr 만으로는 못 본다.
+# 오류: stderr 와 (tmux 안이면) 상태줄 메시지에 함께 적는다. 피커 창은 명령이 끝나면 바로 닫혀 stderr 만으로는 못 본다.
+# 피커가 패널이면(prefix S) 키를 누른 클라이언트에 띄운다 (TMUX_DEV_CLIENT, libexec/tmux-dev-open).
 die() {
   echo "tmux-dev: $*" >&2
-  [ -n "${TMUX:-}" ] && tmux display-message -d 5000 "tmux-dev: $*" || true
+  [ -n "${TMUX:-}" ] && tmux display-message ${TMUX_DEV_CLIENT:+-c "$TMUX_DEV_CLIENT"} -d 5000 "tmux-dev: $*" || true
   exit 1
 }
 expand_tilde() { printf '%s\n' "${1/#\~/$HOME}"; }
