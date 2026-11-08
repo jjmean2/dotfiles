@@ -23,8 +23,8 @@ go = "latest"
 ruby = "latest"
 deno = "latest"
 
-# 여기에는 런타임과 셸에서 직접 쓰는 CLI 만 둔다. nvim 만 쓰는 도구(LSP 서버, conform 의 fallback
-# 포맷터)는 Mason 이 설치한다 (nvim/lua/plugins/lsp.lua).
+# 여기에는 런타임과 셸에서 직접 쓰는 CLI 만 둔다. nvim 만 쓰는 도구(LSP 서버, 포맷터)는 LazyVim 이
+# Mason 으로 설치한다 (:LazyExtras 의 lang.* extra 가 필요한 것을 Mason 설치 목록에 더한다).
 
 [settings]
 go.set_gobin = false
