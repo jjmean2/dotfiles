@@ -165,9 +165,10 @@ quick-terminal-size = 50%
 # keybind = global:ctrl+alt+9=toggle_quick_terminal
 
 # Ghostty 전체 창 표시/숨김 토글
-# opt+space 는 iTerm2 에서 오래 쓰던 hotkey 를 그대로 가져온 것이다. Alfred/Raycast 의
+# 지금은 꺼 둔다. 다시 쓰려면 아래 줄의 주석을 해제한다.
+# opt+space 는 iTerm2 에서 오래 쓰던 hotkey 를 가져온 것이었다. Alfred/Raycast 의
 # 기본 호출 키와 같고, global 이라 다른 앱에서 Option+Space 로 NBSP 를 입력하는 것도
-# 가로채지만, 해당 런처를 쓰지 않고 손에 익은 키를 우선하기로 한 의도적 선택이다.
+# 가로챈다는 점은 켤 때 감안할 것.
 # keybind = global:opt+space=toggle_visibility
 
 
@@ -238,7 +239,7 @@ quick-terminal-size = 50%
 # `tmux set-environment -g LANG ko_KR.UTF-8` 후 새 창을 열어야 한다.
 env = LANG=ko_KR.UTF-8
 
-# 지역/인코딩은 한국으로 두고 CLI 메시지만 영어로 보고 싶으면 주석 해제
+# 지역/인코딩은 한국으로 두고 CLI 메시지만 영어로 본다 (한국어 메시지를 원하면 이 줄을 주석 처리)
 env = LC_MESSAGES=en_US.UTF-8
 
 
