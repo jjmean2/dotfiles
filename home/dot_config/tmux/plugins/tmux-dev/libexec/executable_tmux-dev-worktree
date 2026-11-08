@@ -44,6 +44,7 @@
 #   alt-enter         후보가 있어도 친 글자를 브랜치 이름으로 쓴다 (macOS Ghostty: 왼쪽 option)
 #   alt-l             레이아웃을 골라서 이번만 그것으로 연다 (두 번째 fzf, 그림 미리보기). 거기서 alt-enter 로
 #                     고르면 이 저장소의 기본으로도 남는다 (git config tmux-dev.layout). Enter 는 묻지 않고 기본값을 쓴다
+#                     레이아웃 목록의 alt-p 는 미리보기 오른쪽 → 아래 → 숨김
 #   ctrl-x            커서 항목 정리 (매 단계 y/N, 입력이 끊기면 취소).
 #                       워크트리 행 → 변경이 있으면 거절. git worktree remove + 그 윈도우 닫기 + 브랜치 삭제 질문
 #                       브랜치 행    → 브랜치 삭제 질문.  prunable 행 → git worktree prune + 브랜치 삭제 질문
