@@ -82,6 +82,34 @@ local function snapshot(path, kind, version, write)
   return dst
 end
 
+-- buf 에 src(SVG) 그림을 붙인다. Snacks.image.buf.attach 와 같은 일을 하되 형식 검사를 건너뛴다.
+-- attach 는 opts.formats 에 확장자가 없으면 그리지 않고 "unsupported image format" 안내를 띄우는데,
+-- svg 는 위에 적은 이유로 formats 에 넣지 않았다. 변환(magick)은 placement 가 확장자와 상관없이 해 준다.
+-- 터미널이 그림을 못 그리면 attach 에 넘겨 그 안내를 그대로 보여 준다.
+---@param buf integer
+---@param src string
+---@param opts? snacks.image.Opts
+local function attach(buf, src, opts)
+  if Snacks.image.config.enabled == false then
+    return
+  end
+  require("snacks.image.terminal").detect(function()
+    if not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    if not Snacks.image.supports_terminal() then
+      return Snacks.image.buf.attach(buf, { src = src })
+    end
+    Snacks.image.placement.clean(buf)
+    Snacks.util.bo(buf, { filetype = "image", modifiable = false, modified = false, swapfile = false })
+    Snacks.image.placement.new(
+      buf,
+      src,
+      vim.tbl_extend("force", opts or {}, { conceal = true, auto_resize = true })
+    )
+  end)
+end
+
 -- 루트 <svg> 크기 ---------------------------------------------------------------------------------------------
 
 local px_per = { [""] = 1, px = 1, pt = 4 / 3, pc = 16, mm = 96 / 25.4, cm = 96 / 2.54, ["in"] = 96 }
@@ -201,8 +229,7 @@ local function render(pv)
   end
   pv.file = file
   -- attach 는 이전 그림을 닫고 새로 그린다 (변환하는 동안 스피너가 잠깐 보인다).
-  Snacks.image.buf.attach(pv.buf, {
-    src = file,
+  attach(pv.buf, file, {
     on_update = function(p)
       if by_buf[pv.buf] ~= pv or p.img.file ~= file or not p.img.info then
         return
@@ -444,7 +471,7 @@ function M.explorer_preview(ctx)
   end)
   local buf = ctx.preview:scratch()
   ctx.preview:set_title(vim.fn.fnamemodify(path, ":t"))
-  Snacks.image.buf.attach(buf, { src = src })
+  attach(buf, src)
 end
 
 local group = vim.api.nvim_create_augroup("svg_preview", { clear = true })
