@@ -82,6 +82,26 @@ local function snapshot(path, kind, version, write)
   return dst
 end
 
+-- 변환하는 동안 snacks 가 띄운 "convert loading …" 표시를 지운다. snacks 의 progress() 는 이 extmark 를
+-- placement 가 관리하는 목록(eids)에 넣지 않고, 변환이 끝나면 타이머만 멈춰서 글자가 그림 옆에 계속 남는다.
+-- 같은 namespace 에서 placement 가 관리하지 않는 extmark 를 지운다.
+---@param p snacks.image.Placement
+local function clear_progress(p)
+  if not vim.api.nvim_buf_is_valid(p.buf) then
+    return
+  end
+  local ns = vim.api.nvim_create_namespace("snacks.image") -- 이미 있으면 같은 id 를 돌려준다
+  local own = {} ---@type table<integer, true>
+  for _, id in ipairs(p.eids or {}) do
+    own[id] = true
+  end
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(p.buf, ns, 0, -1, {})) do
+    if not own[m[1]] then
+      vim.api.nvim_buf_del_extmark(p.buf, ns, m[1])
+    end
+  end
+end
+
 -- buf 에 src(SVG) 그림을 붙인다. Snacks.image.buf.attach 와 같은 일을 하되 형식 검사를 건너뛴다.
 -- attach 는 opts.formats 에 확장자가 없으면 그리지 않고 "unsupported image format" 안내를 띄우는데,
 -- svg 는 위에 적은 이유로 formats 에 넣지 않았다. 변환(magick)은 placement 가 확장자와 상관없이 해 준다.
@@ -102,11 +122,36 @@ local function attach(buf, src, opts)
     end
     Snacks.image.placement.clean(buf)
     Snacks.util.bo(buf, { filetype = "image", modifiable = false, modified = false, swapfile = false })
-    Snacks.image.placement.new(
+    opts = opts or {}
+    local on_update = opts.on_update
+    local p = Snacks.image.placement.new(
       buf,
       src,
-      vim.tbl_extend("force", opts or {}, { conceal = true, auto_resize = true })
+      vim.tbl_extend("force", opts, {
+        conceal = true,
+        auto_resize = true,
+        on_update = function(pl)
+          clear_progress(pl)
+          if on_update then
+            on_update(pl)
+          end
+        end,
+      })
     )
+    -- snacks 는 창에서 사라질 때 hide() 로 hidden 을 켜지만 다시 보일 때 show() 를 부르지 않는다
+    -- (placement.lua 의 update). hidden 인 채로는 그림 칸을 빈 문자열로 그려서, 탭을 갔다 오면 그림이 사라진다.
+    -- 버퍼가 창에 다시 올라오면 show() 로 풀어 준다. augroup 은 placement 가 닫힐 때 함께 지워진다.
+    vim.api.nvim_create_autocmd("BufWinEnter", {
+      group = p.augroup,
+      buffer = buf,
+      callback = function()
+        vim.schedule(function()
+          if not p.closed then
+            p:show()
+          end
+        end)
+      end,
+    })
   end)
 end
 
@@ -231,7 +276,7 @@ local function render(pv)
   -- attach 는 이전 그림을 닫고 새로 그린다 (변환하는 동안 스피너가 잠깐 보인다).
   attach(pv.buf, file, {
     on_update = function(p)
-      if by_buf[pv.buf] ~= pv or p.img.file ~= file or not p.img.info then
+      if by_buf[pv.buf] ~= pv or p.img.src ~= file or not p.img.info then
         return
       end
       -- 창에 맞추느라 줄기 전 크기. 확대 한도(창에 꽉 찬 배율)를 계산할 때 쓴다.
