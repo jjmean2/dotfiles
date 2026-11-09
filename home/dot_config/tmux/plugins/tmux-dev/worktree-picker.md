@@ -115,7 +115,8 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
 
 ### 한꺼번에 정리 (2026-11-09)
 
-- **선택**: tab / shift-tab(fzf 순정 `--multi`)으로 하나씩, `alt-a` 로 merged 인 워크트리·브랜치를 모두. 다중 선택은 정리에만 쓴다
+- **선택**: tab / shift-tab(fzf 순정 `--multi`)으로 하나씩, `alt-a` 로 merged 인 워크트리·브랜치를 모두, `alt-A`(왼쪽 Option+Shift+a)로
+  모두 풀기(alt-m / alt-M 처럼 Shift 가 반대 동작). 다중 선택은 정리에만 쓴다
   (enter 는 늘 커서 항목을 연다). worktree 모드에서만 tab 이 묶여 있고, 다른 모드로 가면 선택을 비우고 tab 을 푼다.
 - `alt-a` 는 마커가 붙은 목록(상태 `rows`, `--list worktree --marks` 가 남긴다)에서 merged 행의 줄 번호로 `pos(N)+select` 를 만든다.
   검색어가 있으면 먼저 지우고 필터가 끝나는 `result` 이벤트에서 고른다(검색어가 없을 때만 목록 위치 = 줄 번호).
@@ -172,7 +173,7 @@ prefix S 와 같다 (session-picker.md "띄우기" 절): `run-shell -b "tmux-dev
 9. **화면 문구는 영어**, 주석·문서는 한국어.
 10. **행 표시 (2026-11-09)**: 마커를 위치 앞으로, 상태는 베이스 기준 하나(merged / new / +N), 업스트림은 미리보기로,
     위치 줄이기(표준 생략, claude:), 브랜치·원격 행에 나이와 제목, `dirty N`, 이름 칸 최대 30.
-11. **키 (2026-11-09)**: tab·shift-tab 은 fzf 순정 다중 선택(정리에만), 모드는 alt-m·alt-M(S 도 같이), alt-a 는 merged 모두 선택,
+11. **키 (2026-11-09)**: tab·shift-tab 은 fzf 순정 다중 선택(정리에만), 모드는 alt-m·alt-M(S 도 같이), alt-a 는 merged 모두 선택(alt-A 는 모두 풀기),
     선택이 있을 때 ctrl-x 는 한꺼번에 정리. ctrl-[ 는 Esc 와 같은 바이트라 모드 키로 못 쓴다. alt-M 은 alt-n 보다 "Shift 면 반대
     방향" 이 tab/shift-tab 과 같아 골랐다.
 
