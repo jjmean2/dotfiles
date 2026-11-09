@@ -394,7 +394,8 @@ end
 
 ---@param pv svg_preview.Preview
 local function close(pv)
-  if vim.api.nvim_get_current_buf() == pv.buf then
+  -- 원본이 내려가(unload) 닫히는 경우에는 원본으로 가지 않는다. 가면 방금 닫은 원본을 다시 읽게 된다.
+  if vim.api.nvim_get_current_buf() == pv.buf and vim.api.nvim_buf_is_loaded(pv.src) then
     goto_src(pv, true)
   end
   if vim.api.nvim_buf_is_valid(pv.buf) then
@@ -454,6 +455,13 @@ local function create(src)
     end)
     vim.bo[buf].modified = false
   end, { buffer = buf })
+  -- 프리뷰 버퍼의 줄은 snacks 가 진행 표시·에러 문서를 쓰느라 바꾼다. buftype=acwrite 라서 그때마다 modified 가
+  -- 켜지면 bufferline 에 ● 가 붙고, :bd·Snacks.bufdelete 가 "Save changes?" 를 물어 닫기를 막는다. 늘 끈다.
+  on("BufModifiedSet", function()
+    if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].modified then
+      vim.bo[buf].modified = false
+    end
+  end, { buffer = buf })
   on("BufWinEnter", function()
     if pv.dirty then
       render(pv)
@@ -474,14 +482,26 @@ local function create(src)
   on("BufLeave", function()
     pv.return_after_insert = false
   end, { buffer = src })
-  -- 원본이 닫히면 프리뷰도 닫는다 (BufWipeout 안에서 다른 버퍼를 지우면 안 되어 schedule).
-  on("BufWipeout", function()
+  -- 원본이 닫히면 프리뷰도 닫는다. :bd·Snacks.bufdelete(bufferline 의 x, <leader>bd)는 버퍼를 wipe 하지 않고
+  -- unload 만 하므로 BufUnload 로 받는다 (wipe 도 그 전에 unload 를 거친다). 내용이 빈 원본을 가리킨 채
+  -- 남으면 다음에 다시 그릴 때 빈 SVG 를 변환하다 실패한다. autocmd 안에서 다른 버퍼를 지우면 안 되어 schedule.
+  on("BufUnload", function()
     vim.schedule(function()
       if by_buf[buf] == pv then
         close(pv)
       end
     end)
   end, { buffer = src })
+  -- 프리뷰 자신이 :bd 로 unload 되면 wipe 까지 해서 아래 BufWipeout 정리를 태운다. unload 만 된 채로 남으면
+  -- by_src 가 그 버퍼를 계속 가리키고, <leader>cp 가 그것을 다시 열어 b:svg_preview_of·키·그림이 모두 빠진
+  -- 빈 "svg" 버퍼가 된다 (buftype=acwrite 라 이름의 .svg 로 filetype 이 붙는다).
+  on("BufUnload", function()
+    vim.schedule(function()
+      if by_buf[buf] == pv and vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end)
+  end, { buffer = buf })
   on("BufWipeout", function()
     by_buf[buf] = nil
     if by_src[src] == pv then
@@ -507,7 +527,10 @@ function M.toggle()
     return
   end
   pv = by_src[cur]
-  if not (pv and vim.api.nvim_buf_is_valid(pv.buf)) then
+  if not (pv and vim.api.nvim_buf_is_loaded(pv.buf)) then
+    if pv and vim.api.nvim_buf_is_valid(pv.buf) then
+      vim.api.nvim_buf_delete(pv.buf, { force = true }) -- unload 만 된 옛 프리뷰. 위 BufUnload 처리를 놓쳤을 때 대비
+    end
     pv = create(cur)
   end
   vim.api.nvim_win_set_buf(0, pv.buf)
