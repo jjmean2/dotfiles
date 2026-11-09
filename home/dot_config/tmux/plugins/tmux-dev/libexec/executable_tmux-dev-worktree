@@ -25,17 +25,18 @@
 #   tmux 밖에서 실행하면 워크트리만 만들고(있으면 그대로) 경로를 출력한다.
 #
 # 피커 (fzf 순정 키는 그대로. 아래는 비어 있던 키와, 같은 뜻으로 덮은 enter·esc·tab)
-#   alt-m / alt-M     모드 다음 / 이전 (왼쪽 Option, alt-M 은 Option+Shift+m. 맨 위 모드 이름을 클릭해도). 저장소가 아니면 worktree 모드가 없다
+#   alt-m / alt-n     모드 다음 / 이전 (왼쪽 Option. n 이 m 의 왼쪽이라 뒤로. 맨 위 모드 이름을 클릭해도). 저장소가 아니면 worktree 모드가 없다
 #   tab / shift-tab   선택 토글 (fzf 순정, worktree 모드에서만). 선택은 정리(ctrl-x)에만 쓴다. enter 는 늘 커서 항목을 연다
-#   alt-a / alt-A     merged 인 워크트리·브랜치를 모두 선택 / 선택을 모두 풀기 (alt-A 는 왼쪽 Option+Shift+a)
+#   alt-a / alt-s     merged 인 워크트리·브랜치를 모두 선택 / 선택을 모두 풀기 (s 가 a 옆)
 #   enter             커서 항목으로. 열린 윈도우가 있으면 그리로, 없으면 만든다
 #                     worktree 모드에서 만들어야 하는 것(브랜치, 원격 브랜치, 사라진 워크트리)은 푸터에서 먼저 묻는다:
 #                       enter 만들기 · alt-l 레이아웃 골라 만들기 · esc 취소 (커서를 옮기거나 글자를 치면 취소)
 #   alt-enter         worktree: 친 이름으로 새 브랜치 + 워크트리 (베이스에서 분기, 푸터에서 묻는다)
 #                     subdirectory / directory: 친 이름으로 새 디렉토리 (prefix S 와 같은 위치 피커. 경로를 치면 그 자리에)
 #   alt-l             레이아웃을 골라서 열기 (이번만. 레이아웃 목록의 alt-enter 는 worktree 모드에서 저장소 기본으로도 저장)
-#   ctrl-x            worktree 모드에서 커서 항목 정리 (워크트리, 로컬 브랜치). 선택이 있으면 선택 전체를 한꺼번에(요약해서 한 번
-#                     묻고, 머지 안 된 것이 섞이면 그 수를 보이며 한 번 더. 못 하는 것은 건너뛰고 이유별 개수를 결과에). 푸터에서 묻고(enter · esc), 브랜치가 머지 안 됐으면
+#   ctrl-x            worktree 모드에서 커서 항목 정리 (워크트리, 로컬 브랜치). 정리 목록이 겹쳐 뜬다: clean up(창 → 워크트리 →
+#                     백업 → 브랜치 삭제, 머지 안 됐으면 푸터에서 한 번 더) / keep branch(창 → 워크트리 제거까지). 미리보기가 할 일을
+#                     보여 준다. 선택이 있으면 선택 전체(clean up N / keep branches. 못 하는 것은 건너뛰고 이유별 개수를 결과에). 푸터에서 묻고(enter · esc), 브랜치가 머지 안 됐으면
 #                     한 번 더 묻는다. 창 닫기 → 워크트리 제거 → refs/archive/<날짜>/<브랜치> 백업(-2, -3) → 브랜치 삭제.
 #                     메인 체크아웃·베이스 브랜치·원격 브랜치·locked 는 하지 않고, dirty 면 실패한다. 피커는 열린 채로 남는다
 #   alt-p             미리보기 오른쪽 → 아래 → 숨김
@@ -462,12 +463,12 @@ alt-enter     worktree: new branch + worktree from the typed name
               subdirectory / directory: new directory → pick a location
 alt-l         open with a chosen layout
                 enter this time only · alt-enter also save as repo default
-ctrl-x        clean up the item (worktree mode): window, worktree, branch
-              (asks first; asks again if the branch is not merged)
-              with a selection: clean up all selected at once
+ctrl-x        clean up (worktree mode): a menu opens to pick
+              "clean up" (window, worktree, branch) or "keep branch"
+              (window, worktree only). With a selection: all selected.
 tab/shift-tab select / deselect (worktree mode, for clean up only)
-alt-a / alt-A select all merged worktrees and branches / deselect all
-alt-m/alt-M   mode: worktree → subdirectory → directory (or click a mode name)
+alt-a / alt-s select all merged worktrees and branches / deselect all
+alt-m / alt-n mode: next / previous (or click a mode name)
 ctrl-]        put the item's path into the query (directory modes)
 alt-p         preview right → bottom → hidden
 alt-h         toggle this help
@@ -482,10 +483,12 @@ asks in the footer first:
   esc         cancel (moving the cursor or typing also cancels)
 
 ${B}clean up (ctrl-x)${R}
-Closes the worktree's window, removes the worktree, archives the branch
-to refs/archive/<date>/<branch> and deletes it. The footer shows the
-archive ref and how to restore it. Refused for the main checkout, the
-base branch, remote branches and locked worktrees; fails if dirty.
+A menu opens: "clean up" closes the worktree's window, removes the
+worktree, archives the branch to refs/archive/<date>/<branch> and
+deletes it (asks again if not merged); "keep branch" only closes the
+window and removes the worktree. The preview shows exactly what will
+happen. Refused for the main checkout, the base branch, remote branches
+and locked worktrees; fails if dirty.
 
 ${B}worktree list${R}
 ● open window · ◷ recently opened · then worktrees in progress, finished
@@ -553,9 +556,7 @@ on_enter() {  # $1 종류 $2 경로 $3 브랜치
   if [ "$ST" = 1 ]; then
     local k p b op; st_get target; IFS=$US read -r k p b <<< "$ST"; st_get op; op=${ST:-create}
     case $op in
-      clean)  clean_confirmed "$k" "$p" "$b" ;;
-      clean2) clean_run "$k" "$p" "$b" ;;
-      bulk)   bulk_confirmed ;;
+      clean2) clean_run "$k" "$p" "$b" ;;   # 정리 목록에서 clean up 을 고른 뒤 머지 안 된 브랜치를 한 번 더 확인
       bulk2)  bulk_run ;;
       *)      st_del layout; decide "$k" "$p" "$b" ;;
     esac
@@ -673,7 +674,7 @@ on_select_merged() {
   if [ -n "${FZF_QUERY:-}" ]; then st_set select_merged 1; printf 'rebind(result)+clear-query'; return; fi
   select_merged_actions
 }
-on_deselect() {  # alt-A: 선택을 모두 푼다 (alt-a 의 짝. 하나씩은 tab / shift-tab). 푸터의 "selected N" 안내도 지운다
+on_deselect() {  # alt-s: 선택을 모두 푼다 (alt-a 의 짝. 하나씩은 tab / shift-tab). 푸터의 "selected N" 안내도 지운다
   st_del select_merged
   printf 'deselect-all+%s' "$(act change-footer "$(footer_now)")"
 }
@@ -685,7 +686,7 @@ select_merged_actions() {
     case $disp in *merged*) out+="pos($i)+select+"; n=$((n + 1)) ;; esac
   done < <(tr '\t' '\037' < "$TMUX_DEV_STATE/rows")
   [ "$n" -gt 0 ] || { nope "${Y}nothing merged${R}"; return; }
-  printf 'deselect-all+%sfirst+%s' "$out" "$(act change-footer "${G}selected $n merged${R} ${D}· ctrl-x clean up · tab toggle · alt-A deselect all${R}")"
+  printf 'deselect-all+%sfirst+%s' "$out" "$(act change-footer "${G}selected $n merged${R} ${D}· ctrl-x clean up · tab toggle · alt-s deselect all${R}")"
 }
 on_marks() { cur_mode; [ "$MODE" = worktree ] && printf 'reload-sync(%s --list worktree --marks)' "$SELF"; return 0; }
 on_refresh() { cur_mode; to_mode "$MODE"; }
@@ -798,8 +799,8 @@ pick() {
       --bind "alt-enter:transform($SELF --on create {4})" \
       --bind "alt-l:transform($SELF --on layout {3} {4} {5})" \
       --bind "esc:transform($SELF --on esc)" \
-      --bind "alt-m:transform($SELF --on mode next)" --bind "alt-M:transform($SELF --on mode prev)" \
-      --bind "alt-a:transform($SELF --on select-merged)" --bind "alt-A:transform($SELF --on deselect)" \
+      --bind "alt-m:transform($SELF --on mode next)" --bind "alt-n:transform($SELF --on mode prev)" \
+      --bind "alt-a:transform($SELF --on select-merged)" --bind "alt-s:transform($SELF --on deselect)" \
       --bind "click-header:transform($SELF --on tab-click)" \
       --bind "ctrl-x:transform($SELF --on cleanup {3} {4} {5} {+f})" \
       --bind "ctrl-]:transform($SELF --on fill {4})" \
@@ -969,16 +970,11 @@ on_cleanup() {  # ctrl-x. $1 종류 $2 경로 $3 브랜치 $4 선택한 행들�
   if [ "${FZF_SELECT_COUNT:-0}" -gt 0 ] && [ -f "${4:-}" ]; then on_cleanup_many "$4"; return; fi
   [ -n "$kind" ] || { printf 'bell'; return; }
   cleanable "$kind" "$path" "$branch" || { nope "${Y}$REASON_SAY${R}"; return; }
-  local -a steps=(); local label=$branch
-  real_branch "$branch" || label=$(basename "$path")
-  [ -n "$path" ] && window_for "$path" && steps+=("close window ●$WIN_IDX")
-  case $kind in worktree) steps+=("remove worktree") ;; prunable) steps+=("prune missing worktree") ;; esac
-  real_branch "$branch" && steps+=("archive + delete branch")
-  local s="" x; for x in "${steps[@]}"; do s+="${s:+ → }$x"; done
-  ask "$kind" "$path" "$branch" "clean up ${B}$label${R}: $s" clean
+  st_set target "$kind$US$path$US$branch"; st_set cleanup_scope one; st_del cleanup_choice
+  printf 'execute(%s --choose-cleanup)+transform(%s --on after-cleanup)' "$SELF" "$SELF"
 }
-# 한꺼번에 정리: 선택한 행 가운데 정리할 수 있는 것만 상태 bulk 에 적고, 요약해서 한 번 묻는다. 못 하는 것은 건너뛰고 이유를 센다.
-# 머지 안 된 것이 섞여 있으면 enter 뒤에 그 수를 보여 주고 한 번 더 묻는다 (bulk → bulk2).
+# 한꺼번에 정리: 선택한 행 가운데 정리할 수 있는 것만 상태 bulk 에 적고, 정리 목록(clean up N / keep branches)을 겹쳐 띄운다.
+# 못 하는 것은 건너뛰고 이유를 센다. clean up 을 골랐는데 머지 안 된 것이 섞여 있으면 그 수를 보여 주고 푸터에서 한 번 더 묻는다.
 on_cleanup_many() {  # $1 선택한 행들 (fzf 의 {+f}: 한 줄에 한 행, 칸은 탭)
   local _name disp kind path branch ok=0 wins=0 wts=0 brs=0 unmerged=0 skip="" r x
   local -a reasons=()
@@ -1006,43 +1002,114 @@ on_cleanup_many() {  # $1 선택한 행들 (fzf 의 {+f}: 한 줄에 한 행, �
   fi
   st_set bulk_skip "$skip"; st_set bulk_unmerged "$unmerged"
   [ "$ok" -gt 0 ] || { nope "${Y}nothing to clean up in the selection${R}${skip:+ ${D}· $skip${R}}"; return; }
-  local s=""
-  [ "$wins" -gt 0 ] && s="close $wins window(s) → "
-  [ "$wts" -gt 0 ] && s+="remove $wts worktree(s) → "
-  [ "$brs" -gt 0 ] && s+="archive + delete $brs branch(es)"
-  s=${s% → }
-  ask "" "" "" "clean up ${B}$ok${R}: $s${skip:+ ${D}· $skip${R}}" bulk
+  st_set bulk_counts "$ok $wins $wts $brs"; st_set cleanup_scope many; st_del cleanup_choice
+  printf 'execute(%s --choose-cleanup)+transform(%s --on after-cleanup)' "$SELF" "$SELF"
 }
-bulk_confirmed() {  # 첫 확인을 받았다. 머지 안 된 것이 있으면 한 번 더
-  local n; st_get bulk_unmerged; n=${ST:-0}
-  if [ "$n" -gt 0 ]; then ask "" "" "" "${Y}$n of them have commits not in $(judge_ref)${R} · clean up anyway?" bulk2; return; fi
-  bulk_run
+# --- 정리 목록 (ctrl-x 로 겹쳐 뜬다. 레이아웃 목록과 같은 구조) ---------------------------------
+# 항목: clean up(창 → 워크트리 → 백업 → 브랜치 삭제) / keep branch(창 → 워크트리 제거까지, 브랜치는 남긴다).
+# 고른 것은 상태 cleanup_choice 에 남기고 메인 목록의 after-cleanup 이 이어받는다. esc·ctrl-c 면 아무것도 안 한다.
+# 브랜치만 있는 행은 keep 이 할 일이 없어 clean up 하나만 보인다.
+choose_cleanup_step() {
+  local scope kind path branch title rows="" picked ok wins wts brs n warn=""
+  st_get cleanup_scope; scope=$ST
+  if [ "$scope" = many ]; then
+    st_get bulk_counts; read -r ok wins wts brs <<< "$ST"
+    st_get bulk_unmerged; n=${ST:-0}; [ "$n" -gt 0 ] && warn=" ${Y}($n not merged)${R}"
+    title=" clean up $ok selected "
+    rows+="clean up $ok$warn"$'	'"clean"$'
+'
+    [ "$wts" -gt 0 ] && rows+="keep branches ${D}· remove $wts worktree(s) only${R}"$'	'"keep"$'
+'
+  else
+    st_get target; IFS=$US read -r kind path branch <<< "$ST"
+    if real_branch "$branch" && ! is_merged "$branch"; then
+      warn=" ${Y}(+$(git rev-list --count "$(judge_ref)..$branch" 2>/dev/null || echo '?') not in $(judge_ref))${R}"
+    fi
+    title=" clean up ${branch:-$(basename "$path")} "
+    rows+="clean up$warn"$'	'"clean"$'
+'
+    case $kind in worktree|prunable) real_branch "$branch" && rows+="keep branch ${D}· remove the worktree only${R}"$'	'"keep"$'
+' ;; esac
+  fi
+  style_opts
+  picked=$(printf '%s' "$rows" | fzf --ansi --delimiter '\t' --with-nth 1 --no-sort "${STYLE[@]}" --border-label "$title" \
+      --prompt 'clean up> ' --footer "${D}enter choose · esc back${R}" --footer-border line \
+      --preview "$SELF --cleanup-preview {2}" --preview-window 'right,55%,border-left' \
+      --bind 'alt-p:change-preview-window(down,40%,border-top|hidden|right,55%,border-left)') || return 0
+  st_set cleanup_choice "${picked##*$'\t'}"
 }
-bulk_run() {  # 상태 bulk 의 행들을 하나씩 정리한다. 하나가 실패해도 나머지는 계속하고 결과를 모아 푸터에
-  local kind path branch done_n=0 failed=0 refs=0 err="" selfwin msg any_self=""
+next_archive_ref() {  # archive_branch 가 쓸 이름을 미리 (만들지 않는다)
+  local base ref i=2; base="refs/archive/$(date +%Y-%m-%d)/$1"; ref=$base
+  while git show-ref -q --verify "$ref"; do ref="$base-$i"; i=$((i + 1)); done
+  printf '%s' "$ref"
+}
+plan_lines() {  # $1 clean | keep $2 종류 $3 경로 $4 브랜치 → 할 일을 한 줄씩 (정리 목록의 미리보기)
+  local ref
+  [ -n "$3" ] && window_for "$3" && echo "close window ●$WIN_IDX"
+  case $2 in worktree) echo "remove worktree $(home_disp "$3")" ;; prunable) echo "prune missing worktree $(home_disp "$3")" ;; esac
+  real_branch "$4" || return 0
+  if [ "$1" = keep ]; then echo "${G}keep branch $4${R} ${D}(enter on its row later to recreate the worktree)${R}"; return 0; fi
+  ref=$(next_archive_ref "$4")
+  echo "archive $4 → $ref"; echo "delete branch $4"
+  is_merged "$4" || echo "${Y}+$(git rev-list --count "$(judge_ref)..$4" 2>/dev/null || echo '?') commits not in $(judge_ref)${R} ${D}(kept in the archive)${R}"
+  echo "${D}restore: git branch $4 $ref${R}"
+}
+cleanup_preview() {  # $1 clean | keep
+  local scope kind path branch skipped=0
+  st_get cleanup_scope; scope=$ST
+  if [ "$scope" != many ]; then
+    st_get target; IFS=$US read -r kind path branch <<< "$ST"
+    plan_lines "$1" "$kind" "$path" "$branch"; return 0
+  fi
+  while IFS=$US read -r kind path branch; do
+    if [ "$1" = keep ] && [ "$kind" = branch ]; then skipped=$((skipped + 1)); continue; fi
+    echo "${B}${branch:-$(basename "$path")}${R}"
+    plan_lines "$1" "$kind" "$path" "$branch" | sed 's/^/  /'
+  done < "$TMUX_DEV_STATE/bulk"
+  st_get bulk_skip; [ -n "$ST" ] && printf '\n%s%s%s\n' "$D" "$ST" "$R"
+  [ "$skipped" -gt 0 ] && printf '%sskipping %s branch row(s): no worktree to remove%s\n' "$D" "$skipped" "$R"
+  return 0
+}
+# 정리 목록에서 고른 뒤 (메인 목록의 transform). clean up 이면 머지 안 된 것이 있을 때 푸터에서 한 번 더 묻는다
+on_after_cleanup() {
+  local choice scope kind path branch n
+  st_get cleanup_choice; choice=$ST; st_del cleanup_choice
+  [ -n "$choice" ] || return 0
+  st_get cleanup_scope; scope=$ST
+  if [ "$scope" = many ]; then
+    if [ "$choice" = keep ]; then bulk_run keep; return; fi
+    st_get bulk_unmerged; n=${ST:-0}
+    if [ "$n" -gt 0 ]; then ask "" "" "" "${Y}$n of them have commits not in $(judge_ref)${R} · clean up anyway?" bulk2; return; fi
+    bulk_run; return
+  fi
+  st_get target; IFS=$US read -r kind path branch <<< "$ST"
+  if [ "$choice" = keep ]; then clean_run "$kind" "$path" "$branch" keep; return; fi
+  if real_branch "$branch" && ! is_merged "$branch"; then
+    n=$(git rev-list --count "$(judge_ref)..$branch" 2>/dev/null || echo '?')
+    ask "$kind" "$path" "$branch" "${Y}$branch has $n commit(s) not in $(judge_ref)${R} · clean up anyway?" clean2
+    return
+  fi
+  clean_run "$kind" "$path" "$branch"
+}
+bulk_run() {  # 상태 bulk 의 행들을 하나씩 정리한다 ($1 keep 이면 브랜치는 남기고 워크트리만). 실패해도 나머지는 계속하고 결과를 푸터에
+  local keep=${1:-} kind path branch done_n=0 failed=0 refs=0 err="" selfwin msg any_self="" noworktree=0
   st_del confirm target op
   cd "$MAIN"
   selfwin=$(picker_window)
   while IFS=$US read -r kind path branch; do
-    if clean_one "$kind" "$path" "$branch" "$selfwin"; then
+    if [ "$keep" = keep ] && [ "$kind" = branch ]; then noworktree=$((noworktree + 1)); continue; fi
+    if clean_one "$kind" "$path" "$branch" "$selfwin" "$keep"; then
       done_n=$((done_n + 1)); [ -n "$ONE_REF" ] && refs=$((refs + 1)); [ -n "$SELF_CLOSING" ] && any_self=1
     else failed=$((failed + 1)); err=${err:-$ONE_ERR}; fi
   done < "$TMUX_DEV_STATE/bulk"
-  msg="${G}cleaned up $done_n${R}"
+  if [ "$keep" = keep ]; then msg="${G}removed $done_n worktree(s)${R} ${D}· branches kept${R}"
+  else msg="${G}cleaned up $done_n${R}"; fi
+  [ "$noworktree" -gt 0 ] && msg+=" ${D}· skipped $noworktree branch row(s) with no worktree${R}"
   [ "$refs" -gt 0 ] && msg+=" ${D}· archived $refs branch(es) under refs/archive/$(date +%Y-%m-%d)/ (tmux-dev worktree --archived)${R}"
   st_get bulk_skip; [ -n "$ST" ] && msg+=" ${D}· $ST${R}"
   [ "$failed" -gt 0 ] && msg+=" · ${Y}$failed failed${R}: $err"
   [ -n "$any_self" ] && msg+=" ${D}· this window closes when you leave the picker${R}"
   printf 'unbind(focus)+deselect-all+rebind(load)+reload(%s --list worktree)+%s' "$SELF" "$(act change-footer "$msg")"
-}
-clean_confirmed() {  # 첫 확인을 받았다. 브랜치가 머지 안 됐으면 한 번 더 묻고, 아니면 실행
-  local n
-  if real_branch "$3" && ! is_merged "$3"; then
-    n=$(git cherry "$(judge_ref)" "$3" 2>/dev/null | grep -c '^+' || true)
-    ask "$1" "$2" "$3" "${Y}$3 has ${n:-?} commit(s) not in $(judge_ref)${R} · clean up anyway?" clean2
-    return
-  fi
-  clean_run "$1" "$2" "$3"
 }
 keep_session_window() {  # 세션의 마지막 창을 닫기 전에 세션 디렉토리에 창을 하나 연다 (메인 체크아웃이면 @worktree 도)
   local root win; st_get root; root=${ST:-$MAIN}
@@ -1068,7 +1135,7 @@ close_windows() {  # $1 워크트리 경로 $2 피커가 속한 창(없으면 �
   done < <(tmux list-windows -t "$SESSION" -F "#{window_id}${US}#{@worktree}" 2>/dev/null)
 }
 # 하나를 정리한다: 창 → 워크트리 → 백업 → 브랜치. 결과는 ONE_REF(백업 ref, 없으면 빈 값), 실패면 1 과 ONE_ERR.
-# $4 피커가 속한 창 (picker_window. 한꺼번에 정리할 때 한 번만 구한다)
+# $4 피커가 속한 창 (picker_window. 한꺼번에 정리할 때 한 번만 구한다) $5 keep 이면 브랜치는 그대로 (백업·삭제 없음)
 clean_one() {
   local kind=$1 path=$2 branch=$3 out
   ONE_REF="" ONE_ERR=""
@@ -1077,19 +1144,20 @@ clean_one() {
     worktree) out=$(git worktree remove "$path" 2>&1) || { ONE_ERR="git worktree remove failed: ${out##*$'\n'}"; return 1; } ;;
     prunable) git worktree prune ;;
   esac
-  if real_branch "$branch"; then
+  if [ "${5:-}" != keep ] && real_branch "$branch"; then
     ONE_REF=$(archive_branch "$branch") || { ONE_ERR="could not archive $branch"; return 1; }
     out=$(git branch -D "$branch" 2>&1) || { ONE_ERR="git branch -D failed: ${out##*$'\n'}"; return 1; }
   fi
   return 0
 }
-clean_run() {  # $1 종류 $2 경로 $3 브랜치. 하나를 정리하고 목록을 다시 읽어 결과를 푸터에
+clean_run() {  # $1 종류 $2 경로 $3 브랜치 [$4 keep]. 하나를 정리하고 목록을 다시 읽어 결과를 푸터에
   local label=$3 msg note=""
   st_del confirm target op
   cd "$MAIN"   # 세션 디렉토리가 지우려는 워크트리일 수 있다
   real_branch "$3" || label=$(basename "$2")
-  clean_one "$1" "$2" "$3" "$(picker_window)" || { fail "$ONE_ERR"; return; }
-  msg="${G}cleaned up${R} ${B}$label${R}"
+  clean_one "$1" "$2" "$3" "$(picker_window)" "${4:-}" || { fail "$ONE_ERR"; return; }
+  if [ "${4:-}" = keep ]; then msg="${G}removed worktree${R} ${B}$label${R} ${D}· kept branch $3 (enter on its row to recreate)${R}"
+  else msg="${G}cleaned up${R} ${B}$label${R}"; fi
   [ -n "$ONE_REF" ] && msg+=" ${D}· archived →${R} $ONE_REF ${D}· restore: git branch $3 $ONE_REF${R}"
   [ -n "$SELF_CLOSING" ] && note=" ${D}· this window closes when you leave the picker${R}"
   printf 'unbind(focus)+rebind(load)+reload(%s --list worktree)+%s' "$SELF" "$(act change-footer "$msg$note")"
@@ -1175,9 +1243,11 @@ while [ $# -gt 0 ]; do
         esc) on_esc || true ;; change) on_change || true ;; result) on_result || true ;; focus) on_focus || true ;;
         mode) on_mode "${3:-next}" || true ;; tab-click) on_tab_click || true ;; marks) on_marks || true ;;
         refresh) on_refresh || true ;; cleanup) on_cleanup "${3:-}" "${4:-}" "${5:-}" "${6:-}" || true ;;
-        select-merged) on_select_merged || true ;; deselect) on_deselect || true ;; fetch) on_fetch || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
+        select-merged) on_select_merged || true ;; after-cleanup) on_after_cleanup || true ;; deselect) on_deselect || true ;; fetch) on_fetch || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
       esac; exit 0 ;;
     --choose-layout)   in_session_dir; w_choose_layout_step; exit 0 ;;
+    --choose-cleanup)  SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; in_session_dir; choose_cleanup_step; exit 0 ;;
+    --cleanup-preview) SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; in_session_dir; cleanup_preview "${2:-clean}"; exit 0 ;;
     --choose-location) in_session_dir; cur_mode; apply_scope "$MODE"; choose_location_step; exit 0 ;;
     --loc-preview)     loc_preview "${2:-}"; exit 0 ;;
     --help-keys)       in_session_dir; help_keys; exit 0 ;;

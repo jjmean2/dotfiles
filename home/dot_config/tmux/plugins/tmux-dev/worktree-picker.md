@@ -28,7 +28,7 @@ tmux 세션 (세션 디렉토리 = @tmux-dev-path, 없으면 session_path)
 | `subdirectory` | 항상 | 세션 디렉토리 아래 (`⌂` = 세션 디렉토리 자체) | `@dir <경로>`, 이름 = 디렉토리 이름 |
 | `directory` | 항상 | 홈 전체 (S 의 디렉토리 모드와 같은 탐색) | `@dir <경로>` |
 
-- 시작 모드는 저장소면 `worktree`, 아니면 `subdirectory`. `alt-m`(다음)·`alt-M`(이전, 왼쪽 Option+Shift+m)이나 헤더의 모드 이름
+- 시작 모드는 저장소면 `worktree`, 아니면 `subdirectory`. `alt-m`(다음)·`alt-n`(이전, n 이 m 왼쪽)이나 헤더의 모드 이름
   클릭으로 바꾼다. tab·shift-tab 은 fzf 순정의 다중 선택이다(worktree 모드에서만, 정리용).
 - 탭 이름은 온전한 영어 단어다(누를 자리가 넓게, fzf 의 여러 바이트 글자 클릭 버그를 피해서. session-picker.md 화면 절).
 - 창을 찾는 범위는 지금 세션 하나다.
@@ -98,11 +98,19 @@ fzf 를 끝낸 뒤 `apply_decision` 이 만들고 연다(`CONFIRMED=1` 이라 �
 ```
 ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked ─▶ 벨 + 안내
                 ├─ dirty ─▶ 변경 수와 함께 실패
-                └─ 통과 ─▶ "clean up feat-x: close window ●2 → remove worktree → archive + delete branch"  enter · esc
-                             └─ 머지 안 됨 ─▶ "feat-x has 2 commit(s) not in origin/main · clean up anyway?"  enter · esc
-                                              └─ 실행 → 목록 다시 읽기 → 푸터 "cleaned up … · archived → <ref> · restore: …"
+                └─ 통과 ─▶ 정리 목록이 겹쳐 뜬다 (커서로 고르고 enter, esc 는 돌아가기)
+                             ├─ clean up      창 → 워크트리 → 백업 → 브랜치 삭제
+                             │                 └─ 머지 안 됨 ─▶ 푸터 "feat-x has 2 commit(s) not in origin/main · clean up anyway?"
+                             └─ keep branch   창 → 워크트리 제거까지 (브랜치는 남는다. 그 행에서 enter 로 다시 만든다)
+                           → 실행 → 목록 다시 읽기 → 푸터에 결과 (백업 ref, 또는 "kept branch …")
 ```
 
+- 정리 목록은 레이아웃·위치 목록과 같은 겹쳐 뜨는 fzf 다(`execute(--choose-cleanup)` → 상태 `cleanup_choice` →
+  `transform(--on after-cleanup)`). 미리보기가 고른 항목이 할 일을 보여 준다: 닫을 창, 지울 경로, 쓸 백업 ref 이름
+  (`next_archive_ref`), 복구 명령, 머지 안 된 커밋 수. 브랜치만 있는 행은 keep 이 할 일이 없어 clean up 하나만 보인다.
+- 처음엔 푸터 확인(enter · esc)이었다가 "브랜치는 두고 워크트리만" 이 필요해져 고르는 목록으로 바꿨다 (2026-11-09).
+  푸터 키(alt-k)를 더하는 안도 있었지만 커서로 고르는 쪽이 자연스럽고, 우회 없이 피커의 기존 구조를 쓴다.
+  tmux `display-menu` 는 고른 결과를 fzf 로 돌려받을 길이 없어(--listen 등 우회) 택하지 않았다.
 - 순서: 창 닫기 → `git worktree remove`(강제 없이, missing 이면 `prune`) → 백업 → `git branch -D`. 창을 먼저 닫는 것은
   그 안의 프로세스(셸, nvim, 에이전트)를 먼저 끝내려고.
 - 백업: `refs/archive/<날짜>/<브랜치>`, 같은 날 같은 이름이 있으면 `-2`, `-3` (날짜 없는 이름은 다시 쓰면 덮어써서 기각).
@@ -115,17 +123,17 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
 
 ### 한꺼번에 정리 (2026-11-09)
 
-- **선택**: tab / shift-tab(fzf 순정 `--multi`)으로 하나씩, `alt-a` 로 merged 인 워크트리·브랜치를 모두, `alt-A`(왼쪽 Option+Shift+a)로
-  모두 풀기(alt-m / alt-M 처럼 Shift 가 반대 동작). 다중 선택은 정리에만 쓴다
+- **선택**: tab / shift-tab(fzf 순정 `--multi`)으로 하나씩, `alt-a` 로 merged 인 워크트리·브랜치를 모두, `alt-s`(a 옆)로 모두 풀기. 다중 선택은 정리에만 쓴다
   (enter 는 늘 커서 항목을 연다). worktree 모드에서만 tab 이 묶여 있고, 다른 모드로 가면 선택을 비우고 tab 을 푼다.
 - `alt-a` 는 마커가 붙은 목록(상태 `rows`, `--list worktree --marks` 가 남긴다)에서 merged 행의 줄 번호로 `pos(N)+select` 를 만든다.
   검색어가 있으면 먼저 지우고 필터가 끝나는 `result` 이벤트에서 고른다(검색어가 없을 때만 목록 위치 = 줄 번호).
   마커가 아직이면 "markers are still loading".
-- **ctrl-x 에 선택이 있으면**(`FZF_SELECT_COUNT`) fzf 의 `{+f}`(선택한 행들의 파일)로 받아 한꺼번에: 정리할 수 있는 것만 모아
-  `clean up 12: close 2 window(s) → remove 12 worktree(s) → archive + delete 12 branch(es) · skipping 3 (2 dirty, 1 main)` 로 한 번 묻고,
-  머지 안 된 것이 섞이면 `4 of them have commits not in origin/main · clean up anyway?` 로 한 번 더. 하나가 실패해도 나머지는 계속하고
-  결과를 개수로(`cleaned up 12 · archived 12 branch(es) under refs/archive/<날짜>/ · 1 failed: …`). 규칙은 하나씩 정리와 같은
-  `cleanable` / `clean_one` 이다.
+- **ctrl-x 에 선택이 있으면**(`FZF_SELECT_COUNT`) fzf 의 `{+f}`(선택한 행들의 파일)로 받아 정리할 수 있는 것만 모으고, 같은 정리
+  목록에 개수로 띄운다: `clean up 12` / `keep branches · remove 9 worktree(s) only`. 미리보기에 항목별 할 일과 건너뛸 것
+  (`skipping 3 (2 dirty, 1 main)`, keep 이면 워크트리 없는 브랜치 행도)이 나온다. clean up 에 머지 안 된 것이 섞이면
+  `4 of them have commits not in origin/main · clean up anyway?` 로 한 번 더. 하나가 실패해도 나머지는 계속하고 결과를 개수로
+  (`cleaned up 12 · archived 12 branch(es) under refs/archive/<날짜>/ · 1 failed: …`, keep 이면 `removed 9 worktree(s) · branches kept`).
+  규칙은 하나씩 정리와 같은 `cleanable` / `clean_one` 이다.
 
 ## 머지 판정
 
@@ -173,9 +181,11 @@ prefix S 와 같다 (session-picker.md "띄우기" 절): `run-shell -b "tmux-dev
 9. **화면 문구는 영어**, 주석·문서는 한국어.
 10. **행 표시 (2026-11-09)**: 마커를 위치 앞으로, 상태는 베이스 기준 하나(merged / new / +N), 업스트림은 미리보기로,
     위치 줄이기(표준 생략, claude:), 브랜치·원격 행에 나이와 제목, `dirty N`, 이름 칸 최대 30.
-11. **키 (2026-11-09)**: tab·shift-tab 은 fzf 순정 다중 선택(정리에만), 모드는 alt-m·alt-M(S 도 같이), alt-a 는 merged 모두 선택(alt-A 는 모두 풀기),
-    선택이 있을 때 ctrl-x 는 한꺼번에 정리. ctrl-[ 는 Esc 와 같은 바이트라 모드 키로 못 쓴다. alt-M 은 alt-n 보다 "Shift 면 반대
-    방향" 이 tab/shift-tab 과 같아 골랐다.
+11. **키 (2026-11-09)**: tab·shift-tab 은 fzf 순정 다중 선택(정리에만), 모드는 alt-m·alt-M(S 도 같이), alt-a 는 merged 모두 선택(alt-s 는 모두 풀기),
+    선택이 있을 때 ctrl-x 는 한꺼번에 정리. ctrl-[ 는 Esc 와 같은 바이트라 모드 키로 못 쓴다. 이전 모드·모두 풀기는 처음 alt-M·alt-A(Shift 면 반대)였다가
+    사용자 요청으로 손이 편한 alt-n·alt-s 로 (키보드에서 m·a 바로 왼쪽·오른쪽 = 짝).
+12. **정리는 고르는 목록으로 (2026-11-09)**: clean up / keep branch. 미머지 2차 확인은 clean up 에만 남긴다. 여러 개를 골랐으면
+    같은 목록에 clean up N / keep branches(워크트리만, 브랜치 행은 건너뜀).
 
 ## 구현 구조와 시험
 

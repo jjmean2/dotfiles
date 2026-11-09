@@ -305,7 +305,7 @@ fzf 기본 키(0.74)와 겹치지 않는 것만 쓴다.
 | alt-enter | 친 이름으로 새로 만들기 → 위치 피커 | 비어 있음 |
 | esc | 메인 목록: 닫기 / 겹쳐 뜬 목록: 돌아가기 | 둘 다 결과는 fzf 기본(abort). 메인은 판정을 거치게 덮는다 |
 | ctrl-c | 닫기 | fzf 기본 그대로 |
-| alt-m, alt-M | 모드 전환 | 2026-11-09 tab 에서 옮겼다. prefix W 가 tab 을 fzf 순정(다중 선택)으로 쓰므로 두 피커를 같게. alt-M 은 왼쪽 Option+Shift+m |
+| alt-m, alt-n | 모드 다음 / 이전 | 2026-11-09 tab 에서 옮겼다. prefix W 가 tab 을 fzf 순정(다중 선택)으로 쓰므로 두 피커를 같게. 처음엔 alt-M(Option+Shift+m)이었다가 손이 편한 alt-n(n 이 m 왼쪽 = 뒤로)으로 |
 | ctrl-] | 커서 경로를 검색어에 채우기 | 비어 있음. tmux prefix(C-b, C-a)와도 겹치지 않는다 |
 | alt-l (위치 피커) | 레이아웃을 골라 만들기 | 위치 피커 안에서만 |
 | double-click | enter 와 같다 | 기본은 accept. 판정을 거치게 덮는다 |
