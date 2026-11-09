@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# tmux-float: 명령을 화면 가운데의 modal floating pane 으로 띄운다. 팝업(display-popup) 대신 쓴다.
+# tmux.conf 의 키(prefix e, prefix H)가 run-shell 로 부른다.
+#
+#   tmux-float -C <클라이언트> -t <패널> [-c 디렉토리] [-w 너비] [-h 높이] [-T 제목] -- 명령 [인자 ...]
+#     예: run-shell -b "~/.config/tmux/bin/tmux-float -C '#{client_name}' -t '#{pane_id}' -c #{q:pane_current_path} -T nvim -- nvim"
+#
+# 왜 팝업이 아니라 floating pane 인가
+#   tmux 메인테이너가 팝업을 deprecated 로 밝혔고(tmux#5135), 3.9 부터 display-popup 은 floating pane 을 여는 호환
+#   명령으로만 남고 popup-* 옵션은 없어진다. floating pane 과 modal pane(new-pane -O)은 3.8 에 있다.
+#
+# 왜 bind-key 에 new-pane 을 바로 적지 않고 이 런처를 거치나
+#   - floating pane 의 기본 위치는 왼쪽 위 계단식이고 -X/-Y 는 정수 % 만 받는다. 가운데 자리를 칸으로 계산한다
+#     (% 로 넘기면 크기와 위치가 따로 버림돼 한 칸씩 어긋난다. tmux-dev-open 과 같은 계산).
+#   - floating pane 에는 전역 스타일 옵션이 없다. @float-* 를 키를 누를 때 읽어 -s/-S/-B 로 넘긴다
+#     (prefix : 에서 set -g @float-style ... 로 바꾸면 tmux.conf 를 다시 읽지 않아도 바로 먹는다).
+#
+# new-pane 플래그 (팝업과 같은 느낌을 내는 조합)
+#   -O  modal: 포커스를 붙잡고 다른 패널은 못 만진다. 창마다 하나뿐이다. zoom 상태에서도 위에 뜬다.
+#   -K  prefix 까지 모든 키를 패널로. nvim 안의 C-a 가 tmux 에 먹히지 않는다 (팝업과 같다).
+#   -D 는 쓰지 않는다: Esc·C-c 를 tmux 가 가로채 패널을 닫으면 nvim 의 Esc 를 못 쓴다.
+#   명령이 끝나면(:q) 패널도 닫힌다 (remain-on-exit 기본값 off). 닫는 길은 명령을 끝내는 것뿐이다.
+set -euo pipefail
+
+usage() { echo "usage: tmux-float -C <client> -t <pane> [-c dir] [-w width] [-h height] [-T title] -- command [args ...]" >&2; exit 1; }
+
+client='' pane='' dir='' width=90% height=90% title=''
+while getopts 'C:t:c:w:h:T:' o; do
+  case $o in
+    C) client=$OPTARG ;; t) pane=$OPTARG ;; c) dir=$OPTARG ;;
+    w) width=$OPTARG ;; h) height=$OPTARG ;; T) title=$OPTARG ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+[ -n "$client" ] && [ -n "$pane" ] && [ $# -gt 0 ] || usage
+
+opt() { tmux show-option -gqv "$1"; }
+# 크기를 칸으로: $1 크기(N% 또는 칸) $2 창 크기(칸). 창보다 크면 창 크기.
+cells() { local n; case $1 in *%) n=$(( $2 * ${1%\%} / 100 )) ;; *) n=$1 ;; esac; [ "$n" -gt "$2" ] && n=$2; printf '%d' "$n"; }
+
+read -r ww wh < <(tmux display-message -p -t "$pane" '#{window_width} #{window_height}')
+w=$(cells "$width" "$ww") h=$(cells "$height" "$wh")
+
+args=(-O -K -t "$pane" -x "$w" -y "$h" -X $(( (ww - w) / 2 )) -Y $(( (wh - h) / 2 )))
+[ -n "$dir" ] && args+=(-c "$dir")
+[ -n "$title" ] && args+=(-T "$title")
+style=$(opt @float-style);              [ -n "$style" ] && args+=(-s "$style")
+border=$(opt @float-border-style);      [ -n "$border" ] && args+=(-S "$border")
+lines=$(opt @float-border-lines);       [ -n "$lines" ] && args+=(-B "$lines")
+
+# 실패(예: 그 창에 이미 modal 이 떠 있다)는 그 클라이언트의 상태줄에. run-shell 출력으로 두면 패널을 보기 모드로 덮는다.
+if ! out=$(tmux new-pane "${args[@]}" "$@" 2>&1); then
+  tmux display-message -c "$client" -d 5000 "tmux-float: $out"
+fi
