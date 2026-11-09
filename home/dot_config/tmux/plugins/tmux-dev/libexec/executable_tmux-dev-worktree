@@ -37,7 +37,7 @@
 #                     메인 체크아웃·베이스 브랜치·원격 브랜치·locked 는 하지 않고, dirty 면 실패한다. 피커는 열린 채로 남는다
 #   alt-p             미리보기 오른쪽 → 아래 → 숨김
 #   alt-h             키 안내를 미리보기 자리에
-#   esc               검색어 지우기 (확인 중이면 취소). 닫기는 ctrl-c
+#   esc               닫기 (확인 중이면 취소). ctrl-c 는 언제나 닫기
 #
 # worktree 모드 목록: 워크트리(열린 윈도우 ●N → 최근 고른 것 ◷ → 나머지, 메인 체크아웃 포함) → 로컬 브랜치(최근 커밋 순)
 #   → 원격 브랜치(origin/*, 같은 이름의 로컬 브랜치가 있으면 숨긴다). 마커: dirty · merged · [ahead n, behind m] · missing · locked
@@ -460,7 +460,7 @@ tab           mode: worktree → subdirectory → directory (or click a mode nam
 ctrl-]        put the item's path into the query (directory modes)
 alt-p         preview right → bottom → hidden
 alt-h         toggle this help
-esc           clear the query (while asking: cancel)
+esc           close (while asking: cancel)
 ctrl-c        close
 
 ${B}asking first${R}
@@ -628,7 +628,7 @@ on_change() {  # 글자를 치면 묻던 것은 취소. 디렉토리 모드의 �
   else printf '%sunbind(result)+first+%s' "$out" "$(act change-footer "$(footer_now)")"; fi
 }
 on_result() { cur_mode; [ "$MODE" != worktree ] && pathish "${FZF_QUERY:-}" && act change-footer "$(footer_now)"; return 0; }
-on_esc() { st_get confirm; if [ "$ST" = 1 ]; then cancel_ask; else printf 'clear-query'; fi; }
+on_esc() { st_get confirm; if [ "$ST" = 1 ]; then cancel_ask; else printf 'abort'; fi; }
 on_focus() { st_get confirm; if [ "$ST" = 1 ]; then cancel_ask; else printf 'unbind(focus)'; fi; }
 to_mode() {  # $1 새 모드 → 목록·탭·푸터를 바꾸는 액션. worktree 는 마커를 다시 계산하도록 load 를 다시 묶는다
   local load=""; st_set mode "$1"; st_del confirm target op

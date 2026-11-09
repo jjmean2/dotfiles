@@ -24,7 +24,7 @@
 #   ctrl-]            커서 항목의 경로를 검색어에 채운다
 #   alt-p             미리보기 오른쪽 → 아래 → 숨김 (겹쳐 뜬 위치·레이아웃 목록에서도)
 #   alt-h             키 안내를 미리보기 자리에 (다시 누르면 원래대로)
-#   esc               검색어 지우기. 겹쳐 뜬 목록(위치, 레이아웃)에서는 돌아가기. 닫기는 ctrl-c
+#   esc               닫기 (ctrl-c 도). 겹쳐 뜬 목록(위치, 레이아웃)에서는 돌아가기
 #   경로 모양 검색어는 퍼지가 아니라 경로 접두 일치로 거른다. 끝 슬래시는 "이 디렉토리 아래" 다.
 #
 # 목록: 열린 세션(●) → 최근 고른 곳(◷) → 홈 전체 탐색 (lib/dirs.sh). 한 경로는 한 번만, 모드 조건에 맞는 것만.
@@ -190,8 +190,7 @@ tab           mode: repository ↔ directory (or click a mode name at the top)
 ctrl-]        put the item's path into the query
 alt-p         preview right → bottom → hidden (overlaid lists too)
 alt-h         toggle this help
-esc           clear the query (in overlaid lists: go back)
-ctrl-c        close
+esc / ctrl-c  close (in overlaid lists: go back)
 
 ${B}create new${R}
 Type a name and press alt-enter. A location list opens on top.
@@ -289,7 +288,7 @@ on_change() {
   else printf '%sunbind(result)+first+%s' "$out" "$(act change-footer "$(footer_now)")"; fi
 }
 on_result() { pathish "${FZF_QUERY:-}" && act change-footer "$(footer_now)"; return 0; }  # 경로 모양 검색어일 때만 묶인다
-on_esc() { printf 'clear-query'; }
+on_esc() { printf 'abort'; }
 to_mode() {  # $1 새 모드 → 목록·탭·푸터를 바꾸는 액션 (푸터 판정이 모드를 읽으므로 상태를 먼저 바꾼다)
   st_set mode "$1"
   printf 'reload(%s --list %s)+%s+first+%s' "$SELF" "$1" "$(act change-header "$(tabs "$1")")" "$(act change-footer "$(footer_now)")"
