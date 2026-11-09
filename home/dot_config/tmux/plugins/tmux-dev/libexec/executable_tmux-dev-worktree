@@ -27,7 +27,7 @@
 # 피커 (fzf 순정 키는 그대로. 아래는 비어 있던 키와, 같은 뜻으로 덮은 enter·esc·tab)
 #   alt-m / alt-M     모드 다음 / 이전 (왼쪽 Option, alt-M 은 Option+Shift+m. 맨 위 모드 이름을 클릭해도). 저장소가 아니면 worktree 모드가 없다
 #   tab / shift-tab   선택 토글 (fzf 순정, worktree 모드에서만). 선택은 정리(ctrl-x)에만 쓴다. enter 는 늘 커서 항목을 연다
-#   alt-a             merged 인 워크트리·브랜치를 모두 선택
+#   alt-a / alt-A     merged 인 워크트리·브랜치를 모두 선택 / 선택을 모두 풀기 (alt-A 는 왼쪽 Option+Shift+a)
 #   enter             커서 항목으로. 열린 윈도우가 있으면 그리로, 없으면 만든다
 #                     worktree 모드에서 만들어야 하는 것(브랜치, 원격 브랜치, 사라진 워크트리)은 푸터에서 먼저 묻는다:
 #                       enter 만들기 · alt-l 레이아웃 골라 만들기 · esc 취소 (커서를 옮기거나 글자를 치면 취소)
@@ -466,7 +466,7 @@ ctrl-x        clean up the item (worktree mode): window, worktree, branch
               (asks first; asks again if the branch is not merged)
               with a selection: clean up all selected at once
 tab/shift-tab select / deselect (worktree mode, for clean up only)
-alt-a         select all merged worktrees and branches
+alt-a / alt-A select all merged worktrees and branches / deselect all
 alt-m/alt-M   mode: worktree → subdirectory → directory (or click a mode name)
 ctrl-]        put the item's path into the query (directory modes)
 alt-p         preview right → bottom → hidden
@@ -673,6 +673,10 @@ on_select_merged() {
   if [ -n "${FZF_QUERY:-}" ]; then st_set select_merged 1; printf 'rebind(result)+clear-query'; return; fi
   select_merged_actions
 }
+on_deselect() {  # alt-A: 선택을 모두 푼다 (alt-a 의 짝. 하나씩은 tab / shift-tab). 푸터의 "selected N" 안내도 지운다
+  st_del select_merged
+  printf 'deselect-all+%s' "$(act change-footer "$(footer_now)")"
+}
 select_merged_actions() {
   local i=0 n=0 out="" _name disp kind _rest
   while IFS=$US read -r _name disp kind _rest; do   # 탭을 US 로 (on_cleanup_many 와 같은 이유)
@@ -681,7 +685,7 @@ select_merged_actions() {
     case $disp in *merged*) out+="pos($i)+select+"; n=$((n + 1)) ;; esac
   done < <(tr '\t' '\037' < "$TMUX_DEV_STATE/rows")
   [ "$n" -gt 0 ] || { nope "${Y}nothing merged${R}"; return; }
-  printf 'deselect-all+%sfirst+%s' "$out" "$(act change-footer "${G}selected $n merged${R} ${D}· ctrl-x clean up · tab toggle · esc close${R}")"
+  printf 'deselect-all+%sfirst+%s' "$out" "$(act change-footer "${G}selected $n merged${R} ${D}· ctrl-x clean up · tab toggle · alt-A deselect all${R}")"
 }
 on_marks() { cur_mode; [ "$MODE" = worktree ] && printf 'reload-sync(%s --list worktree --marks)' "$SELF"; return 0; }
 on_refresh() { cur_mode; to_mode "$MODE"; }
@@ -795,7 +799,7 @@ pick() {
       --bind "alt-l:transform($SELF --on layout {3} {4} {5})" \
       --bind "esc:transform($SELF --on esc)" \
       --bind "alt-m:transform($SELF --on mode next)" --bind "alt-M:transform($SELF --on mode prev)" \
-      --bind "alt-a:transform($SELF --on select-merged)" \
+      --bind "alt-a:transform($SELF --on select-merged)" --bind "alt-A:transform($SELF --on deselect)" \
       --bind "click-header:transform($SELF --on tab-click)" \
       --bind "ctrl-x:transform($SELF --on cleanup {3} {4} {5} {+f})" \
       --bind "ctrl-]:transform($SELF --on fill {4})" \
@@ -1171,7 +1175,7 @@ while [ $# -gt 0 ]; do
         esc) on_esc || true ;; change) on_change || true ;; result) on_result || true ;; focus) on_focus || true ;;
         mode) on_mode "${3:-next}" || true ;; tab-click) on_tab_click || true ;; marks) on_marks || true ;;
         refresh) on_refresh || true ;; cleanup) on_cleanup "${3:-}" "${4:-}" "${5:-}" "${6:-}" || true ;;
-        select-merged) on_select_merged || true ;; fetch) on_fetch || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
+        select-merged) on_select_merged || true ;; deselect) on_deselect || true ;; fetch) on_fetch || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
       esac; exit 0 ;;
     --choose-layout)   in_session_dir; w_choose_layout_step; exit 0 ;;
     --choose-location) in_session_dir; cur_mode; apply_scope "$MODE"; choose_location_step; exit 0 ;;
