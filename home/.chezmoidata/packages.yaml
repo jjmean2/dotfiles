@@ -30,6 +30,8 @@ packages:
       - gitmux
       # 구문 단위 diff (dot_config/git/config.darwin 의 diff.external)
       - difftastic
+      # nvim snacks.image 가 SVG 등을 PNG 로 바꿀 때 쓴다 (dot_config/nvim/lua/plugins/svg-preview.lua)
+      - imagemagick
     # brew install --cask 로 설치하는 GUI 앱과 폰트
     casks:
       - ghostty
