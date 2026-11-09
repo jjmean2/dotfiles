@@ -13,8 +13,8 @@
 #   tmux-dev project --layout <이름>  새 세션의 레이아웃. 없으면 저장소 설정 → 전역 → ide (lib/layout.sh). --layouts 로 목록
 #   tmux-dev project --list [repo|dir|loc]  후보 목록만 출력 (디버그. loc 은 위치 피커)
 #
-# 피커 (fzf 순정 키는 그대로. 아래는 비어 있던 키와, 같은 뜻으로 덮은 enter·esc·tab)
-#   tab / shift-tab   모드 전환: 저장소(메인 체크아웃만) ↔ 디렉토리(모든 디렉토리)
+# 피커 (fzf 순정 키는 그대로. 아래는 비어 있던 키와, 같은 뜻으로 덮은 enter·esc)
+#   alt-m / alt-M     모드 전환: 저장소(메인 체크아웃만) ↔ 디렉토리(모든 디렉토리). prefix W 와 같은 키 (tab 은 fzf 에 돌려줬다)
 #   모드 이름 클릭    그 모드로 (맨 위 헤더의 탭. fzf 의 click-header)
 #   enter             커서 항목으로. 열기만 한다. 걸리는 항목이 없으면 벨과 안내 (경로를 쳤고 있으면 연다)
 #   alt-enter         친 이름으로 새로 만들기. 위치 피커가 겹쳐 뜬다(최근 만든 곳 → 커서 옆 → 디렉토리 전부).
@@ -173,7 +173,7 @@ apply_decision() {
 # --- 피커 화면 -------------------------------------------------------------------
 # 경로 판정(classify, name_ok), 탭(picker_tabs), 테두리(style_opts)는 lib/picker.sh 에 있다.
 tabs() { picker_tabs "$1" repo dir; }   # 맨 위 헤더의 모드 탭. 클릭하면 그 모드로 (on_tab_click)
-hint() { printf '%s' "${D}enter open · alt-enter new · alt-l layout · tab mode · alt-h keys${R}"; }
+hint() { printf '%s' "${D}enter open · alt-enter new · alt-l layout · alt-m mode · alt-h keys${R}"; }
 create_hint() {  # 검색어가 있으면 늘 보이는 만들기 안내 (결과가 있어도 alt-enter 는 친 이름으로 만든다)
   local q=${1%/} what="directory"; st_get mode; [ "${ST:-repo}" = repo ] && what="repository"
   printf '%s' "alt-enter create $what ${B}'$q'${R} ${D}· enter open · alt-h keys${R}"
@@ -186,7 +186,7 @@ enter         go to the item's session (created if missing)
 alt-enter     create new from the typed name → pick a location
 alt-l         open with a chosen layout
                 enter this time only · alt-enter also save as repo default
-tab           mode: repository ↔ directory (or click a mode name at the top)
+alt-m         mode: repository ↔ directory (or click a mode name at the top)
 ctrl-]        put the item's path into the query
 alt-p         preview right → bottom → hidden (overlaid lists too)
 alt-h         toggle this help
@@ -320,7 +320,8 @@ pick() {
   st_set mode repo
   style_opts
   # 정렬: --scheme=path 의 점수에 동점이면 파일 이름 일치 → 입력 순서(열린 세션 → 최근 → 탐색). path 의 기본 length 대신 index.
-  # 바인딩은 fzf 기본 키와 겹치지 않는 것만. enter·esc·tab·double-click 은 같은 뜻으로 덮는다(판정을 거치게).
+  # 바인딩은 fzf 기본 키와 겹치지 않는 것만. enter·esc·double-click 은 같은 뜻으로 덮는다(판정을 거치게).
+  # 모드 키는 alt-m / alt-M (prefix W 와 같다. W 는 tab 을 fzf 순정의 다중 선택으로 쓴다)
   # 테두리 라벨은 화면 제목(겹쳐 뜨는 위치·레이아웃 목록과 같은 문법), 모드 탭은 맨 위 헤더 (session-picker.md 화면 절).
   fzf --ansi --delimiter '\t' --with-nth 1,2 --nth 1 --tabstop 2 --scheme path --tiebreak pathname,index \
       "${STYLE[@]}" --border-label ' open session ' --header "$(tabs repo)" --header-first --prompt '> ' \
@@ -334,7 +335,7 @@ pick() {
       --bind "alt-enter:transform($SELF --on create {3})" \
       --bind "alt-l:transform($SELF --on layout {3})" \
       --bind "esc:transform($SELF --on esc)" \
-      --bind "tab:transform($SELF --on mode)" --bind "shift-tab:transform($SELF --on mode)" \
+      --bind "alt-m:transform($SELF --on mode)" --bind "alt-M:transform($SELF --on mode)" \
       --bind "click-header:transform($SELF --on tab-click)" \
       --bind "ctrl-]:transform($SELF --on fill {1})" \
       --bind 'alt-p:change-preview-window(down,40%,border-top|hidden|right,45%,border-left)' \

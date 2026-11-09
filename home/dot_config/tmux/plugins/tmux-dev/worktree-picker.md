@@ -28,7 +28,8 @@ tmux 세션 (세션 디렉토리 = @tmux-dev-path, 없으면 session_path)
 | `subdirectory` | 항상 | 세션 디렉토리 아래 (`⌂` = 세션 디렉토리 자체) | `@dir <경로>`, 이름 = 디렉토리 이름 |
 | `directory` | 항상 | 홈 전체 (S 의 디렉토리 모드와 같은 탐색) | `@dir <경로>` |
 
-- 시작 모드는 저장소면 `worktree`, 아니면 `subdirectory`. tab·shift-tab 이나 헤더의 모드 이름 클릭으로 바꾼다.
+- 시작 모드는 저장소면 `worktree`, 아니면 `subdirectory`. `alt-m`(다음)·`alt-M`(이전, 왼쪽 Option+Shift+m)이나 헤더의 모드 이름
+  클릭으로 바꾼다. tab·shift-tab 은 fzf 순정의 다중 선택이다(worktree 모드에서만, 정리용).
 - 탭 이름은 온전한 영어 단어다(누를 자리가 넓게, fzf 의 여러 바이트 글자 클릭 버그를 피해서. session-picker.md 화면 절).
 - 창을 찾는 범위는 지금 세션 하나다.
 
@@ -112,6 +113,19 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
   푸터에 "this window closes when you leave the picker".
 - 세션의 마지막 창이면 세션이 끝나지 않도록 세션 디렉토리에 창을 먼저 연다(메인이면 `@worktree`).
 
+### 한꺼번에 정리 (2026-11-09)
+
+- **선택**: tab / shift-tab(fzf 순정 `--multi`)으로 하나씩, `alt-a` 로 merged 인 워크트리·브랜치를 모두. 다중 선택은 정리에만 쓴다
+  (enter 는 늘 커서 항목을 연다). worktree 모드에서만 tab 이 묶여 있고, 다른 모드로 가면 선택을 비우고 tab 을 푼다.
+- `alt-a` 는 마커가 붙은 목록(상태 `rows`, `--list worktree --marks` 가 남긴다)에서 merged 행의 줄 번호로 `pos(N)+select` 를 만든다.
+  검색어가 있으면 먼저 지우고 필터가 끝나는 `result` 이벤트에서 고른다(검색어가 없을 때만 목록 위치 = 줄 번호).
+  마커가 아직이면 "markers are still loading".
+- **ctrl-x 에 선택이 있으면**(`FZF_SELECT_COUNT`) fzf 의 `{+f}`(선택한 행들의 파일)로 받아 한꺼번에: 정리할 수 있는 것만 모아
+  `clean up 12: close 2 window(s) → remove 12 worktree(s) → archive + delete 12 branch(es) · skipping 3 (2 dirty, 1 main)` 로 한 번 묻고,
+  머지 안 된 것이 섞이면 `4 of them have commits not in origin/main · clean up anyway?` 로 한 번 더. 하나가 실패해도 나머지는 계속하고
+  결과를 개수로(`cleaned up 12 · archived 12 branch(es) under refs/archive/<날짜>/ · 1 failed: …`). 규칙은 하나씩 정리와 같은
+  `cleanable` / `clean_one` 이다.
+
 ## 머지 판정
 
 - `merged` = 브랜치의 변경이 베이스에 모두 들어 있다. ff·merge commit 은 `for-each-ref --merged` 로, rebase(새 SHA)는 고유 커밋의
@@ -158,6 +172,9 @@ prefix S 와 같다 (session-picker.md "띄우기" 절): `run-shell -b "tmux-dev
 9. **화면 문구는 영어**, 주석·문서는 한국어.
 10. **행 표시 (2026-11-09)**: 마커를 위치 앞으로, 상태는 베이스 기준 하나(merged / new / +N), 업스트림은 미리보기로,
     위치 줄이기(표준 생략, claude:), 브랜치·원격 행에 나이와 제목, `dirty N`, 이름 칸 최대 30.
+11. **키 (2026-11-09)**: tab·shift-tab 은 fzf 순정 다중 선택(정리에만), 모드는 alt-m·alt-M(S 도 같이), alt-a 는 merged 모두 선택,
+    선택이 있을 때 ctrl-x 는 한꺼번에 정리. ctrl-[ 는 Esc 와 같은 바이트라 모드 키로 못 쓴다. alt-M 은 alt-n 보다 "Shift 면 반대
+    방향" 이 tab/shift-tab 과 같아 골랐다.
 
 ## 구현 구조와 시험
 
