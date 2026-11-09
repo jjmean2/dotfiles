@@ -27,7 +27,7 @@
 # 피커 (fzf 순정 키는 그대로. 아래는 비어 있던 키와, 같은 뜻으로 덮은 enter·esc·tab)
 #   alt-m / alt-n     모드 다음 / 이전 (왼쪽 Option. n 이 m 의 왼쪽이라 뒤로. 맨 위 모드 이름을 클릭해도). 저장소가 아니면 worktree 모드가 없다
 #   tab / shift-tab   선택 토글 (fzf 순정, worktree 모드에서만). 선택은 정리(ctrl-x)에만 쓴다. enter 는 늘 커서 항목을 연다
-#   alt-a / alt-s     merged 인 워크트리·브랜치를 모두 선택 / 선택을 모두 풀기 (s 가 a 옆)
+#   ctrl-t            토글: 선택이 없으면 merged 인 워크트리·브랜치를 모두 선택, 있으면 모두 풀기 (t = toggle)
 #   enter             커서 항목으로. 열린 윈도우가 있으면 그리로, 없으면 만든다
 #                     worktree 모드에서 만들어야 하는 것(브랜치, 원격 브랜치, 사라진 워크트리)은 푸터에서 먼저 묻는다:
 #                       enter 만들기 · alt-l 레이아웃 골라 만들기 · esc 취소 (커서를 옮기거나 글자를 치면 취소)
@@ -446,7 +446,7 @@ marks_for() {  # $1 워크트리 경로 $2 브랜치 $3 기준 ref $4 브랜치 
 # shellcheck disable=SC2046  # 모드 목록을 단어로 나눠 넘긴다
 tabs() { picker_tabs "$1" $(modes); }   # 맨 위 헤더의 모드 탭. 클릭하면 그 모드로
 hint() {
-  if [ "$1" = worktree ]; then printf '%s' "${D}enter open · alt-enter new · ctrl-x clean up · tab select · alt-a merged · alt-m mode · alt-h keys${R}"
+  if [ "$1" = worktree ]; then printf '%s' "${D}enter open · alt-enter new · ctrl-x clean up · tab select · ctrl-t merged · alt-m mode · alt-h keys${R}"
   else printf '%s' "${D}enter open · alt-enter new · alt-l layout · alt-m mode · alt-h keys${R}"; fi
 }
 create_hint() {  # $1 검색어 $2 모드. 검색어가 있으면 늘 보이는 만들기 안내
@@ -467,7 +467,8 @@ ctrl-x        clean up (worktree mode): a menu opens to pick
               "clean up" (window, worktree, branch) or "keep branch"
               (window, worktree only). With a selection: all selected.
 tab/shift-tab select / deselect (worktree mode, for clean up only)
-alt-a / alt-s select all merged worktrees and branches / deselect all
+ctrl-t        select all merged worktrees and branches
+              (deselect all if anything is selected)
 alt-m / alt-n mode: next / previous (or click a mode name)
 ctrl-]        put the item's path into the query (directory modes)
 alt-p         preview right → bottom → hidden
@@ -636,7 +637,7 @@ on_after_location() {  # 위치 피커에서 esc 면 그대로, 골랐으면 만
 }
 on_change() {  # 글자를 치면 묻던 것은 취소. 디렉토리 모드의 경로 모양 검색어는 접두 일치로
   local out="bg-cancel+"
-  st_get select_merged; [ "$ST" = 1 ] && { printf 'rebind(result)'; return 0; }   # alt-a 가 검색어를 지운 것: result 를 기다린다
+  st_get select_merged; [ "$ST" = 1 ] && { printf 'rebind(result)'; return 0; }   # ctrl-t 가 검색어를 지운 것: result 를 기다린다
   st_get confirm; [ "$ST" = 1 ] && { st_del confirm target op; out+="unbind(focus)+"; }
   cur_mode
   if [ "$MODE" != worktree ] && pathish "${FZF_QUERY:-}"; then printf '%srebind(result)+first+%s' "$out" "$(search_action "$FZF_QUERY")"
@@ -666,15 +667,18 @@ on_tab_click() {  # 헤더의 모드 이름을 클릭: 그 모드로. 이미 그
   for m in $(modes); do [ "$w" = "$m" ] && { [ "$m" = "$MODE" ] || to_mode "$m"; return 0; }; done
   return 0
 }
-# alt-a: 마커가 붙은 목록(상태 rows, --list worktree --marks 가 남긴다)에서 merged 행을 골라 선택한다. 검색어가 있으면 먼저 지우고
+# ctrl-t (선택이 없을 때): 마커가 붙은 목록(상태 rows, --list worktree --marks 가 남긴다)에서 merged 행을 골라 선택한다. 검색어가 있으면 먼저 지우고
 # 필터가 끝나는 result 이벤트에서 고른다 (검색어가 없을 때 목록 위치 = rows 의 줄 번호라 pos(N)+select 로 고를 수 있다).
 on_select_merged() {
-  cur_mode; [ "$MODE" = worktree ] || { nope "${Y}alt-a selects merged worktrees and branches${R} ${D}(worktree mode)${R}"; return; }
+  cur_mode; [ "$MODE" = worktree ] || { nope "${Y}ctrl-t selects merged worktrees and branches${R} ${D}(worktree mode)${R}"; return; }
   [ -s "$TMUX_DEV_STATE/rows" ] || { nope "${Y}markers are still loading${R} ${D}· try again in a moment${R}"; return; }
   if [ -n "${FZF_QUERY:-}" ]; then st_set select_merged 1; printf 'rebind(result)+clear-query'; return; fi
   select_merged_actions
 }
-on_deselect() {  # alt-s: 선택을 모두 푼다 (alt-a 의 짝. 하나씩은 tab / shift-tab). 푸터의 "selected N" 안내도 지운다
+on_toggle_merged() {  # ctrl-t: 선택이 있으면 모두 풀고, 없으면 merged 를 모두 고른다
+  if [ "${FZF_SELECT_COUNT:-0}" -gt 0 ]; then on_deselect; else on_select_merged; fi
+}
+on_deselect() {  # 선택을 모두 푼다 (ctrl-t 의 해제 쪽. 하나씩은 tab / shift-tab). 푸터의 "selected N" 안내도 지운다
   st_del select_merged
   printf 'deselect-all+%s' "$(act change-footer "$(footer_now)")"
 }
@@ -686,7 +690,7 @@ select_merged_actions() {
     case $disp in *merged*) out+="pos($i)+select+"; n=$((n + 1)) ;; esac
   done < <(tr '\t' '\037' < "$TMUX_DEV_STATE/rows")
   [ "$n" -gt 0 ] || { nope "${Y}nothing merged${R}"; return; }
-  printf 'deselect-all+%sfirst+%s' "$out" "$(act change-footer "${G}selected $n merged${R} ${D}· ctrl-x clean up · tab toggle · alt-s deselect all${R}")"
+  printf 'deselect-all+%sfirst+%s' "$out" "$(act change-footer "${G}selected $n merged${R} ${D}· ctrl-x clean up · tab toggle · ctrl-t deselect all${R}")"
 }
 on_marks() { cur_mode; [ "$MODE" = worktree ] && printf 'reload-sync(%s --list worktree --marks)' "$SELF"; return 0; }
 on_refresh() { cur_mode; to_mode "$MODE"; }
@@ -800,7 +804,7 @@ pick() {
       --bind "alt-l:transform($SELF --on layout {3} {4} {5})" \
       --bind "esc:transform($SELF --on esc)" \
       --bind "alt-m:transform($SELF --on mode next)" --bind "alt-n:transform($SELF --on mode prev)" \
-      --bind "alt-a:transform($SELF --on select-merged)" --bind "alt-s:transform($SELF --on deselect)" \
+      --bind "ctrl-t:transform($SELF --on toggle-merged)" \
       --bind "click-header:transform($SELF --on tab-click)" \
       --bind "ctrl-x:transform($SELF --on cleanup {3} {4} {5} {+f})" \
       --bind "ctrl-]:transform($SELF --on fill {4})" \
@@ -1243,7 +1247,7 @@ while [ $# -gt 0 ]; do
         esc) on_esc || true ;; change) on_change || true ;; result) on_result || true ;; focus) on_focus || true ;;
         mode) on_mode "${3:-next}" || true ;; tab-click) on_tab_click || true ;; marks) on_marks || true ;;
         refresh) on_refresh || true ;; cleanup) on_cleanup "${3:-}" "${4:-}" "${5:-}" "${6:-}" || true ;;
-        select-merged) on_select_merged || true ;; after-cleanup) on_after_cleanup || true ;; deselect) on_deselect || true ;; fetch) on_fetch || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
+        toggle-merged) on_toggle_merged || true ;; after-cleanup) on_after_cleanup || true ;; deselect) on_deselect || true ;; fetch) on_fetch || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
       esac; exit 0 ;;
     --choose-layout)   in_session_dir; w_choose_layout_step; exit 0 ;;
     --choose-cleanup)  SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; in_session_dir; choose_cleanup_step; exit 0 ;;
@@ -1255,7 +1259,7 @@ while [ $# -gt 0 ]; do
       SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}
       in_session_dir
       case ${2:-} in
-        worktree)  # 마커가 붙은 목록은 alt-a 가 읽도록 상태에도 남긴다 (마커 없는 목록이면 지운다)
+        worktree)  # 마커가 붙은 목록은 ctrl-t 가 읽도록 상태에도 남긴다 (마커 없는 목록이면 지운다)
           if [ "${3:-}" = --marks ] && [ -n "${TMUX_DEV_STATE:-}" ]; then list_mode worktree --marks | tee "$TMUX_DEV_STATE/rows"
           else [ -n "${TMUX_DEV_STATE:-}" ] && rm -f "$TMUX_DEV_STATE/rows"; list_mode worktree "${3:-}"; fi ;;
         subdirectory|directory) list_mode "$2" "${3:-}" ;;
