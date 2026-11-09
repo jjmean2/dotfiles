@@ -556,8 +556,13 @@ local group = vim.api.nvim_create_augroup("svg_preview", { clear = true })
 
 vim.api.nvim_create_autocmd("FileType", {
   group = group,
-  pattern = "svg",
+  -- bigfile: snacks.bigfile 은 줄 평균 길이가 1000자를 넘으면(한 줄로 저장된 아이콘 SVG 에 흔하다) filetype 을
+  -- svg 대신 bigfile 로 바꾼다. 그래도 프리뷰는 쓸 수 있어야 하므로 이름이 .svg 인 bigfile 에도 키를 건다.
+  pattern = { "svg", "bigfile" },
   callback = function(e)
+    if e.match == "bigfile" and not vim.api.nvim_buf_get_name(e.buf):lower():match("%.svg$") then
+      return
+    end
     vim.keymap.set("n", "<leader>cp", M.toggle, { buffer = e.buf, desc = "SVG Preview" })
   end,
 })
