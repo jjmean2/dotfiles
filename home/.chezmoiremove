@@ -24,3 +24,6 @@
 .config/nvim/lua/plugins/spec.lua
 .config/nvim/lua/plugins/treesitter.lua
 .config/nvim/lua/plugins/whichkey.lua
+
+# nvim-lock-push → nvim-extras-push (lazy-lock.json 을 머신 상태로 돌리면서 lazyvim.json 만 커밋하게 됨)
+.jongwan/bin/nvim-lock-push

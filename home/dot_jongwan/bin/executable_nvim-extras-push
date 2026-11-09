@@ -1,26 +1,29 @@
 #!/usr/bin/env zsh
-# nvim 상태 파일(lazy-lock.json, lazyvim.json) 만 커밋하고 push 한다. :Lazy update 나
-# :LazyExtras 로 extras 를 바꾼 뒤에 부른다.
+# LazyVim 상태 파일 lazyvim.json 만 커밋하고 push 한다. :LazyExtras 로 extras 를 바꾼 뒤에 부른다.
+# lazyvim.json 은 켠 extras 목록(공용 시작점)과 읽은 NEWS 버전을 기록한다 (lazy.lua.tmpl 참고).
+# LazyVim 업데이트 뒤 NEWS 창을 보면 NEWS 버전만 바뀌기도 한다. 그때도 이걸로 커밋하면 된다.
+#
+# lazy-lock.json 은 머신 상태라 저장소에 없다 (~/.config/nvim/lazy-lock.json). :Lazy update 뒤에
+# 커밋할 것은 없다. 예전 이름은 nvim-lock-push.
 #
 # 왜 스크립트인가: 특정 저장소(dotfiles)의 특정 파일을, 변경이 있을 때만, 정해진 메시지로
 # 커밋하는 일이라 셸 alias(로직 없음)나 git alias(저장소 일반 작업)보다 여기가 맞다.
 # 저장소 위치는 chezmoi 가 알고 있으므로 `chezmoi git -- …` 로 실행하고 경로를 박지 않는다.
 #
 # 사용:
-#   nvim-lock-push              # "chore(nvim): 플러그인 업데이트" 로 커밋·push
-#   nvim-lock-push "메시지"     # 커밋 제목을 바꿔서
-#   nvim-lock-push -n [메시지]  # 커밋만 하고 push 는 하지 않음
+#   nvim-extras-push              # "chore(nvim): LazyVim extras 갱신" 으로 커밋·push
+#   nvim-extras-push "메시지"     # 커밋 제목을 바꿔서 (예: "chore(nvim): lang.python extra 켜기")
+#   nvim-extras-push -n [메시지]  # 커밋만 하고 push 는 하지 않음
 #
-# 커밋에 경로를 주므로(git commit -- <파일>) 다른 파일이 스테이징돼 있어도 두 파일만 들어간다.
-# lazyvim.json 은 LazyVim 이 켠 extras 목록과 읽은 NEWS 버전을 기록한다 (lazy.lua.tmpl 참고).
-# main 이 아닌 브랜치에 있으면 멈춘다. 설정 변경 PR 브랜치에 lockfile 커밋이 섞이지 않게.
+# 커밋에 경로를 주므로(git commit -- <파일>) 다른 파일이 스테이징돼 있어도 이 파일만 들어간다.
+# main 이 아닌 브랜치에 있으면 멈춘다. 설정 변경 PR 브랜치에 이 커밋이 섞이지 않게.
 
 emulate -L zsh
 setopt err_exit no_unset pipe_fail
 
 typeset prog=${0:t}   # 함수 안에서는 $0 이 함수 이름이 되므로 여기서 잡아 둔다
-typeset -a files=(home/dot_config/nvim/lazy-lock.json home/dot_config/nvim/lazyvim.json)
-typeset default_msg="chore(nvim): 플러그인 업데이트"
+typeset -a files=(home/dot_config/nvim/lazyvim.json)
+typeset default_msg="chore(nvim): LazyVim extras 갱신"
 typeset push=1
 
 usage() {

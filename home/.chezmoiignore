@@ -30,9 +30,11 @@
 .config/karabiner
 {{ end -}}
 
-# nvim 상태 파일 두 개: lazy.nvim lockfile 과 LazyVim 의 extras 목록(lazyvim.json).
-# git 으로 추적하되 배포하지 않는다. lazy 와 LazyVim 이 소스 디렉터리의 파일에 직접 쓰도록
-# lua/config/lazy.lua.tmpl 의 lockfile 옵션과 vim.g.lazyvim_json 이 가리키고 있어서, 여기서 빼지
-# 않으면 같은 파일의 복사본이 ~/.config/nvim 에 하나 더 생기고 apply 때마다 덮어쓰려 한다.
+# nvim 상태 파일 두 개.
+# - lazyvim.json (LazyVim 의 extras 목록): git 으로 추적하되 배포하지 않는다. LazyVim 이 소스 디렉터리의
+#   파일에 직접 쓰도록 lua/config/lazy.lua.tmpl 의 vim.g.lazyvim_json 이 가리키고 있어서, 여기서 빼지
+#   않으면 같은 파일의 복사본이 ~/.config/nvim 에 하나 더 생기고 apply 때마다 덮어쓰려 한다.
+# - lazy-lock.json (lazy.nvim lockfile): 머신 상태라 저장소에 없다. lazy.nvim 이 ~/.config/nvim 에
+#   직접 쓰는 관리 밖 파일이다. `chezmoi add ~/.config/nvim` 같은 일괄 추가로 딸려 들어오지 않게 막아 둔다.
 .config/nvim/lazy-lock.json
 .config/nvim/lazyvim.json
