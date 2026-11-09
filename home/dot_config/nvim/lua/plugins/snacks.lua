@@ -116,6 +116,10 @@ return {
     end
     local patterns = vim.list_extend(vim.deepcopy(project_patterns), local_patterns)
     return require("lazy.core.util").merge(opts, {
+      -- 알림(vim.notify → snacks.notifier)이 떠 있는 시간(ms). 기본 3000 은 읽기 전에 사라진다.
+      -- 0 이면 시간이 지나도 닫히지 않고 <leader>un(Dismiss All Notifications)으로 닫을 때까지 남는다.
+      -- 이미 사라진 알림은 <leader>n(Notification History)에서 다시 볼 수 있다.
+      notifier = { timeout = 10000 },
       picker = {
         sources = {
           projects = { dev = expand_project_parents(patterns) },
