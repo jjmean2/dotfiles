@@ -111,8 +111,22 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
 - 처음엔 푸터 확인(enter · esc)이었다가 "브랜치는 두고 워크트리만" 이 필요해져 고르는 목록으로 바꿨다 (2026-11-09).
   푸터 키(alt-k)를 더하는 안도 있었지만 커서로 고르는 쪽이 자연스럽고, 우회 없이 피커의 기존 구조를 쓴다.
   tmux `display-menu` 는 고른 결과를 fzf 로 돌려받을 길이 없어(--listen 등 우회) 택하지 않았다.
-- 순서: 창 닫기 → `git worktree remove`(강제 없이, missing 이면 `prune`) → 백업 → `git branch -D`. 창을 먼저 닫는 것은
+- 순서: 창 닫기 → 워크트리 제거(missing 이면 `prune`) → 백업 → `git branch -D`. 창을 먼저 닫는 것은
   그 안의 프로세스(셸, nvim, 에이전트)를 먼저 끝내려고.
+- **빠른 제거 (2026-11-09).** `git worktree remove` 는 디렉토리를 다 지울 때까지 기다린다(무시 파일 3만 개에 1.3초). 대신
+  같은 부모의 `.trash/<이름>.<시각>.<pid>` 로 `git worktree move` 한다: 같은 파일시스템의 이름 바꾸기라 즉시(0.02초) 끝나고,
+  원래 경로·목록 행이 바로 비고, `checkout --detach` 로 브랜치가 풀려 `git branch -D` 와 같은 이름으로 다시 만들기가 바로 된다.
+  실제 삭제(`git worktree remove --force --force`)는 결과를 알린 뒤에. `mv` 가 아니라 `git worktree move` 인 것은 git 의 검사
+  (메인·locked·서브모듈 거절)와 메타데이터를 그대로 쓰려고. 옮기지 못하면(서브모듈, 다른 파일시스템) 예전처럼 바로 지운다.
+  휴지통의 워크트리는 목록에서 숨기고(`list_worktrees`), 중간에 끊겨 남은 것은 다음에 피커가 뜰 때 백그라운드 fetch 와 함께
+  tmux 서버에서 마저 지운다(`trash_sweep`, `--empty-trash`).
+- **진행 표시 (2026-11-09).** 정리는 콜백(transform)에서 바로 하지 않고 `tmux run-shell -b … --cleanup-job` 로 띄운다. fzf 가
+  멈추지 않고, 피커가 끝나도(esc, 피커 창 닫힘) 정리는 끝까지 간다. 피커는 처음에 풀어 둔 `every(0.15)` 이벤트를 다시 묶어
+  틱마다(`--cleanup-tick`, 저장소를 찾지 않는 가벼운 경로) 스피너와 상태 `progress`(`2/3 h2 · archiving branch`)를 푸터에 그리고,
+  `finished` 가 생기면 `every` 를 풀고 목록을 다시 읽어 결과를 남긴다. 정리 중(`busy`)에는 enter·ctrl-x·alt-enter·alt-l·모드·alt-a 가
+  벨만 낸다. 상태 디렉토리는 피커가 끝나면 지워지므로 작업은 시작할 때 할 일을 다 읽고, 이후 쓰기는 실패해도 넘긴다. 작업이
+  중간에 죽어도 EXIT 트랩이 결과를 남겨 스피너가 계속 돌지 않는다. fzf 의 `unbind`/`rebind` 는 `every(0.15)` 전체 이름으로 해야
+  먹는다(시험: `every` 만 쓰면 다시 묶이지 않는다).
 - 백업: `refs/archive/<날짜>/<브랜치>`, 같은 날 같은 이름이 있으면 `-2`, `-3` (날짜 없는 이름은 다시 쓰면 덮어써서 기각).
   `refs/heads` 밖이라 브랜치 목록에는 안 뜬다. 목록 `tmux-dev worktree --archived`, 복구 `git branch <이름> <ref>`.
 - **피커가 그 창 안에 있을 때.** 피커는 정리할 창 안의 modal 패널일 수 있다(그 창에서 prefix W). 창을 닫으면 피커도 죽는다.
@@ -186,6 +200,8 @@ prefix S 와 같다 (session-picker.md "띄우기" 절): `run-shell -b "tmux-dev
     사용자 요청으로 손이 편한 alt-n·alt-s 로 (키보드에서 m·a 바로 왼쪽·오른쪽 = 짝).
 12. **정리는 고르는 목록으로 (2026-11-09)**: clean up / keep branch. 미머지 2차 확인은 clean up 에만 남긴다. 여러 개를 골랐으면
     같은 목록에 clean up N / keep branches(워크트리만, 브랜치 행은 건너뜀).
+13. **빠른 제거 + 진행 표시 (2026-11-09)**: 휴지통(`.trash/`, 워크트리 모음 디렉토리 안)으로 `git worktree move` 한 뒤 백그라운드 삭제,
+    정리는 tmux 서버 작업으로 돌리고 피커는 `every` 틱으로 진행을 보인다 (사용자 결정: "둘다").
 
 ## 구현 구조와 시험
 
