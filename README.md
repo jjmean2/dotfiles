@@ -180,10 +180,10 @@ nvim +'Lazy restore'                                         # lockfile 의 comm
   얹는다(`prefix c` 의 보통 윈도우, 저장소 아닌 세션은 그대로). "플러그인" 의 실체는 tmux.conf 의 `run-shell` 한 줄이
   진입 스크립트 `tmux-dev.tmux` 를 돌리고 그 스크립트가 `bind-key` 를 부르는 것이다(TPM 은 그 위의 설치기일 뿐).
   키·팝업 크기·레이아웃은 `@tmux-dev-*` 사용자 옵션으로 `run-shell` 앞에서 바꾼다. 셸에서는 `tmux-dev project|worktree`
-  (bin 이 PATH 에 들어 있다, `--help`).
+  (bin 이 PATH 에 들어 있다, `--help`). 사용 가이드(튜토리얼·작업별 안내·레퍼런스·문제 해결)는 [`docs/tmux-dev/`](docs/tmux-dev/README.md).
   - `prefix S` (`tmux-dev project [경로]`): 디렉토리 하나를 고르면 그 디렉토리의 세션으로 간다. 세션이 없으면 만들고(레이아웃
     적용), 디렉토리가 없으면 만든다. 세션은 이름이 아니라 경로로 찾는다(세션 옵션 `@tmux-dev-path`, 없으면 `session_path`).
-    모드는 저장소(메인 체크아웃만) ↔ 디렉토리(전부)를 tab 으로. 후보는 열린 세션 → 피커로 최근 고른 곳 → 홈 전체 탐색 순이고,
+    모드는 저장소(메인 체크아웃만) ↔ 디렉토리(전부)를 alt-m / alt-n 으로. 후보는 열린 세션 → 피커로 최근 고른 곳 → 홈 전체 탐색 순이고,
     탐색은 숨김 디렉토리를 빼고 머신별 `~/.config/tmux-dev/ignore`(gitignore 문법, chezmoi 가 처음 한 번만 만든다)의 패턴을 뺀다.
     enter 는 열기만 하고, 새로 만들기는 alt-enter 다. 친 이름으로 위치 피커(최근 만든 곳 → 커서 옆 → 디렉토리 전부)가 겹쳐 뜨고,
     거기서 enter 면 만들고 연다(저장소 모드는 `git init` 까지, alt-l 이면 레이아웃을 골라서). `/` 나 `~` 로 시작하는 검색어는 경로
@@ -191,9 +191,9 @@ nvim +'Lazy restore'                                         # lockfile 의 comm
     팝업은 테두리 없이 띄우고 fzf 가 tmux 팝업과 같은 모양의 테두리를 그려 윗변에 모드 탭을 둔다. 워크트리 경로를 고르면 그
     워크트리의 윈도우로 간다. 설계와 판단 근거는 플러그인의 `session-picker.md`.
     alt-l 은 레이아웃(어느 패널에 무엇을 띄우나)을 겹쳐 뜬 목록에서 골라서 열고(esc 는 한 단계 뒤로), 거기서 alt-enter 면 저장소
-    기본값으로도 남긴다(`git config tmux-dev.layout`). Enter 는 묻지 않고 저장소 설정 → 전역 `@tmux-dev-layout` → ide 순으로 쓴다.
+    기본값으로도 남긴다(`git config tmux-dev.layout`). Enter 는 묻지 않고 저장소 설정 → 전역 `@tmux-dev-layout` → plain(셸 하나) 순으로 쓴다.
     개인 레이아웃은 `~/.config/tmux-dev/layouts.sh` 에 함수 하나와 `layout_register` 한 줄.
-    기본 레이아웃: `ide`(셸 | nvim), `ide-dev`(셸 | nvim + dev 서버), `nvim`, `nvim-dev`(nvim / dev 서버), `plain`.
+    내장 레이아웃: `plain`(셸 하나, 기본값), `ide`(셸 | nvim), `ide-dev`(셸 | nvim + dev 서버), `nvim`, `nvim-dev`(nvim / dev 서버).
     dev 서버 명령은 `git config tmux-dev.dev`, 없으면 package.json 의 `dev` 스크립트(lockfile 로 pnpm/yarn/bun/npm 선택).
   - `prefix W` (`tmux-dev worktree [브랜치|경로]`): 저장소의 워크트리·브랜치·원격 브랜치를 한 목록에서 고르면 그 워크트리의
     윈도우로, 없으면 `git worktree add` 와 윈도우를 만든다. 없는 이름을 치면 로컬 main 에서 새 브랜치. alt-l 로 레이아웃을
