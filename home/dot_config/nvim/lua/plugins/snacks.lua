@@ -47,19 +47,26 @@ local function expand_project_parents(patterns)
   return dirs
 end
 
--- explorer 키 세 개. 기존 키의 짝이 되게 고르고, LazyVim 코어·모든 extras·snacks 피커가 안 쓰는 키로 했다.
---   L          (explorer 목록) l(열고 편집 창으로) 의 변형: 열되 포커스는 explorer 에 남긴다.
---   O          (explorer 목록) o(시스템 앱으로 열기) 의 변형: Finder 에서 그 파일을 선택해 보여 준다.
---   <leader>fo (전역) <leader>fe(explorer 토글) 옆: explorer 로 "가기". 닫혀 있으면 <leader>e 처럼 열고,
---              열려 있으면 현재 파일을 트리에서 찾아 그 위로 포커스를 옮긴다.
---              (<leader>e 는 열려 있으면 닫아 버려서 포커스 이동에 못 쓴다.)
+-- explorer 키. snacks 기본 키(o, l)와 LazyVim 키(<leader>e, <leader>E)를 바꾼다.
+--   <leader>e  (전역) explorer 로 "가기" (root dir). 닫혀 있으면 열고, 열려 있으면 현재 파일을 트리에서 찾아
+--              그 위로 포커스를 옮긴다. LazyVim 기본은 <leader>fe 로 넘겨 토글(열려 있으면 닫기)하는데,
+--              그러면 포커스 이동에 못 써서 덮어쓴다. LazyVim 의 <leader>e 는 <leader>fe 를 remap 으로 부르는
+--              별도 매핑이라, 이것만 바꿔도 <leader>fe 는 토글로 남는다.
+--   <leader>E  (전역) 같은 "가기" 를 cwd 기준으로. <leader>fE 는 cwd 토글로 남는다.
+--              이미 열려 있으면 기준 디렉터리와 상관없이 그 explorer 로 간다.
+--   l          (explorer 목록) 열되 포커스는 explorer 에 남긴다. snacks 기본은 열고 편집 창으로 간다.
+--   o          (explorer 목록) 열고 편집 창으로 간다 (snacks 기본 l).
+--   O          (explorer 목록) 시스템 앱으로 열기 (snacks 기본 o).
+--   <C-r>      (explorer 목록) Finder 에서 그 파일을 선택해 보여 준다. snacks 의 <c-r> 은 git·projects 피커와
+--              입력창 insert 모드(<c-r>% 등)에만 있어서 explorer 목록에서는 겹치지 않는다.
 
 -- 편집 창에서 explorer 로 포커스를 옮기고 현재 파일을 트리에서 보여 준다.
-local function focus_explorer()
+---@param cwd? string 새로 열 때의 기준 디렉터리. nil 이면 nvim 의 cwd.
+local function focus_explorer(cwd)
   local explorer = Snacks.picker.get({ source = "explorer" })[1]
   if not explorer then
     -- 새로 열 때는 follow_file 이 현재 파일 위치를 펼쳐 주고, 포커스도 목록에 간다.
-    Snacks.explorer({ cwd = LazyVim.root() })
+    Snacks.explorer({ cwd = cwd })
     return
   end
   -- explorer 안이나 터미널처럼 파일이 아닌 버퍼에서 부르면 보여 줄 파일이 없으니 포커스만 옮긴다.
@@ -95,7 +102,10 @@ end
 return {
   "folke/snacks.nvim",
   keys = {
-    { "<leader>fo", focus_explorer, desc = "Focus Explorer (reveal file)" },
+    -- stylua: ignore start
+    { "<leader>e", function() focus_explorer(LazyVim.root()) end, desc = "Focus Explorer (root dir)" },
+    { "<leader>E", function() focus_explorer() end, desc = "Focus Explorer (cwd)" },
+    -- stylua: ignore end
     { "<leader>sF", pick_filetype, desc = "Filetype (set for buffer)" },
   },
   -- 함수로 둔 이유는 위 "머신마다 다른 위치" 참고. lazy 의 merge 는 spec 병합과 같은 규칙(리스트는 교체)이다.
@@ -121,8 +131,10 @@ return {
               list = {
                 keys = {
                   -- confirm 이 편집 창으로 포커스를 옮겨 파일을 연 뒤, focus_list 가 explorer 로 되돌린다.
-                  ["L"] = { { "confirm", "focus_list" }, desc = "Open (keep focus)" },
-                  ["O"] = { "reveal_in_finder", desc = "Reveal in Finder" },
+                  ["l"] = { { "confirm", "focus_list" }, desc = "Open (keep focus)" },
+                  ["o"] = { "confirm", desc = "Open" },
+                  ["O"] = { "explorer_open", desc = "Open with System App" },
+                  ["<C-r>"] = { "reveal_in_finder", desc = "Reveal in Finder" },
                 },
               },
             },
