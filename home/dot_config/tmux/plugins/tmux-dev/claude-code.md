@@ -7,9 +7,9 @@
 
 ## 기본 흐름: 워크트리를 먼저, 에이전트는 그 안에서
 
-1. 저장소 세션에서 `prefix W`, 브랜치 이름을 치고 alt-enter, 푸터의 확인에 Enter. 워크트리와 윈도우(왼쪽 셸 / 오른쪽 nvim)가
+1. 저장소 세션에서 `prefix W`, 브랜치 이름을 치고 alt-enter, 푸터의 확인에 Enter. 워크트리와 윈도우(기본 레이아웃 plain 이면 셸 하나)가
    생긴다. 이미 있는 브랜치는 그 행에서 Enter (역시 푸터에서 한 번 묻는다).
-2. 왼쪽 셸에서 `claude`. 에이전트는 그 트리에서 커밋·푸시하고 `gh pr create --draft` 로 리뷰 화면을 연다.
+2. 그 윈도우의 셸에서 `claude`. 에이전트는 그 트리에서 커밋·푸시하고 `gh pr create --draft` 로 리뷰 화면을 연다.
 3. 머지는 GitHub 버튼이나 `gh pr merge --rebase`. 원격 브랜치 삭제는 GitHub 의 자동 삭제에 맡긴다
    (`--delete-branch` 는 워크트리에 체크아웃된 로컬 브랜치를 지우려다 실패한다).
 4. `prefix W` 에서 그 행에 ctrl-x, 푸터의 확인에 Enter. 윈도우 닫기, 워크트리 제거, 브랜치는 `refs/archive/<날짜>/<브랜치>`
@@ -67,7 +67,7 @@ Claude Code 의 `WorktreeCreate` 훅은 `claude -w`, EnterWorktree, 백그라운
 ## 백그라운드 변형
 
 폰이나 다른 세션에서 `claude --bg -w <이름> -p "..."`. 훅이 중앙 위치에 워크트리를 만들고 세션이 거기서 돈다.
-나중에 `prefix W` → 그 행에 Enter 로 윈도우를 열고, 왼쪽 셸에서 `claude attach <id>`. 끝나면 ctrl-x.
+나중에 `prefix W` → 그 행에 Enter 로 윈도우를 열고, 셸에서 `claude attach <id>`. 끝나면 ctrl-x.
 
 ## 스택(gh stack)
 

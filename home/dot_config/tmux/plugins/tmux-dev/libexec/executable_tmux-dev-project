@@ -10,7 +10,7 @@
 # 사용
 #   tmux-dev project                  피커 (tmux 안에서는 prefix S 가 modal floating pane 으로 띄운다. tmux-dev open)
 #   tmux-dev project <디렉토리>       바로 그 디렉토리의 세션으로 (있는 디렉토리만. 최근 내역에는 남기지 않는다)
-#   tmux-dev project --layout <이름>  새 세션의 레이아웃. 없으면 저장소 설정 → 전역 → ide (lib/layout.sh). --layouts 로 목록
+#   tmux-dev project --layout <이름>  새 세션의 레이아웃. 없으면 저장소 설정 → 전역 → plain (lib/layout.sh). --layouts 로 목록
 #   tmux-dev project --list [repo|dir|loc]  후보 목록만 출력 (디버그. loc 은 위치 피커)
 #
 # 피커 (fzf 순정 키는 그대로. 아래는 비어 있던 키와, 같은 뜻으로 덮은 enter·esc)

@@ -12,7 +12,7 @@ TMUX_DEV_HISTORY="${TMUX_DEV_HISTORY:-${XDG_STATE_HOME:-$HOME/.local/state}/tmux
 TMUX_DEV_WORKTREES="${TMUX_DEV_WORKTREES:-${XDG_DATA_HOME:-$HOME/.local/share}/tmux-dev/worktrees}"
 TMUX_DEV_CACHE="${TMUX_DEV_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/tmux-dev}"
 # 새 윈도우의 레이아웃 (lib/layout.sh). 진입 스크립트가 @tmux-dev-layout 을 환경변수로 넘긴다.
-TMUX_DEV_LAYOUT="${TMUX_DEV_LAYOUT:-ide}"
+TMUX_DEV_LAYOUT="${TMUX_DEV_LAYOUT:-plain}"
 
 # 색 (fzf --ansi 용)
 B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[0m'

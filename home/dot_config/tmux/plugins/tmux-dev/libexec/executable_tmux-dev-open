@@ -22,7 +22,7 @@
 #
 # 옵션 (없으면 기본값)
 #   @tmux-dev-popup-size  85%,75%  너비,높이 (% 또는 칸). 이름은 팝업 시절 그대로 둔다 (설정을 바꾸지 않아도 되게)
-#   @tmux-dev-layout      ide      새 세션·윈도우의 레이아웃 (TMUX_DEV_LAYOUT 로 넘긴다)
+#   @tmux-dev-layout      plain    새 세션·윈도우의 레이아웃 (TMUX_DEV_LAYOUT 로 넘긴다)
 #   @float-style          배경·글자 스타일 (tmux.conf). 없으면 popup-style
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -43,7 +43,7 @@ style=$(opt @float-style "$(tmux show-option -gqv popup-style)")
 
 args=(-O -K -B none -t "$pane" -c "$dir" -x "$w" -y "$h" -X $(( (ww - w) / 2 )) -Y $(( (wh - h) / 2 )))
 [ -n "$style" ] && args+=(-s "$style")
-args+=(-e "TMUX_DEV_CLIENT=$client" -e "TMUX_DEV_LAYOUT=$(opt @tmux-dev-layout ide)")
+args+=(-e "TMUX_DEV_CLIENT=$client" -e "TMUX_DEV_LAYOUT=$(opt @tmux-dev-layout plain)")
 
 # 실패(예: 이미 modal 이 떠 있다)는 그 클라이언트의 상태줄에. run-shell 출력으로 두면 패널을 보기 모드로 덮는다.
 if ! out=$(tmux new-pane "${args[@]}" "$ROOT/bin/tmux-dev" "$cmd" 2>&1); then
