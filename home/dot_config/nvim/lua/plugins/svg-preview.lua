@@ -90,14 +90,37 @@ local function clear_progress(p)
   if not vim.api.nvim_buf_is_valid(p.buf) then
     return
   end
+  -- eids 는 snacks 내부 필드다. 이름이 바뀌어 못 찾으면 그림 칸까지 지울 수 있으니 아무것도 하지 않는다.
+  if type(p.eids) ~= "table" or #p.eids == 0 then
+    return
+  end
   local ns = vim.api.nvim_create_namespace("snacks.image") -- 이미 있으면 같은 id 를 돌려준다
   local own = {} ---@type table<integer, true>
-  for _, id in ipairs(p.eids or {}) do
+  for _, id in ipairs(p.eids) do
     own[id] = true
   end
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(p.buf, ns, 0, -1, {})) do
     if not own[m[1]] then
       vim.api.nvim_buf_del_extmark(p.buf, ns, m[1])
+    end
+  end
+end
+
+-- snacks placement 는 버퍼가 지금 탭페이지의 어느 창에도 없으면 hide() 로 hidden 을 켜는데, 다시 보여도
+-- show() 를 부르지 않는다 (placement.lua 의 update). hidden 인 채로는 그림 칸을 빈 문자열로 그려서
+-- 원본 탭·다른 버퍼·탭페이지·tmux 윈도우를 갔다 오면 그림이 사라진다.
+-- on_update_pre(문서의 snacks.image.Opts 에 있는 옵션)는 모든 update 직전에 불리므로, 여기서 창이 있으면 hidden 을
+-- 끈다. show() 는 update 를 다시 부르므로 쓰지 않고 값만 바꾼다. 바뀐 hidden 이 상태에 들어가 이번 update 가 다시 그린다.
+-- snacks 가 이 버그를 고치면 hidden 이 이미 false 라서 아무 일도 하지 않는다.
+---@param p snacks.image.Placement
+local function unhide(p)
+  if not p.hidden then
+    return
+  end
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_get_buf(win) == p.buf then
+      p.hidden = false
+      return
     end
   end
 end
@@ -124,12 +147,13 @@ local function attach(buf, src, opts)
     Snacks.util.bo(buf, { filetype = "image", modifiable = false, modified = false, swapfile = false })
     opts = opts or {}
     local on_update = opts.on_update
-    local p = Snacks.image.placement.new(
+    Snacks.image.placement.new(
       buf,
       src,
       vim.tbl_extend("force", opts, {
         conceal = true,
         auto_resize = true,
+        on_update_pre = unhide,
         on_update = function(pl)
           clear_progress(pl)
           if on_update then
@@ -138,20 +162,6 @@ local function attach(buf, src, opts)
         end,
       })
     )
-    -- snacks 는 창에서 사라질 때 hide() 로 hidden 을 켜지만 다시 보일 때 show() 를 부르지 않는다
-    -- (placement.lua 의 update). hidden 인 채로는 그림 칸을 빈 문자열로 그려서, 탭을 갔다 오면 그림이 사라진다.
-    -- 버퍼가 창에 다시 올라오면 show() 로 풀어 준다. augroup 은 placement 가 닫힐 때 함께 지워진다.
-    vim.api.nvim_create_autocmd("BufWinEnter", {
-      group = p.augroup,
-      buffer = buf,
-      callback = function()
-        vim.schedule(function()
-          if not p.closed then
-            p:show()
-          end
-        end)
-      end,
-    })
   end)
 end
 
