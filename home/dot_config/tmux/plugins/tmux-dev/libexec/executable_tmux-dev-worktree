@@ -1113,10 +1113,11 @@ busy() { st_get busy; [ "$ST" = 1 ] || return 1; printf 'bell'; }   # 정리 중
 start_job() {  # $1 one(상태 target) | many(상태 bulk) [$2 keep]
   st_del confirm op finished result fail progress
   st_set job "$1$US${2:-}$US$(picker_window)"
-  st_set busy 1; st_set tick 0
+  st_set session "$SESSION"   # 세션 이름(사용자가 정한 글자)은 셸 명령줄 대신 상태로 넘긴다
   # run-shell 의 출력은 패널에 뜨므로 버린다. 피커 패널(TMUX_PANE)은 close_windows 가 남겨야 해서 넘긴다
-  tmux run-shell -b "$(printf 'TMUX_DEV_STATE=%q TMUX_PANE=%q %q -t %q --cleanup-job >/dev/null 2>&1' \
-    "$TMUX_DEV_STATE" "${TMUX_PANE:-}" "$SELF" "$SESSION")"
+  tmux run-shell -b "$(printf 'TMUX_DEV_STATE=%q TMUX_PANE=%q %q --cleanup-job >/dev/null 2>&1' \
+    "$TMUX_DEV_STATE" "${TMUX_PANE:-}" "$SELF")" 2>/dev/null || { st_del job; nope "${Y}could not start the clean-up${R}"; return; }
+  st_set busy 1; st_set tick 0
   printf 'unbind(focus)+%s+rebind(%s)' "$(act change-footer "${SPIN[0]} ${B}cleaning up${R}")" "$EVERY"
 }
 cleanup_tick() {  # every 이벤트: 끝났으면 결과, 아니면 스피너와 진행
@@ -1232,13 +1233,12 @@ clean_run() {  # $1 종류 $2 경로 $3 브랜치 $4 keep|"" $5 피커 창. 하�
 # 브랜치도 바로 지울 수 있다(같은 이름으로 다시 만들 수도). 실제 삭제(git worktree remove --force)는 결과를 알린 뒤에 한다.
 # 옮기지 못하면(서브모듈, 다른 파일시스템 …) 예전처럼 바로 지운다. 휴지통의 워크트리는 목록에 안 보이고(list_worktrees),
 # 중간에 끊겨 남은 것은 다음에 피커가 뜰 때 마저 지운다(trash_sweep).
-TRASHED=()
 trash_worktree() {  # $1 워크트리 경로. 실패면 1 과 ONE_ERR
   local path=$1 tdir dest out
   tdir="$(dirname "$path")/.trash"; dest="$tdir/$(basename "$path").$(date +%Y%m%d-%H%M%S).$$"
   if mkdir -p "$tdir" 2>/dev/null && git worktree move "$path" "$dest" >/dev/null 2>&1; then
     git -C "$dest" checkout -q --detach >/dev/null 2>&1 || true
-    TRASHED+=("$dest"); return 0
+    return 0
   fi
   rmdir "$tdir" 2>/dev/null || true
   out=$(git worktree remove "$path" 2>&1) || { ONE_ERR="git worktree remove failed: ${out##*$'\n'}"; return 1; }
@@ -1347,7 +1347,7 @@ while [ $# -gt 0 ]; do
         select-merged) on_select_merged || true ;; after-cleanup) on_after_cleanup || true ;; deselect) on_deselect || true ;; fetch) on_fetch || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
       esac; exit 0 ;;
     --cleanup-tick)    cleanup_tick; exit 0 ;;   # 저장소를 찾지 않는다 (틱마다 불린다)
-    --cleanup-job)     in_session_dir; cleanup_job; exit 0 ;;
+    --cleanup-job)     st_get session; SESSION=$ST; in_session_dir; cleanup_job; exit 0 ;;
     --empty-trash)     repo_init; empty_trash; exit 0 ;;
     --choose-layout)   in_session_dir; w_choose_layout_step; exit 0 ;;
     --choose-cleanup)  SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; in_session_dir; choose_cleanup_step; exit 0 ;;
