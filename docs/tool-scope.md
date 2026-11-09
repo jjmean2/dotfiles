@@ -32,6 +32,18 @@
   어기면 경고한다 (`lazyvim/config/init.lua`). `lua/plugins/` 나 `.lazy.lua` 는 그보다 뒤에 붙으므로
   `{ import = "lazyvim.plugins.extras.lang.zig" }` 대신 extra 가 하는 일 중 필요한 spec 만 직접 쓴다.
   extra 내용은 `~/.local/share/nvim/lazy/LazyVim/lua/lazyvim/plugins/extras/` 에서 읽을 수 있다.
+  - 보류한 설계 (머신 전용 extras 가 실제로 필요해지면, 예: 회사 머신의 `lang.java`): `lazy.lua.tmpl` 의 **최상위
+    spec 목록**에서 LazyVim 과 `{ import = "plugins" }` 사이에 관리 밖 목록 파일의 `{ import = "<extra>" }` 를
+    끼워 넣는다. 확인해 둔 것:
+    - 최상위에 넣어야 한다. `LazyVim.has_extra()` 는 최상위 spec 목록은 보지만 다른 모듈 안의 import 는 못 본다.
+      못 보면 picker·cmp·explorer 같은 기본 묶음 판정이 틀려진다 (예: `editor.fzf` 를 켜도 snacks picker 가 같이 켜짐).
+    - 정렬 순서를 받지 못한다. `lazyvim/plugins/xtras.lua` 의 prios 정렬은 `lazyvim.json` 목록과 기본 묶음에만
+      적용된다. 그래서 머신 전용은 뒤쪽 extras(`lang.*`, `util.*` 등, prio 50 이상)만 둔다. 먼저 불러와야 하는 것
+      (`test.core`, `dap.core`, `ui.edgy`, `ai.copilot-native`, `lang.typescript`, `formatting.prettier`, 대시보드)은
+      공용 `lazyvim.json` 에 둔다.
+    - 목록 파일은 `lua/plugins/` 밖에 둔다 (`lua/config/local-extras.lua` 등). 안에 두면 문자열이 플러그인 이름으로
+      읽힌다. 파일이 없는 머신을 위해 `fs_stat` 으로 확인한 뒤 `require` 한다 (`pcall` 은 문법 오류까지 삼킨다).
+    - `:LazyExtras` 화면에는 켜진 상태로 보이되 "not managed" 라 토글할 수 없다. 공용과 겹쳐도 한 번만 불러온다.
 - **프로젝트 설정은 그 디렉터리에서 띄워야 적용된다.** mise 는 셸의 현재 디렉터리로 PATH 를 정하고, lazy.nvim 은
   `.lazy.lua` 를 **nvim 이 시작될 때의 cwd** 와 그 상위에서 찾는다 (`lazy/core/plugin.lua` 의 `find_local_spec`). 둘 다
   시작할 때 한 번만 정해진다. `cd <프로젝트> && nvim` 으로 띄운다 (tmux-dev 레이아웃은 프로젝트 디렉터리에서 띄운다).
@@ -48,10 +60,11 @@
 
 ```sh
 nvim                 # :LazyExtras → lang.python 에서 x → nvim 재시작 (Mason 이 pyright 등 설치)
-nvim-lock-push "chore(nvim): lang.python extra 켜기"   # lazyvim.json + lazy-lock.json 만 커밋·push
+nvim-extras-push "chore(nvim): lang.python extra 켜기"   # lazyvim.json 만 커밋·push
 ```
 
-다른 머신: `chezmoi git -- pull --ff-only` → `nvim` → `:Lazy restore`.
+다른 머신: `chezmoi git -- pull --ff-only` → `nvim` (새 extra 의 플러그인이 설치된다). 플러그인 버전(lockfile)은
+머신마다 따로라 맞추지 않는다 (README 의 nvim 절).
 
 ### 예 A-2. 모든 머신에 런타임 추가
 
@@ -134,6 +147,7 @@ chezmoi unmanaged ~/.config/nvim
 ```
 
 git 기록이 없어 잊기 쉬우므로 이름을 `local-*.lua` 로 맞춰 둔다. 지우려면 파일만 지우고 nvim 재시작.
+여기서 더한 플러그인은 이 머신의 lockfile(`~/.config/nvim/lazy-lock.json`, 관리 밖)에만 기록되고 저장소는 바뀌지 않는다.
 
 ### 예 C-3. 이 머신의 프로젝트 피커(`<leader>fp`)에 경로 추가
 
