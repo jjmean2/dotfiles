@@ -17,7 +17,7 @@
 #   tmux-dev worktree <디렉토리>         워크트리가 아닌 디렉토리면 그 디렉토리의 윈도우로 (tmux 안에서만)
 #   tmux-dev worktree --base <ref>       새 브랜치의 베이스 (기본: 로컬 main. origin/HEAD 가 가리키는 이름)
 #   tmux-dev worktree --layout <이름>    새 윈도우의 레이아웃. 없으면 저장소 설정(git config tmux-dev.layout) →
-#                                        전역(@tmux-dev-layout) → ide 순 (lib/layout.sh). --layouts 로 목록
+#                                        전역(@tmux-dev-layout) → plain 순 (lib/layout.sh). --layouts 로 목록
 #   tmux-dev worktree -t <세션>          윈도우를 만들 세션 (기본: 지금 클라이언트의 세션)
 #   tmux-dev worktree --path <브랜치>    그 브랜치의 워크트리가 만들어질 경로만 출력
 #   tmux-dev worktree --list [worktree|subdirectory|directory] [--marks]   후보 목록만 출력 (디버그)
@@ -83,7 +83,7 @@ LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
 # shellcheck source=../lib/picker.sh
 . "$LIB/picker.sh"           # 상태 디렉토리·판정·탭·테두리·위치 피커·레이아웃 목록. project 와 공유
 
-LAYOUT=""                                  # --layout 으로 명시한 값. 비어 있으면 resolve_layout (저장소 설정 → 전역 → ide)
+LAYOUT=""                                  # --layout 으로 명시한 값. 비어 있으면 resolve_layout (저장소 설정 → 전역 → plain)
 BASE=""                                    # --base. 비어 있으면 default_base
 SESSION="${TMUX_WORKTREE_SESSION:-}"       # -t
 HISTORY_MAX=500

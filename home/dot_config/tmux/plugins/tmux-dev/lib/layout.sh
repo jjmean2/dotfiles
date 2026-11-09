@@ -4,7 +4,7 @@
 # "새 윈도우의 어느 패널에 무엇을 띄우나"(역할) 를 정하는 것이다. 윈도우를 만든 직후 한 번만 적용한다.
 #
 # 어느 레이아웃을 쓰나 (resolve_layout): 명령줄 --layout > 저장소의 git config tmux-dev.layout > 전역 TMUX_DEV_LAYOUT
-# (tmux 옵션 @tmux-dev-layout 을 진입 스크립트가 넘긴다) > ide. 피커에서 alt-l 로 고르면 이번 윈도우에만 쓰고,
+# (tmux 옵션 @tmux-dev-layout 을 진입 스크립트가 넘긴다) > plain(셸 하나). 피커에서 alt-l 로 고르면 이번 윈도우에만 쓰고,
 # 레이아웃 목록에서 alt-enter 로 고르면 그 저장소의 기본값(tmux-dev.layout)으로도 남는다. 직접 바꾸려면
 # 저장소 안에서 git config tmux-dev.layout <이름>, 되돌리려면 git config --unset tmux-dev.layout.
 #
@@ -136,7 +136,7 @@ apply_layout() {
 resolve_layout() {
   local l=$1
   [ -n "$l" ] || { [ -n "${2:-}" ] && l=$(git -C "$2" config --get tmux-dev.layout 2>/dev/null) || l=""; }
-  [ -n "$l" ] || l=${TMUX_DEV_LAYOUT:-ide}
+  [ -n "$l" ] || l=${TMUX_DEV_LAYOUT:-plain}
   printf '%s\n' "$l"
 }
 # fzf 로 레이아웃을 고른다. $1 은 미리보기용 명령 접두 (뒤에 이름이 붙어 그림을 출력해야 한다). $2 가 save 면

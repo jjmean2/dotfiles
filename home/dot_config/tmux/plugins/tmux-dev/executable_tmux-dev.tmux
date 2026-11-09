@@ -7,7 +7,7 @@
 #   set -g @tmux-dev-project-key  S         prefix S: 프로젝트 → 세션 (소문자 s 는 순정 세션 목록)
 #   set -g @tmux-dev-worktree-key W         prefix W: 워크트리·디렉토리 → 윈도우 (소문자 w 는 순정 윈도우 트리)
 #   set -g @tmux-dev-popup-size   85%,75%   피커 창 너비,높이
-#   set -g @tmux-dev-layout       ide       새 세션·윈도우의 패널 배치 (ide: 왼쪽 셸 / 오른쪽 nvim, plain: 셸 하나)
+#   set -g @tmux-dev-layout       plain     새 세션·윈도우의 패널 배치 (plain: 셸 하나, ide: 왼쪽 셸 / 오른쪽 nvim)
 #
 # 두 피커 모두 modal floating pane 으로 뜬다 (display-popup 은 tmux 3.9 부터 floating pane 을 여는 호환 명령으로만 남는다).
 # run-shell 로 런처(libexec/tmux-dev-open)를 부르고, 런처가 키를 누른 클라이언트·패널·디렉토리를 피커에 넘긴다. 크기·레이아웃
