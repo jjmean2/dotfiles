@@ -9,3 +9,9 @@
 -- 읽힌 인코딩은 :set fenc? 로 확인한다. 저장도 그 인코딩으로 하므로 원본 인코딩이 유지된다.
 vim.opt.fileencodings:remove("latin1")
 vim.opt.fileencodings:append({ "cp949", "latin1" })
+
+-- 철자 검사: 한글(과 한자·가나)은 검사하지 않는다.
+-- 'spelllang' 의 특수 값 "cjk" 는 동아시아 문자를 철자 검사 대상에서 빼고, 영어 단어 검사는 그대로 둔다.
+-- 이게 없으면 LazyVim 이 markdown·gitcommit 등에서 켜는 spell 이 한글 단어마다 빨간 밑줄을 긋는다.
+-- 일시적으로 한글도 검사하려면 :setlocal spelllang-=cjk
+vim.opt.spelllang = { "en", "cjk" }
