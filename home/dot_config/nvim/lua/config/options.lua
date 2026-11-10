@@ -15,3 +15,23 @@ vim.opt.fileencodings:append({ "cp949", "latin1" })
 -- 이게 없으면 LazyVim 이 markdown·gitcommit 등에서 켜는 spell 이 한글 단어마다 빨간 밑줄을 긋는다.
 -- 일시적으로 한글도 검사하려면 :setlocal spelllang-=cjk
 vim.opt.spelllang = { "en", "cjk" }
+
+-- chezmoi 소스의 셸 설정 파일: 대상 이름(.zshrc 등)이 아니라 dot_ 접두사 이름이라 nvim 이 셸로
+-- 알아보지 못한다(dot_zshrc 는 conf 로 잡힌다). 파일 형식을 직접 정해 하이라이트·포맷(shfmt)이
+-- 붙게 한다. .vscode/settings.json 의 files.associations 와 같은 목록이다.
+-- .tmpl 은 Go 템플릿 문법이 섞여 셸로 포맷하면 깨지므로 넣지 않는다.
+local function bash(_, bufnr)
+  return "sh", function(b)
+    vim.b[b or bufnr].is_bash = 1
+  end
+end
+vim.filetype.add({
+  filename = {
+    dot_zshrc = "zsh",
+    dot_zshenv = "zsh",
+    dot_zprofile = "zsh",
+    source_zsh_variants = "zsh", -- zsh autoload 함수 (shebang 없음)
+    dot_bashrc = bash,
+    dot_bash_profile = bash,
+  },
+})
