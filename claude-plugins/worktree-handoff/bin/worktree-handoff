@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# worktree-handoff — 지금 Claude 대화를 포크해서 브랜치 워크트리의 새 tmux 윈도우에서 이어간다.
+#
+#   worktree-handoff [--session <id>] [--base <ref>] [--prompt-file <파일|->] <브랜치>
+#
+# --prompt-file - 이면 첫 프롬프트를 표준 입력에서 읽는다
+#
+# 세션 ID:   --session 또는 $WORKTREE_HANDOFF_SESSION (스킬은 ${CLAUDE_SESSION_ID} 로 넘긴다)
+# 워크트리:  그 브랜치의 워크트리가 있으면 그대로. 없으면 tmux-dev 가 있을 때 그 규칙(--hook-create, 베이스는
+#            로컬 main 이라 --base 는 무시), 없을 때 git worktree add 로 <저장소>.worktrees/<브랜치>
+# 윈도우:    그 워크트리의 윈도우(@worktree)가 있으면 거기에 새 패널, 없으면 새 윈도우. 둘 다 -d 라 화면은
+#            메인에 남는다. 그 패널에서 claude --resume <id> --fork-session "<첫 프롬프트>" 를 실행한다
+set -euo pipefail
+
+die() { echo "worktree-handoff: $*" >&2; exit 1; }
+STATE=${XDG_STATE_HOME:-$HOME/.local/state}/worktree-handoff
+
+sid=${WORKTREE_HANDOFF_SESSION:-}; base=""; prompt_file=""; branch=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --session) sid=$2; shift 2 ;;
+    --base) base=$2; shift 2 ;;
+    --prompt-file) prompt_file=$2; shift 2 ;;
+    -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*) die "unknown option: $1" ;;
+    *) branch=$1; shift ;;
+  esac
+done
+[ -n "$branch" ] || die "브랜치 이름을 주세요"
+[ -n "${TMUX:-}" ] || die "tmux 안에서 실행하세요"
+command -v claude >/dev/null || die "claude 가 PATH 에 없습니다"
+
+[ -n "$sid" ] || die "세션 ID 를 주세요 (--session <id>)"
+
+main=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+[ -n "$main" ] || die "git 저장소 안에서 실행하세요"
+cd "$main"
+base=${base:-$(git symbolic-ref --short HEAD 2>/dev/null || echo HEAD)}
+
+# --- 워크트리 ------------------------------------------------------------------
+existing=$(git worktree list --porcelain | awk -v b="refs/heads/$branch" '
+  /^worktree /{p=substr($0,10)} $0=="branch " b {print p; exit}')
+if [ -n "$existing" ]; then
+  wt=$existing
+elif command -v tmux-dev >/dev/null || [ -x "$HOME/.config/tmux/plugins/tmux-dev/bin/tmux-dev" ]; then
+  td=$(command -v tmux-dev || echo "$HOME/.config/tmux/plugins/tmux-dev/bin/tmux-dev")
+  wt=$(jq -nc --arg n "$branch" --arg c "$main" '{name:$n,cwd:$c}' | "$td" worktree --hook-create)
+else
+  wt="$(dirname "$main")/$(basename "$main").worktrees/${branch//\//-}"
+  if git show-ref --verify --quiet "refs/heads/$branch"; then
+    git worktree add "$wt" "$branch" >&2
+  else
+    git worktree add -b "$branch" "$wt" "$base" >&2
+  fi
+fi
+
+# --- 첫 프롬프트 ---------------------------------------------------------------
+mkdir -p "$STATE/prompt"
+# 패널의 claude 는 sleep 뒤에 이 파일을 읽으므로, 연달아 불려도 덮어쓰지 않게 호출마다 새 파일
+pf=$(mktemp "$STATE/prompt/${branch//\//-}.XXXXXX")
+if [ "$prompt_file" = - ]; then cat >"$pf"
+elif [ -n "$prompt_file" ]; then cp "$prompt_file" "$pf"
+else
+  cat >"$pf" <<EOF
+여기서부터는 별도 세션으로 구현을 이어간다.
+- 작업 디렉토리: $wt (브랜치 $branch)
+- 메인 체크아웃($main)의 파일은 읽기만 하고 수정하지 않는다.
+지금까지 합의한 범위를 짧게 요약한 뒤 시작해.
+EOF
+fi
+
+# --- 윈도우 --------------------------------------------------------------------
+# 그 워크트리의 윈도우가 이미 있으면 거기에 새 패널을 연다 (기존 패널에서 무엇이 돌고 있을지 모르므로
+# 키를 보내지 않는다). 없으면 새 윈도우. 어느 쪽이든 -d 라 지금 보는 화면은 그대로다
+wid=$(tmux list-windows -F "#{window_id}$(printf '\t')#{@worktree}" | awk -F'\t' -v p="$wt" '$2==p{print $1; exit}')
+if [ -n "$wid" ]; then
+  pane=$(tmux split-window -d -h -P -F '#{pane_id}' -t "$wid" -c "$wt")
+else
+  pane=$(tmux new-window -d -P -F '#{pane_id}' -c "$wt" -n "$branch")
+  wid=$(tmux display -p -t "$pane" '#{window_id}')
+  tmux set -w -t "$wid" @worktree "$wt"    # tmux-dev 피커가 이 윈도우를 워크트리로 인식한다 (없어도 무해)
+fi
+# sleep: 스킬에서 불렸을 때 이 Bash 호출의 결과가 원본 기록에 써질 때까지 기다린다
+tmux send-keys -t "$pane" "sleep 2; claude --resume $sid --fork-session \"\$(cat $(printf %q "$pf"))\"" Enter
+
+echo "worktree: $wt"
+echo "window:   $(tmux display -p -t "$pane" '#S:#I (#W)')"

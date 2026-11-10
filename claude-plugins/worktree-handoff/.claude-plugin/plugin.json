@@ -1,0 +1,9 @@
+{
+  "name": "worktree-handoff",
+  "version": "0.1.0",
+  "description": "메인 체크아웃에서 설계한 대화를 포크해서 브랜치 워크트리의 새 tmux 윈도우로 넘긴다",
+  "author": {
+    "name": "jjmean2"
+  },
+  "license": "MIT"
+}
