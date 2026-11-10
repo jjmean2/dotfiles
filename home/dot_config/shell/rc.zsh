@@ -119,6 +119,12 @@ bindkey '\eq' push-line-or-edit
 bindkey '\eQ' push-line-or-edit
 bindkey '\eOP' where-is
 
+# Option+← / Option+→ (ESC[1;3D / ESC[1;3C) 로 단어 이동.
+# Ghostty 의 기본 esc:b / esc:f 변환을 끄고(config.ghostty 참고) 방향키를 그대로 받으므로
+# 여기서 연결한다. select-word-style bash 가 적용되어 / 도 단어 경계가 된다.
+bindkey '^[[1;3D' backward-word
+bindkey '^[[1;3C' forward-word
+
 autoload -Uz edit-command-line
 zle -N edit-command-line
 bindkey "^X^E" edit-command-line

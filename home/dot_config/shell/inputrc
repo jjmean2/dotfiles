@@ -19,3 +19,7 @@ set show-all-if-ambiguous on
 
 # Alt-Backspace로 / 기준 전단어 삭제
 "\e\C-?": backward-kill-word
+
+# Option+← / Option+→ (ESC[1;3D / ESC[1;3C) 로 단어 이동 (rc.zsh 와 같은 설정)
+"\e[1;3D": backward-word
+"\e[1;3C": forward-word
