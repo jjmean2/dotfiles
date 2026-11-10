@@ -20,7 +20,7 @@ allowed-tools: Bash(worktree-handoff:*)
    - 사용자의 추가 지시 (인자 전체: `$ARGUMENTS`, 첫 단어는 브랜치 이름이다)
 2. 그 메시지를 표준 입력으로 넘겨 Bash 로 한 번 실행한다. 메시지에 `WORKTREE_HANDOFF_EOF` 만 있는 줄은 넣지 않는다:
    ```
-   worktree-handoff --session ${CLAUDE_SESSION_ID} --prompt-file - -- $0 <<'WORKTREE_HANDOFF_EOF'
+   worktree-handoff --session ${CLAUDE_SESSION_ID} --prompt-file - -- '$0' <<'WORKTREE_HANDOFF_EOF'
    <1의 메시지>
    WORKTREE_HANDOFF_EOF
    ```
