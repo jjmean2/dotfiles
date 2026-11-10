@@ -1,4 +1,4 @@
-# shellcheck shell=sh disable=SC1091
+# shellcheck shell=sh disable=SC1091,SC1090
 
 # # 로그인 쉘의 초기화 스크립트
 # - PATH 설정 (외부 도구 찾기)
@@ -144,7 +144,7 @@ elif [ -n "$BASH_VERSION" ]; then
 		. "$HOME/dev/toolbox/google-cloud-sdk/path.bash.inc"
 fi
 
-if [ -d "$HOME/Library/pnpm" ] || return 0; then
+if [ -d "$HOME/Library/pnpm" ]; then
 	export PNPM_HOME="$HOME/Library/pnpm"
 	PATH="$PNPM_HOME/bin:$PATH"
 fi
@@ -169,6 +169,30 @@ fi
 # ==================================================
 if [ -n "$ZSH_VERSION" ]; then
 	[ -f "$HOME/.config/shell/profile.zsh" ] && . "$HOME/.config/shell/profile.zsh"
+fi
+
+# ==================================================
+# 🛠️ profile.d/ 스크립트 로드
+# ==================================================
+
+# profile.d/ 내 파일을 lexical 순서로 순회하며, 확장자에 맞는 shell에서만 sourcing
+# (rc.sh 의 rc.d/ 와 같은 규칙. 머신별 환경변수처럼 비대화형 셸에도 필요한 것을 둔다)
+if [ -d "$HOME/.config/shell/profile.d" ]; then
+	for _profile_file in "$HOME/.config/shell/profile.d"/*; do
+		[ -e "$_profile_file" ] || continue
+		case "$_profile_file" in
+		*.zsh)
+			[ -n "$ZSH_VERSION" ] && . "$_profile_file"
+			;;
+		*.bash)
+			[ -n "$BASH_VERSION" ] && . "$_profile_file"
+			;;
+		*.sh)
+			. "$_profile_file"
+			;;
+		esac
+	done
+	unset _profile_file
 fi
 
 # ==================================================
