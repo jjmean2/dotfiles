@@ -47,12 +47,14 @@ local function expand_project_parents(patterns)
   return dirs
 end
 
--- explorer 키. snacks 기본 키(o, l)와 LazyVim 키(<leader>e, <leader>E)를 바꾼다.
---   <leader>e  (전역) explorer 로 "가기" (root dir). 닫혀 있으면 열고, 열려 있으면 현재 파일을 트리에서 찾아
---              그 위로 포커스를 옮긴다. LazyVim 기본은 <leader>fe 로 넘겨 토글(열려 있으면 닫기)하는데,
---              그러면 포커스 이동에 못 써서 덮어쓴다. LazyVim 의 <leader>e 는 <leader>fe 를 remap 으로 부르는
---              별도 매핑이라, 이것만 바꿔도 <leader>fe 는 토글로 남는다.
---   <leader>E  (전역) 같은 "가기" 를 cwd 기준으로. <leader>fE 는 cwd 토글로 남는다.
+-- explorer 키. snacks 기본 키(o, l)와 LazyVim 키(<leader>e, <leader>E, <leader>fe, <leader>fE)를 바꾼다.
+--   <leader>e  (전역) explorer 토글 (root dir). 열려 있으면 닫는다. LazyVim 기본 <leader>fe 의 동작이다.
+--              LazyVim 의 <leader>e 는 <leader>fe 를 remap 으로 부르는 매핑이라, <leader>fe 를 바꾸면 같이
+--              바뀌어 버린다. 그래서 토글을 직접 매핑한다.
+--   <leader>E  (전역) explorer 토글 (cwd). LazyVim 기본 <leader>fE 의 동작이다.
+--   <leader>fe (전역) explorer 로 "가기" (root dir). 닫혀 있으면 열고, 열려 있으면 현재 파일을 트리에서 찾아
+--              그 위로 포커스를 옮긴다.
+--   <leader>fE (전역) 같은 "가기" 를 cwd 기준으로.
 --              이미 열려 있으면 기준 디렉터리와 상관없이 그 explorer 로 간다.
 --   l          (explorer 목록) 열되 포커스는 explorer 에 남긴다. snacks 기본은 열고 편집 창으로 간다.
 --   o          (explorer 목록) 열고 편집 창으로 간다 (snacks 기본 l).
@@ -103,8 +105,10 @@ return {
   "folke/snacks.nvim",
   keys = {
     -- stylua: ignore start
-    { "<leader>e", function() focus_explorer(LazyVim.root()) end, desc = "Focus Explorer (root dir)" },
-    { "<leader>E", function() focus_explorer() end, desc = "Focus Explorer (cwd)" },
+    { "<leader>e", function() Snacks.explorer({ cwd = LazyVim.root() }) end, desc = "Explorer Snacks (root dir)" },
+    { "<leader>E", function() Snacks.explorer() end, desc = "Explorer Snacks (cwd)" },
+    { "<leader>fe", function() focus_explorer(LazyVim.root()) end, desc = "Focus Explorer (root dir)" },
+    { "<leader>fE", function() focus_explorer() end, desc = "Focus Explorer (cwd)" },
     -- stylua: ignore end
     { "<leader>sF", pick_filetype, desc = "Filetype (set for buffer)" },
   },
