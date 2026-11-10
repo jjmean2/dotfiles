@@ -6,12 +6,13 @@
 # --prompt-file - 이면 첫 프롬프트를 표준 입력에서 읽는다. 없으면 기본 문구를 쓴다
 #
 # 세션 ID:   --session 또는 $WORKTREE_HANDOFF_SESSION (스킬은 ${CLAUDE_SESSION_ID} 로 넘긴다)
-# 워크트리:  그 브랜치의 워크트리가 있으면 그대로. 없으면 tmux-dev 가 있을 때 그 규칙(--hook-create, 베이스는
-#            로컬 main 이라 --base 는 무시), 없을 때 git worktree add 로
-#            ${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees/<저장소>/<브랜치의 / 를 - 로>
-#            (로컬 브랜치 → 그것, 원격 하나에만 있으면 → 추적 브랜치, 아니면 → --base 에서 새 브랜치)
+# 워크트리:  그 브랜치의 워크트리가 있으면 그대로 (메인 체크아웃이나 지금 있는 체크아웃이면 거부).
+#            없으면 tmux-dev 가 있을 때 그 규칙(--hook-create, --base 전달), 없거나 tmux-dev 가 실패하면
+#            git worktree add 로 ${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees/<저장소>/<브랜치의 / 를 - 로>
+#            (로컬 브랜치 → 그것, --base 없이 원격 하나에만 있으면 → 추적 브랜치, 아니면 → 베이스에서 새 브랜치)
 # 윈도우:    호출한 패널의 tmux 세션에서, 그 워크트리의 윈도우(@worktree)가 있으면 거기에 새 패널, 없으면
-#            새 윈도우. 둘 다 -d 라 화면은 그대로다. 그 패널에서 claude --resume <id> --fork-session 을 실행한다
+#            새 윈도우. 둘 다 -d 라 화면은 그대로다. 그 패널에서 sh 런처로
+#            claude --resume <id> --fork-session -- "<첫 프롬프트>" 를 실행한다 (사용자 셸 문법에 기대지 않는다)
 set -euo pipefail
 
 die() { echo "worktree-handoff: $*" >&2; exit 1; }
@@ -44,8 +45,12 @@ if [ -n "$prompt_file" ] && [ "$prompt_file" != - ]; then
   prompt_file="$(cd "$(dirname "$prompt_file")" && pwd)/$(basename "$prompt_file")"
 fi
 
-main=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+# pipefail 이라 저장소 밖에서 git 이 실패하면 대입에서 조용히 끝난다. || true 로 die 까지 가게 한다
+main=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p' || true)
 [ -n "$main" ] || die "git 저장소 안에서 실행하세요"
+# 첫 항목이 bare 면 "메인 체크아웃"이 없다 (bare + 워크트리 구성)
+[ -z "$(git worktree list --porcelain | awk '/^$/{exit} /^bare$/{print}')" ] || die "bare 저장소는 지원하지 않습니다"
+here=$(git rev-parse --show-toplevel 2>/dev/null || true)   # 호출한 체크아웃 (cd 전에)
 cd "$main"
 
 default_base() {   # origin/HEAD 가 가리키는 브랜치가 로컬에 있으면 그것, 아니면 main/master, 아니면 메인의 HEAD
@@ -64,12 +69,15 @@ td=$(command -v tmux-dev 2>/dev/null || true)
 
 if [ -n "$existing" ]; then
   [ "$existing" != "$main" ] || die "$branch 는 메인 체크아웃에 체크아웃돼 있습니다. 메인을 기본 브랜치로 돌리고 다시 하세요"
+  [ "$existing" != "$here" ] || die "$branch 는 지금 이 세션이 있는 체크아웃입니다. 같은 트리를 두 세션이 고치게 되므로 넘기지 않습니다"
   [ -d "$existing" ] || die "$branch 의 워크트리($existing)가 없습니다. git worktree prune 후 다시 하세요"
   wt=$existing
 elif [ -n "$td" ]; then
-  wt=$(jq -nc --arg n "$branch" --arg c "$main" '{name:$n,cwd:$c}' | "$td" worktree --hook-create)
-  [ -d "$wt" ] || die "tmux-dev 가 워크트리를 만들지 못했습니다"
-else
+  wt=$(jq -nc --arg n "$branch" --arg c "$main" '{name:$n,cwd:$c}' | "$td" worktree ${base:+--base "$base"} --hook-create) || wt=""
+  # tmux-dev 가 거부하는 구성(서브모듈 등)이면 git 으로 만든다
+  [ -d "$wt" ] || { echo "worktree-handoff: tmux-dev 가 워크트리를 만들지 못해 git 으로 만듭니다" >&2; wt=""; }
+fi
+if [ -z "${wt:-}" ]; then
   wt="$DATA/worktrees/$(basename "$main")/${branch//\//-}"
   [ ! -e "$wt" ] || die "$wt 가 이미 있습니다 (같은 이름의 다른 저장소이거나 남은 디렉토리). 지우거나 다른 브랜치 이름을 쓰세요"
   mkdir -p "$(dirname "$wt")"
@@ -109,14 +117,29 @@ sess=$(tmux display -p ${TMUX_PANE:+-t "$TMUX_PANE"} '#{session_id}')
 tab=$(printf '\t')
 wid=$(tmux list-windows -t "$sess" -F "#{window_id}$tab#{@worktree}" | awk -F'\t' -v p="$wt" '$2==p{print $1; exit}')
 pane=""
-[ -z "$wid" ] || pane=$(tmux split-window -d -h -P -F '#{pane_id}' -t "$wid" -c "$wt" 2>/dev/null) || pane=""
+# -c 와 -n 은 tmux 형식 문자열로 해석된다. 경로·브랜치의 # 을 ## 로 (안 하면 fix/#H 같은 이름이 엉뚱한 디렉토리가 된다)
+fmt_esc() { printf %s "$1" | sed 's/#/##/g'; }
+wt_esc=$(fmt_esc "$wt")
+[ -z "$wid" ] || pane=$(tmux split-window -d -h -P -F '#{pane_id}' -t "$wid" -c "$wt_esc" 2>/dev/null) || pane=""
 if [ -z "$pane" ]; then
-  pane=$(tmux new-window -d -P -F '#{pane_id}' -t "$sess:" -c "$wt" -n "$branch")
+  pane=$(tmux new-window -d -P -F '#{pane_id}' -t "$sess:" -c "$wt_esc" -n "$(fmt_esc "$branch")")
   tmux set -w -t "$pane" @worktree "$wt"    # tmux-dev 피커가 이 윈도우를 워크트리로 인식한다 (없어도 무해)
 fi
-# sleep: 스킬에서 불렸을 때 이 Bash 호출의 결과가 원본 기록에 써질 때까지 기다린다
-q=$(printf %q "$pf")
-tmux send-keys -t "$pane" "sleep 2; claude --resume $sid --fork-session \"\$(cat $q)\"" Enter
+# 사용자 셸(bash/zsh/fish …)의 문법에 기대지 않게 sh 런처 파일을 만들고 "sh '<런처>'" 만 입력한다.
+# 작은따옴표 인용은 sh·bash·zsh·fish 에서 모두 같은 뜻이다
+sq() { printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")"; }
+cat >"$pf.sh" <<LAUNCHER
+#!/bin/sh
+# sleep: 스킬에서 불렸을 때 원본 세션의 Bash 호출 결과가 기록에 써질 때까지 기다린다
+sleep 2
+# 셸 rc 가 디렉토리를 바꿔도 워크트리에서 시작하게
+cd $(sq "$wt") || exit 1
+# -- : 첫 메시지가 - 로 시작해도 옵션으로 읽히지 않게
+exec claude --resume $sid --fork-session -- "\$(cat $(sq "$pf"))"
+LAUNCHER
+# -l: 글자 그대로 입력 (키 이름으로 해석하지 않게). Enter 는 따로
+tmux send-keys -l -t "$pane" "sh $(sq "$pf.sh")"
+tmux send-keys -t "$pane" Enter
 
 echo "worktree: $wt"
 echo "window:   $(tmux display -p -t "$pane" '#S:#I (#W)')"

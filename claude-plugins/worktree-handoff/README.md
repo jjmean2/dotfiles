@@ -19,13 +19,13 @@ tmux 안에서 실행한 `claude`, git, jq. [tmux-dev](../../home/dot_config/tmu
 
 | 상황 | 워크트리 |
 |---|---|
-| 그 브랜치의 워크트리가 이미 있음 | 그대로 쓴다 (메인 체크아웃에 체크아웃된 브랜치면 거부) |
-| tmux-dev 있음 | `tmux-dev worktree --hook-create` (베이스는 로컬 main, `--base` 무시) |
+| 그 브랜치의 워크트리가 이미 있음 | 그대로 쓴다 (메인 체크아웃이나 지금 세션이 있는 체크아웃이면 거부) |
+| tmux-dev 있음 | `tmux-dev worktree [--base <ref>] --hook-create`. 실패하면(서브모듈 등) 아래로 |
 | tmux-dev 없음 | `${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees/<저장소>/<브랜치의 / 를 - 로>` |
 
-tmux-dev 없이 만들 때 브랜치는 로컬에 있으면 그것을, 원격 하나에만 있으면 추적 브랜치를, 아니면 `--base`
+tmux-dev 없이 만들 때 브랜치는 로컬에 있으면 그것을, `--base` 없이 원격 하나에만 있으면 추적 브랜치를, 아니면 `--base`
 (기본: `origin/HEAD` 가 가리키는 로컬 브랜치 → `main`/`master` → 메인의 HEAD)에서 새로 만든다.
-정리는 `git worktree remove <경로>` 와 `git branch -d <브랜치>`. `.env` 처럼 추적되지 않는 파일은 복사하지 않는다.
+bare 저장소는 지원하지 않는다. 정리는 `git worktree remove <경로>` 와 `git branch -d <브랜치>`. `.env` 처럼 추적되지 않는 파일은 복사하지 않는다.
 
 ## 설치
 
@@ -64,7 +64,9 @@ tmux new-session -t <세션> -s <세션>-2 \; select-window -t <윈도우 번호
 
 - 포크는 대화 기록만 복사한다. 파일·git 상태는 복사하지 않고, 새 세션의 작업 디렉토리는 워크트리다.
 - 대화 중에 한 번만 허용한 권한은 새 프로세스로 넘어가지 않는다 (`settings.local.json` 에 저장된 승인은 워크트리가 공유).
-- 스킬에서 부르면 포크 시점에 원본의 Bash 호출이 아직 끝나지 않았으므로, 새 패널은 `sleep 2` 뒤에 `claude` 를 띄운다.
+- 새 패널에는 `sh '<런처>'` 만 입력한다. 런처(첫 메시지 파일 옆의 `.sh`)가 `sleep 2` 뒤에
+  `claude --resume <id> --fork-session -- "<첫 메시지>"` 를 실행하므로 사용자 셸(bash·zsh·fish)의 문법과 무관하다.
+  `sleep 2` 는 스킬에서 불렸을 때 원본의 Bash 호출 결과가 기록에 써질 때까지 기다리는 경험값이다.
 - 새 윈도우는 호출한 패널의 tmux 세션에 생긴다. 그 워크트리의 윈도우가 이미 있으면 키를 보내지 않고 거기에 새 패널을
   열고, 나눌 자리가 없으면 새 윈도우를 연다.
 - 처음 보는 디렉토리라 Claude 가 폴더 신뢰 여부를 물을 수 있다. 새 윈도우에서 한 번 답하면 첫 메시지가 이어서 전달된다.
