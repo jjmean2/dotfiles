@@ -135,6 +135,13 @@ if [ "$TERM_PROGRAM" = "iTerm.app" ] || [ "$LC_TERMINAL" = "iTerm2" ]; then
 	iterm2_print_user_vars() {
 		iterm2_set_user_var gitBranch "$( (git branch 2>/dev/null) | grep '\*' | cut -c3-)"
 	}
+
+	# iTerm2 유틸리티(imgcat, it2copy, it2dl …)를 이름 그대로 쓸 수 있게 alias로 건다.
+	# (설치 스크립트가 통합 스크립트 끝에 붙이던 alias 줄을 대신한다.)
+	for _it2_util in $HOME/.iterm2/*(N.x); do
+		alias ${_it2_util:t}=$_it2_util
+	done
+	unset _it2_util
 fi
 
 # ==================================================
