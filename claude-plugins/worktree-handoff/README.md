@@ -15,7 +15,17 @@
 ## 필요한 것
 
 tmux 안에서 실행한 `claude`, git, jq. [tmux-dev](../../home/dot_config/tmux/plugins/tmux-dev/claude-code.md) 가 있으면
-워크트리를 그 규칙(위치·이름·베이스·셋업 훅)으로 만들고, 없으면 `git worktree add` 로 `<저장소>.worktrees/<브랜치>` 에 만든다.
+워크트리를 그 규칙(위치·이름·베이스·셋업 훅)으로 만들고, 없으면 `git worktree add` 로 XDG 데이터 디렉토리에 만든다.
+
+| 상황 | 워크트리 |
+|---|---|
+| 그 브랜치의 워크트리가 이미 있음 | 그대로 쓴다 (메인 체크아웃에 체크아웃된 브랜치면 거부) |
+| tmux-dev 있음 | `tmux-dev worktree --hook-create` (베이스는 로컬 main, `--base` 무시) |
+| tmux-dev 없음 | `${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees/<저장소>/<브랜치의 / 를 - 로>` |
+
+tmux-dev 없이 만들 때 브랜치는 로컬에 있으면 그것을, 원격 하나에만 있으면 추적 브랜치를, 아니면 `--base`
+(기본: `origin/HEAD` 가 가리키는 로컬 브랜치 → `main`/`master` → 메인의 HEAD)에서 새로 만든다.
+정리는 `git worktree remove <경로>` 와 `git branch -d <브랜치>`. `.env` 처럼 추적되지 않는 파일은 복사하지 않는다.
 
 ## 설치
 
@@ -39,8 +49,8 @@ ln -s "$(pwd)/claude-plugins/worktree-handoff/bin/worktree-handoff" ~/.local/bin
 worktree-handoff --session <세션 ID> [--base <ref>] [--prompt-file <파일|->] <브랜치>
 ```
 
-세션 ID 는 Claude 안의 `/status` 나 `claude --resume` 피커에서 확인한다. `--prompt-file` 이 없으면 기본 첫 메시지를 쓴다.
-`--base` 는 tmux-dev 가 없을 때만 쓰인다 (tmux-dev 는 로컬 기본 브랜치를 베이스로 한다).
+세션 ID 는 Claude 안의 `/status` 에서 확인한다. `--prompt-file` 이 없으면 기본 첫 메시지를 쓴다.
+첫 메시지 파일은 `${XDG_STATE_HOME:-~/.local/state}/worktree-handoff/prompt/` 에 호출마다 새로 생기고 7일 뒤 지워진다.
 
 ## 동시에 보기
 
@@ -55,4 +65,7 @@ tmux new-session -t <세션> -s <세션>-2 \; select-window -t <윈도우 번호
 - 포크는 대화 기록만 복사한다. 파일·git 상태는 복사하지 않고, 새 세션의 작업 디렉토리는 워크트리다.
 - 대화 중에 한 번만 허용한 권한은 새 프로세스로 넘어가지 않는다 (`settings.local.json` 에 저장된 승인은 워크트리가 공유).
 - 스킬에서 부르면 포크 시점에 원본의 Bash 호출이 아직 끝나지 않았으므로, 새 패널은 `sleep 2` 뒤에 `claude` 를 띄운다.
-- 그 워크트리의 윈도우가 이미 있으면 키를 보내지 않고 그 윈도우에 새 패널을 연다.
+- 새 윈도우는 호출한 패널의 tmux 세션에 생긴다. 그 워크트리의 윈도우가 이미 있으면 키를 보내지 않고 거기에 새 패널을
+  열고, 나눌 자리가 없으면 새 윈도우를 연다.
+- 처음 보는 디렉토리라 Claude 가 폴더 신뢰 여부를 물을 수 있다. 새 윈도우에서 한 번 답하면 첫 메시지가 이어서 전달된다.
+- 포크된 세션은 /handoff 지시문까지 이어받는다. 그래서 첫 메시지가 "그 지시는 원본 세션에 대한 것"이라고 먼저 밝힌다.
