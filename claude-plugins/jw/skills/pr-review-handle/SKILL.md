@@ -40,8 +40,9 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
   말인지로 바꿔 쓴다.
 - 종류: 버그 · 보안 · 성능 · 설계 · 가독성/스타일 · nit · 질문.
 - 같은 지적이 여러 곳에 달렸으면 묶되, 위치는 모두 나열하고 판정은 위치마다 한다.
-- `reviews` 의 본문(특히 `CHANGES_REQUESTED`)과 `comments` 의 사람 댓글도 항목으로 다룬다. Copilot 리뷰 본문의 PR 개요는
-  항목이 아니라 맥락이다.
+- `reviews` 중 `kind: review` 의 본문(특히 `CHANGES_REQUESTED`)과 `comments` 의 사람 댓글도 항목으로 다룬다.
+  `kind: overview` 는 Copilot 의 최신 리뷰 개요로, 항목이 아니라 맥락이다. 그 안의 "open issue" 목록은 그 리뷰 시점
+  기준이라 지금 상태는 `threads` 로 판단한다 (이미 해결된 스레드를 가리킬 수 있다).
 
 ## 4. 타당성 검토
 

@@ -111,6 +111,9 @@ jq -n --argjson view "$view" --argjson threads "$threads" --argjson reviews "$re
   def who: .author.login // "ghost";
   def tail_lines($n): split("\n") | if length > $n then ["…"] + .[-$n:] else . end | join("\n");
   def pages($k): [.[].data.repository.pullRequest[$k]];
+  # Copilot 리뷰 개요의 HTML 장식(주석·아이콘·접기 태그)을 걷어 낸다. 마크다운 본문은 그대로
+  def strip_html: gsub("<!--[\\s\\S]*?-->"; "") | gsub("<picture>[\\s\\S]*?</picture>"; "")
+    | gsub("</?(details|summary|strong|sub|img|br)[^>]*>"; "") | gsub("\r"; "") | gsub("\n{3,}"; "\n\n") | sub("^\\s+"; "");
   def truncated($k): .[-1].data.repository.pullRequest[$k].pageInfo.hasNextPage;   # 마지막 페이지가 끝이 아니면
 
   ($threads | pages("reviewThreads") | map(.nodes[])) as $all_threads
@@ -131,12 +134,16 @@ jq -n --argjson view "$view" --argjson threads "$threads" --argjson reviews "$re
         comments: [.comments.nodes[] | {by: who, role: role, at: .createdAt, url, body}],
         comments_truncated: (.comments.totalCount > (.comments.nodes | length))
       })),
-      reviews: [$reviews | pages("reviews")[] | .nodes[]
-        | select((.body // "") | test("\\S")) | {by: who, role: role, state, at: .submittedAt, commit: .commit.oid, url, body}],
+      # Copilot 은 리뷰할 때마다 개요를 새로 단다. 최신 것 하나만 kind: overview 로 남긴다 (그 안의 이슈 목록은 그 시점 기준)
+      reviews: ([$reviews | pages("reviews")[] | .nodes[]
+        | select((.body // "") | test("\\S")) | {by: who, role: role, state, at: .submittedAt, commit: .commit.oid, url, body}]
+        | (map(select(.role == "copilot")) | sort_by(.at) | .[-1:] | map(. + {kind: "overview", body: (.body | strip_html)}))
+          + map(select(.role != "copilot") + {kind: "review"})),
       comments: [$all_comments[] | select(.role != "bot") | {by: who, role, at: .createdAt, url, body}],
       bot_comments: ($all_comments | map(select(.role == "bot")) | group_by(.author.login)
                      | map({by: .[0].author.login, count: length})),
       warnings: ([
+        (if $view.state != "OPEN" then "PR 이 이미 \($view.state) 상태다. 리뷰 대응이 끝났을 수 있다" else empty end),
         (if ($threads | truncated("reviewThreads")) then "리뷰 스레드 페이지를 끝까지 받지 못했습니다" else empty end),
         ($sel[] | select(.comments.totalCount > (.comments.nodes | length))
           | "스레드 \(.path):\(.line // .originalLine) 의 댓글이 \(.comments.totalCount)개라 앞 100개만 받았습니다"),
