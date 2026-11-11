@@ -16,6 +16,8 @@ packages:
       - bash
       - git
       - jq
+      # GitHub CLI. jw 플러그인의 pr-review-fetch 가 쓴다 (설치 후 gh auth login 한 번)
+      - gh
       - ripgrep
       - fzf
       - fd
@@ -58,6 +60,8 @@ packages:
       - rg
       - fd
       - jq
+      # GitHub CLI. jw 플러그인의 pr-review-fetch 가 쓴다 (설치 후 gh auth login 한 번)
+      - gh
       - gettext
       - tree-sitter-cli
       - bash-completion

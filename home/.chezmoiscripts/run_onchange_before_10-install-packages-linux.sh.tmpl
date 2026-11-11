@@ -30,9 +30,12 @@ declare -A default_pkg=(
 
 # 특정 배포판(apt/apk/dnf/pacman)만 위 기본값과 다를 때만 등록한다.
 # apt/dnf 의 fd 는 패키지 이름이 fd-find 이고, 실행파일도 fdfind 라는 이름으로 설치된다.
+# apk/pacman 의 gh 는 패키지 이름이 github-cli 다 (apt 의 gh 는 Debian 12·Ubuntu 22.04 부터 기본 저장소에 있다).
 declare -A pkg_override=(
 	[apt:fd]=fd-find
 	[dnf:fd]=fd-find
+	[apk:gh]=github-cli
+	[pacman:gh]=github-cli
 )
 declare -A bin_override=(
 	[apt:fd]=fdfind
