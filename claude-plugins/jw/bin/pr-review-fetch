@@ -7,7 +7,8 @@
 #
 # 출력 (JSON 하나):
 #   pr        번호·URL·제목·본문·작성자·base/head·head 커밋
-#   local     지금 디렉토리가 그 저장소인지, 로컬 HEAD, PR head 와의 앞섬/뒤처짐, 미커밋 변경 여부,
+#   local     지금 디렉토리가 그 저장소인지, PR 브랜치가 체크아웃된 워크트리(pr_worktree)와 지금 그 안인지,
+#             그 워크트리의 HEAD·PR head 와의 앞섬/뒤처짐·미커밋 변경 여부,
 #             로컬에 없는 커밋 (PR head 가 없으면 refs/pull/<N>/head 를, 지난 댓글의 당시 커밋이 없으면
 #             그 커밋을 원격에서 받아 본다. 작업 트리와 브랜치는 건드리지 않는다)
 #   threads   리뷰 스레드 (기본: 해결 안 된 것). 위치·당시 커밋·지난 댓글 여부·diff 조각·코드 제안 여부·
@@ -42,6 +43,7 @@ IFS=/ read -r _ _ host owner repo _ number _ <<<"$url"
 [ -n "$host" ] && [ -n "$owner" ] && [ -n "$repo" ] && [[ $number =~ ^[0-9]+$ ]] || die "PR URL 을 해석하지 못했습니다: $url"
 pr_author=$(jq -r '.author.login // ""' <<<"$view")
 head_oid=$(jq -r .headRefOid <<<"$view")
+head_branch=$(jq -r .headRefName <<<"$view")
 
 # --- GitHub 에서 모으기 --------------------------------------------------------
 # 연결(connection) 하나씩 끝까지 페이지를 넘긴다. --paginate 는 페이지마다 JSON 을 따로 내므로 jq -s 로 합친다
@@ -85,16 +87,27 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
     done
     missing=()
     for o in $head_oid $orig_oids; do has_commit "$o" || missing+=("$o"); done
-    local_head=$(git rev-parse HEAD 2>/dev/null || echo "")
-    ahead=null; behind=null
-    if [ -n "$local_head" ] && has_commit "$head_oid"; then
-      ahead=$(git rev-list --count "$head_oid..$local_head"); behind=$(git rev-list --count "$local_head..$head_oid")
+    # "로컬" = PR 브랜치가 체크아웃된 워크트리. handoff 흐름에서는 메인 체크아웃에서 부르고 PR 브랜치는 별도 워크트리에
+    # 있으므로, 실행한 디렉토리가 아니라 그 워크트리의 HEAD·미커밋 변경을 본다. 없으면 로컬 상태는 null
+    here=$(git rev-parse --show-toplevel)
+    pr_wt=$(git worktree list --porcelain | awk -v b="refs/heads/$head_branch" '
+      /^worktree /{p=substr($0,10)} $0=="branch " b {print p; exit}')
+    wt_head=""; ahead=null; behind=null; dirty=null
+    if [ -n "$pr_wt" ] && [ -d "$pr_wt" ]; then
+      wt_head=$(git -C "$pr_wt" rev-parse HEAD)
+      if has_commit "$head_oid"; then
+        ahead=$(git rev-list --count "$head_oid..$wt_head"); behind=$(git rev-list --count "$wt_head..$head_oid")
+      fi
+      dirty=false; [ -z "$(git -C "$pr_wt" status --porcelain 2>/dev/null)" ] || dirty=true
+    else
+      pr_wt=""
     fi
-    dirty=false; [ -z "$(git status --porcelain 2>/dev/null)" ] || dirty=true
-    local_json=$(jq -n --arg remote "$remote" --arg head "$local_head" --arg branch "$(git branch --show-current 2>/dev/null)" \
+    local_json=$(jq -n --arg remote "$remote" --arg here "$here" --arg wt "$pr_wt" --arg head "$wt_head" \
       --argjson ahead "$ahead" --argjson behind "$behind" --argjson dirty "$dirty" \
-      --arg missing "${missing[*]:-}" --arg root "$(git rev-parse --show-toplevel)" '{
-        repo_match: true, root: $root, remote: $remote, branch: $branch, head: $head,
+      --arg missing "${missing[*]:-}" '{
+        repo_match: true, remote: $remote, cwd_root: $here,
+        pr_worktree: (if $wt == "" then null else $wt end), in_pr_worktree: ($wt != "" and $wt == $here),
+        head: (if $head == "" then null else $head end),
         ahead_of_pr_head: $ahead, behind_pr_head: $behind, uncommitted_changes: $dirty,
         missing_commits: ($missing | split(" ") | map(select(. != "")))}')
   fi
@@ -149,6 +162,8 @@ jq -n --argjson view "$view" --argjson threads "$threads" --argjson reviews "$re
           | "스레드 \(.path):\(.line // .originalLine) 의 댓글이 \(.comments.totalCount)개라 앞 100개만 받았습니다"),
         (if $local.repo_match then empty
          else "지금 디렉토리가 이 PR 의 저장소가 아니거나 그 저장소를 가리키는 원격이 없습니다. 코드는 diff_hunk 로만 볼 수 있습니다" end),
+        (if $local.repo_match and $local.pr_worktree == null
+         then "PR 브랜치(\($view.headRefName))가 체크아웃된 워크트리가 없다. 로컬 미푸시 수정은 확인할 수 없다" else empty end),
         ($local.missing_commits // [] | .[] | "커밋 \(.) 이 로컬에 없습니다 (force push 로 사라졌을 수 있다). 그 커밋 기준 코드는 diff_hunk 로만 본다")
       ])
     }'
