@@ -29,7 +29,10 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
   `outdated: true` 이면 `line` 은 비어 있고 지금 head 의 같은 줄 번호는 다른 코드다. 그 커밋이 `missing_commits` 에 있으면
   `diff_hunk` 만 근거로 쓴다.
 - **PR head**: `pr.head_oid`. 지금 GitHub 에 올라가 있는 코드다. `git show <head_oid>:<path>`.
-- **로컬**: 작업 트리. `local.ahead_of_pr_head > 0` 이거나 `local.uncommitted_changes` 이면 아직 푸시하지 않은 수정이 있다.
+- **로컬**: PR 브랜치가 체크아웃된 워크트리 `local.pr_worktree` 의 작업 트리. 지금 디렉토리(`local.cwd_root`)가 아닐 수 있다
+  (handoff 흐름에서는 메인 체크아웃에서 부르고 PR 브랜치는 별도 워크트리에 있다). 그 경로의 파일을 읽는다.
+  `local.ahead_of_pr_head > 0` 이거나 `local.uncommitted_changes` 이면 아직 푸시하지 않은 수정이 있다.
+  `local.pr_worktree` 가 null 이면 로컬 시점은 없다 (🔁 의 미푸시 판정을 하지 않는다).
 
 `local.repo_match` 가 false 이면 코드는 `diff_hunk` 와 `gh pr diff` 로만 보고, 판정마다 "전체 코드를 보지 못함"을 밝힌다.
 
@@ -98,7 +101,14 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 **답글 초안** — ❌·💬 일 때
 
 ## 다음 단계
-적용할 항목 번호를 알려 주면 고친다. 답글 초안은 게시하지 않았다.
+<아래 규칙에 따른 안내>. 답글 초안은 게시하지 않았다.
 ```
+
+다음 단계 안내는 수정할 곳에 따라 다르다. 한 작업 트리는 한 세션만 고친다 (handoff 스킬들과 같은 원칙).
+- `local.in_pr_worktree` 가 true: "적용할 항목 번호를 알려 주면 고친다."
+- PR 워크트리가 따로 있음 (`local.pr_worktree` 가 있고 지금 그 안이 아님): 그 워크트리의 파일을 이 세션에서 고치지 않는다.
+  `/jw:handoff-move <PR 브랜치>` 로 이 세션을 옮기거나, `/jw:handoff-fresh <PR 브랜치>` 로 고를 항목의 수정안을 담은
+  지시서를 넘기라고 안내한다.
+- PR 브랜치가 어디에도 체크아웃돼 있지 않음: 위 두 명령이 그 브랜치의 워크트리를 만든다고 안내한다.
 
 항목이 30개를 넘으면 ✅·❓ 만 위 형식으로 자세히 쓰고 나머지는 표에만 둔다. 표 아래에 그렇게 줄였다고 적는다.
