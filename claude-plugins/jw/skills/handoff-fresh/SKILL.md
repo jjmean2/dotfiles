@@ -1,6 +1,6 @@
 ---
 name: handoff-fresh
-description: 대화를 포크하지 않고, 자기완결적인 작업 지시서를 첫 메시지로 넣은 새 Claude 세션을 브랜치 워크트리의 새 tmux 윈도우에서 연다. 사용자가 /jw:handoff-fresh 로 부를 때만 쓴다.
+description: 대화를 포크하지 않고, 자기완결적인 작업 지시서를 첫 메시지로 넣은 새 Claude 세션을 브랜치 워크트리에서 열고, 그 세션에 들어가는 명령을 알려 준다. 사용자가 /jw:handoff-fresh 로 부를 때만 쓴다.
 argument-hint: <브랜치> [추가 지시]
 disable-model-invocation: true
 allowed-tools: Bash(worktree-handoff:*)
@@ -21,11 +21,15 @@ allowed-tools: Bash(worktree-handoff:*)
    - 남은 질문 (스스로 정하지 말고 사용자에게 물을 것)
    - 첫 번째로 할 일
    - 사용자의 추가 지시 (인자 전체: `$ARGUMENTS`, 첫 단어는 브랜치 이름이다)
-2. 그 지시서를 표준 입력으로 넘겨 Bash 로 한 번 실행한다. 지시서에 `WORKTREE_HANDOFF_EOF` 만 있는 줄은 넣지 않는다:
+2. 그 지시서를 표준 입력으로 넘겨 Bash 로 한 번 실행한다. 지시서에 `WORKTREE_HANDOFF_EOF` 만 있는 줄은 넣지 않는다.
+   세션을 띄우는 방식은 스크립트가 정한다 (tmux 안이면 새 윈도우, 아니면 `claude --bg`). 사용자가 방식을 말했을 때만
+   `--open bg|tmux|none` 을 붙인다:
    ```
-   worktree-handoff --fresh --prompt-file - -- '$0' <<'WORKTREE_HANDOFF_EOF'
+   worktree-handoff fresh --prompt-file - -- '$0' <<'WORKTREE_HANDOFF_EOF'
    <1의 지시서>
    WORKTREE_HANDOFF_EOF
    ```
-3. 실패하면 오류를 그대로 보여 주고 멈춘다. 성공하면 출력된 워크트리 경로, 윈도우, 세션 이름을 알리고 `resume:` 줄의 명령을 그대로 보여 준다.
+3. 실패하면 오류를 그대로 보여 주고 멈춘다. 백그라운드로 띄우지 못했을 때도(`open:` 이 실패, 종료 코드 1) 워크트리와
+   `run:` 줄은 출력되니 함께 보여 준다. 성공하면 출력된 워크트리 경로, 세션 이름, `open:` 줄을 알리고
+   `attach:` · `run:` · `resume:` 줄 가운데 출력된 것을 명령 그대로 보여 준다. 그 세션에 들어가는 것은 사용자가 한다.
    그 뒤로 이 원본 세션에서는 그 워크트리의 파일을 편집하지 않는다.
