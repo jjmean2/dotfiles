@@ -6,7 +6,7 @@
 #   worktree-handoff --fresh --prompt-file <파일|-> [--base <ref>] <브랜치>
 #
 # --prompt-file - 이면 첫 프롬프트를 표준 입력에서 읽는다. 포크에서 없으면 기본 문구를 쓴다 (--fresh 는 필수)
-# 어느 쪽이든 대화형 세션이고 이름은 브랜치 이름이다. 나중에 그 워크트리에서 claude --resume <브랜치> 로 다시 연다
+# 어느 쪽이든 대화형 세션이고 이름은 <브랜치>@<MMDD-HHMM> 이다 (겹치지 않게). 출력의 resume 줄로 다시 연다
 #
 # 세션 ID:   포크할 때만. --session 또는 $WORKTREE_HANDOFF_SESSION (스킬은 ${CLAUDE_SESSION_ID} 로 넘긴다)
 # 워크트리:  그 브랜치의 워크트리가 있으면 그대로 (메인 체크아웃이나 지금 있는 체크아웃이면 거부).
@@ -15,7 +15,7 @@
 #            (로컬 브랜치 → 그것, --base 없이 원격 하나에만 있으면 → 추적 브랜치, 아니면 → 베이스에서 새 브랜치)
 # 윈도우:    호출한 패널의 tmux 세션에서, 그 워크트리의 윈도우(@worktree)가 있으면 거기에 새 패널, 없으면
 #            새 윈도우. 둘 다 -d 라 화면은 그대로다. 그 패널에서 sh 런처로
-#            claude [--resume <id> --fork-session] -n <브랜치> -- "<첫 프롬프트>" 를 실행한다 (사용자 셸 문법에 기대지 않는다)
+#            claude [--resume <id> --fork-session] -n <세션 이름> -- "<첫 프롬프트>" 를 실행한다 (사용자 셸 문법에 기대지 않는다)
 set -euo pipefail
 
 die() { echo "worktree-handoff: $*" >&2; exit 1; }
@@ -121,6 +121,9 @@ if [ ! -s "$pf" ]; then
 EOF
 fi
 
+# 세션 이름: --resume <이름> 은 정확히 일치해야 바로 열리므로 시각을 붙여 겹치지 않게 한다
+name="$branch@$(date +%m%d-%H%M)"
+
 # --- 윈도우 --------------------------------------------------------------------
 # 대상 세션은 호출한 패널의 세션. -t 없이 두면 tmux 가 "가장 최근 세션"을 골라 다른 저장소에 열 수 있다
 sess=$(tmux display -p ${TMUX_PANE:+-t "$TMUX_PANE"} '#{session_id}')
@@ -151,8 +154,8 @@ cat >"$pf.sh" <<LAUNCHER
 $wait_line
 # 셸 rc 가 디렉토리를 바꿔도 워크트리에서 시작하게
 cd $(sq "$wt") || exit 1
-# -n: /resume 피커와 claude --resume <브랜치> 로 찾게. -- : 첫 메시지가 - 로 시작해도 옵션으로 읽히지 않게
-exec claude ${resume}-n $(sq "$branch") -- "\$(cat $(sq "$pf"))"
+# -n: claude --resume <세션 이름> 으로 바로 열고, /resume 피커에서 브랜치로 찾게. -- : 첫 메시지가 - 로 시작해도 옵션으로 읽히지 않게
+exec claude ${resume}-n $(sq "$name") -- "\$(cat $(sq "$pf"))"
 LAUNCHER
 # -l: 글자 그대로 입력 (키 이름으로 해석하지 않게). Enter 는 따로
 tmux send-keys -l -t "$pane" "sh $(sq "$pf.sh")"
@@ -160,3 +163,5 @@ tmux send-keys -t "$pane" Enter
 
 echo "worktree: $wt"
 echo "window:   $(tmux display -p -t "$pane" '#S:#I (#W)')"
+echo "session:  $name"
+echo "resume:   cd $(sq "$wt") && claude --resume $(sq "$name")"

@@ -1,6 +1,6 @@
 {
   "name": "jw",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "개인 작업 흐름 스킬 모음: 대화를 브랜치 워크트리의 새 tmux 윈도우로 넘기기 등",
   "author": {
     "name": "jjmean2"
