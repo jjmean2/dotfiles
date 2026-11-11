@@ -76,7 +76,7 @@ bare 저장소는 지원하지 않는다. 정리는 `git worktree remove <경로
 ## 설정
 
 `${XDG_CONFIG_HOME:-~/.config}/worktree-handoff/config` 에 `key=value` (`#` 주석). 실행하지 않고 값만 읽는다.
-같은 이름의 환경 변수가 먼저다.
+같은 이름의 환경 변수가 먼저다. `root` 는 절대 경로나 `~/` 로 시작해야 한다.
 
 | 키 | 환경 변수 | 기본 |
 |---|---|---|

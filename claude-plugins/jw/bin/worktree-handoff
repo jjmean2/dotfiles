@@ -27,7 +27,7 @@
 #   create=tmux-dev 면 tmux-dev worktree --hook-create 로 만든다 (그 위치·셋업 훅). 실패하면 git 으로
 #
 # 설정: ${XDG_CONFIG_HOME:-~/.config}/worktree-handoff/config 의 key=value (# 주석). 환경 변수가 먼저다
-#   root=<경로>           WORKTREE_HANDOFF_ROOT    기본 ${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees
+#   root=<절대 경로|~/…>   WORKTREE_HANDOFF_ROOT    기본 ${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees
 #   open=auto|bg|tmux|none WORKTREE_HANDOFF_OPEN   기본 auto
 #   create=git|tmux-dev   WORKTREE_HANDOFF_CREATE  기본 git
 set -euo pipefail
@@ -49,6 +49,8 @@ expand_home() { case $1 in "~") echo "$HOME" ;; "~/"*) echo "$HOME/${1#\~/}" ;; 
 
 root=${WORKTREE_HANDOFF_ROOT:-$(conf root)}
 root=$(expand_home "${root:-${XDG_DATA_HOME:-$HOME/.local/share}/worktree-handoff/worktrees}")
+# 상대 경로는 기준이 모호하고(호출 위치? 메인 체크아웃?), 아래에서 cd 한 뒤 런처·출력 경로가 틀어지므로 받지 않는다
+case $root in /*) ;; *) die "root 는 절대 경로나 ~ 로 시작해야 합니다: $root" ;; esac
 open=${WORKTREE_HANDOFF_OPEN:-$(conf open)}; open=${open:-auto}
 create=${WORKTREE_HANDOFF_CREATE:-$(conf create)}; create=${create:-git}
 
