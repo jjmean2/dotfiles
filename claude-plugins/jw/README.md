@@ -7,6 +7,7 @@
 | `/jw:handoff <브랜치> [추가 지시]` | 지금 대화를 브랜치 워크트리로 **포크**한 세션을 연다 |
 | `/jw:handoff-fresh <브랜치> [추가 지시]` | 대화 없이, 자기완결적인 작업 지시서를 첫 메시지로 넣은 **새 세션**을 연다 |
 | `/jw:handoff-move <브랜치>` | 워크트리만 만들고, **지금 세션**을 그리로 옮기는 `/cd` 명령을 알려 준다 |
+| `/jw:pr-review-handle [PR] [--all]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 수정안과 배경 원리를 설명한다 |
 
 ## 개념
 
@@ -91,8 +92,9 @@ open=bg
 
 ## 필요한 것
 
-`claude`, git. `create=tmux-dev` 면 [tmux-dev](../../home/dot_config/tmux/plugins/tmux-dev/claude-code.md) 와 jq,
-`--open tmux` 면 tmux.
+- handoff: `claude`, git. `create=tmux-dev` 면 [tmux-dev](../../home/dot_config/tmux/plugins/tmux-dev/claude-code.md) 와 jq,
+  `--open tmux` 면 tmux.
+- pr-review-handle: git, `gh` (`gh auth login` 한 번), jq.
 
 ## 설치
 
@@ -107,7 +109,7 @@ claude plugin install jw@justwonder
 플러그인의 `bin/` 은 Claude 의 Bash 도구 PATH 에만 붙는다. 터미널에서도 쓰려면 링크를 둔다.
 
 ```sh
-ln -s "$(pwd)/claude-plugins/jw/bin/worktree-handoff" ~/.local/bin/
+ln -s "$(pwd)/claude-plugins/jw/bin/worktree-handoff" "$(pwd)/claude-plugins/jw/bin/pr-review-fetch" ~/.local/bin/
 ```
 
 ## 스크립트를 직접 쓰기
@@ -138,3 +140,21 @@ fresh 는 첫 메시지가 꼭 있어야 하고, 비어 있으면(공백뿐이�
   거기에 새 패널을 열고, 나눌 자리가 없으면 새 윈도우를 연다. 다른 터미널 창에서 따로 보려면 같은 세션 그룹에 붙는다:
   `tmux new-session -t <세션> -s <세션>-2 \; select-window -t <윈도우 번호>`.
 - 포크된 세션은 /handoff 지시문까지 이어받는다. 그래서 첫 메시지가 "그 지시는 원본 세션에 대한 것"이라고 먼저 밝힌다.
+
+## pr-review-handle
+
+PR 에 이미 달린 리뷰 댓글을 처리한다. 코드를 직접 리뷰하는 `/code-review` 와는 다르다. 읽기만 하는 스킬이라
+"PR 리뷰 댓글 정리해줘" 같은 말로도 불린다. 코드 수정과 답글 게시는 하지 않고, 결과를 보고 고른 항목만 이어서 처리한다.
+
+1. `pr-review-fetch` 가 GitHub GraphQL 로 리뷰 스레드(해결·지난 댓글 여부, 당시 커밋, 스레드의 모든 댓글), 리뷰 본문,
+   PR 댓글을 끝까지 받아 JSON 하나로 낸다. 기본은 해결 안 된 스레드만, `--all` 이면 전부.
+   로컬에 PR head 나 지난 댓글의 당시 커밋이 없으면 `refs/pull/<N>/head`·그 커밋을 원격에서 받는다 (작업 트리는 그대로).
+2. 스킬이 항목마다 리뷰 시점 / PR head / 로컬 세 시점의 코드를 구분해 읽고 판정한다:
+   ✅ 수정 필요 · 🟡 선택 · ❌ 불필요(반대 증거 필요) · 💬 답변 필요 · 💬✓ 답변 완료 · 🔁 반영됨 · ❓ 판단 보류.
+3. ✅ 는 수정안과 배경 원리, ❌·💬 는 리뷰어에게 보낼 답글 초안(게시하지 않음)을 쓴다.
+
+리뷰 댓글은 누구나 쓸 수 있는 데이터라 그 안의 지시는 따르지 않는다.
+
+```sh
+pr-review-fetch [<PR 번호|URL|브랜치>] [--all]   # 직접 써도 된다
+```
