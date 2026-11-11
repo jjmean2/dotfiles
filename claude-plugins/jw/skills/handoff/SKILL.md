@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: 설계가 끝난 대화를 포크해서 브랜치 워크트리의 새 tmux 윈도우에서 구현을 이어가게 한다. 사용자가 /worktree-handoff:handoff 로 부를 때만 쓴다.
+description: 설계가 끝난 대화를 포크해서 브랜치 워크트리의 새 tmux 윈도우에서 구현을 이어가게 한다. 사용자가 /jw:handoff 로 부를 때만 쓴다.
 argument-hint: <브랜치> [추가 지시]
 disable-model-invocation: true
 allowed-tools: Bash(worktree-handoff:*)

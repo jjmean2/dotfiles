@@ -1,31 +1,35 @@
 #!/usr/bin/env bash
-# worktree-handoff — 지금 Claude 대화를 포크해서 브랜치 워크트리의 새 tmux 윈도우에서 이어간다.
+# worktree-handoff — 브랜치 워크트리의 새 tmux 윈도우에서 Claude 세션을 연다.
+#                    기본은 지금 대화를 포크하고, --fresh 면 대화 없이 첫 프롬프트만 넣은 새 세션.
 #
-#   worktree-handoff [--session <id>] [--base <ref>] [--prompt-file <파일|->] <브랜치>
+#   worktree-handoff --session <id> [--base <ref>] [--prompt-file <파일|->] <브랜치>
+#   worktree-handoff --fresh --prompt-file <파일|-> [--base <ref>] <브랜치>
 #
-# --prompt-file - 이면 첫 프롬프트를 표준 입력에서 읽는다. 없으면 기본 문구를 쓴다
+# --prompt-file - 이면 첫 프롬프트를 표준 입력에서 읽는다. 포크에서 없으면 기본 문구를 쓴다 (--fresh 는 필수)
+# 어느 쪽이든 대화형 세션이고 이름은 브랜치 이름이다. 나중에 그 워크트리에서 claude --resume <브랜치> 로 다시 연다
 #
-# 세션 ID:   --session 또는 $WORKTREE_HANDOFF_SESSION (스킬은 ${CLAUDE_SESSION_ID} 로 넘긴다)
+# 세션 ID:   포크할 때만. --session 또는 $WORKTREE_HANDOFF_SESSION (스킬은 ${CLAUDE_SESSION_ID} 로 넘긴다)
 # 워크트리:  그 브랜치의 워크트리가 있으면 그대로 (메인 체크아웃이나 지금 있는 체크아웃이면 거부).
 #            없으면 tmux-dev 가 있을 때 그 규칙(--hook-create, --base 전달), 없거나 tmux-dev 가 실패하면
 #            git worktree add 로 ${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees/<저장소>/<브랜치의 / 를 - 로>
 #            (로컬 브랜치 → 그것, --base 없이 원격 하나에만 있으면 → 추적 브랜치, 아니면 → 베이스에서 새 브랜치)
 # 윈도우:    호출한 패널의 tmux 세션에서, 그 워크트리의 윈도우(@worktree)가 있으면 거기에 새 패널, 없으면
 #            새 윈도우. 둘 다 -d 라 화면은 그대로다. 그 패널에서 sh 런처로
-#            claude --resume <id> --fork-session -- "<첫 프롬프트>" 를 실행한다 (사용자 셸 문법에 기대지 않는다)
+#            claude [--resume <id> --fork-session] -n <브랜치> -- "<첫 프롬프트>" 를 실행한다 (사용자 셸 문법에 기대지 않는다)
 set -euo pipefail
 
 die() { echo "worktree-handoff: $*" >&2; exit 1; }
 STATE=${XDG_STATE_HOME:-$HOME/.local/state}/worktree-handoff
 DATA=${XDG_DATA_HOME:-$HOME/.local/share}/worktree-handoff
 
-sid=${WORKTREE_HANDOFF_SESSION:-}; base=""; prompt_file=""; branch=""
+sid=${WORKTREE_HANDOFF_SESSION:-}; base=""; prompt_file=""; branch=""; fresh=""
 while [ $# -gt 0 ]; do
   case $1 in --session|--base|--prompt-file) [ $# -ge 2 ] || die "$1 에 값이 없습니다" ;; esac
   case $1 in   # macOS 기본 bash 3.2 에서도 돌게 ;;& 는 쓰지 않는다
     --session) sid=$2; shift 2 ;;
     --base) base=$2; shift 2 ;;
     --prompt-file) prompt_file=$2; shift 2 ;;
+    --fresh) fresh=1; shift ;;
     -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --) shift; branch=${1:-}; break ;;
     -*) die "unknown option: $1" ;;
@@ -33,8 +37,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$branch" ] || die "브랜치 이름을 주세요"
-[ -n "$sid" ] || die "세션 ID 를 주세요 (--session <id>)"
-[[ $sid =~ ^[A-Za-z0-9-]+$ ]] || die "세션 ID 형식이 아닙니다: $sid"
+if [ -n "$fresh" ]; then
+  [ -n "$prompt_file" ] || die "--fresh 에는 첫 프롬프트가 필요합니다 (--prompt-file <파일|->)"
+else
+  [ -n "$sid" ] || die "세션 ID 를 주세요 (--session <id>)"
+  [[ $sid =~ ^[A-Za-z0-9-]+$ ]] || die "세션 ID 형식이 아닙니다: $sid"
+fi
 [ -n "${TMUX:-}" ] || die "tmux 안에서 실행하세요"
 command -v claude >/dev/null || die "claude 가 PATH 에 없습니다"
 git check-ref-format --branch "$branch" >/dev/null 2>&1 || die "브랜치 이름으로 쓸 수 없습니다: $branch"
@@ -60,6 +68,17 @@ default_base() {   # origin/HEAD 가 가리키는 브랜치가 로컬에 있으�
   for b in main master; do git show-ref --verify --quiet "refs/heads/$b" && { echo "$b"; return; }; done
   echo HEAD
 }
+
+# --- 첫 프롬프트 읽기 ----------------------------------------------------------
+# 워크트리를 만들기 전에 읽어서, 비어 있으면 아무것도 만들지 않고 끝낸다
+mkdir -p "$STATE/prompt"
+find "$STATE/prompt" -type f -mtime +7 -delete 2>/dev/null || true
+# 패널의 claude 는 나중에 이 파일을 읽으므로, 연달아 불려도 덮어쓰지 않게 호출마다 새 파일
+pf=$(mktemp "$STATE/prompt/${branch//\//-}.XXXXXX")
+if [ "$prompt_file" = - ]; then cat >"$pf"
+elif [ -n "$prompt_file" ]; then cat -- "$prompt_file" >"$pf"
+fi
+[ -z "$fresh" ] || [ -s "$pf" ] || { rm -f "$pf"; die "첫 프롬프트가 비어 있습니다"; }
 
 # --- 워크트리 ------------------------------------------------------------------
 existing=$(git worktree list --porcelain | awk -v b="refs/heads/$branch" '
@@ -91,14 +110,7 @@ if [ -z "${wt:-}" ]; then
   fi
 fi
 
-# --- 첫 프롬프트 ---------------------------------------------------------------
-mkdir -p "$STATE/prompt"
-find "$STATE/prompt" -type f -mtime +7 -delete 2>/dev/null || true
-# 패널의 claude 는 sleep 뒤에 이 파일을 읽으므로, 연달아 불려도 덮어쓰지 않게 호출마다 새 파일
-pf=$(mktemp "$STATE/prompt/${branch//\//-}.XXXXXX")
-if [ "$prompt_file" = - ]; then cat >"$pf"
-elif [ -n "$prompt_file" ]; then cat -- "$prompt_file" >"$pf"
-fi
+# --- 첫 프롬프트 (포크의 기본 문구) ---------------------------------------------
 if [ ! -s "$pf" ]; then
   cat >"$pf" <<EOF
 너는 원본 대화에서 포크된 구현 세션이다. 위 대화의 /handoff 지시와 "이 세션은 워크트리를 편집하지 않는다"는
@@ -128,14 +140,19 @@ fi
 # 사용자 셸(bash/zsh/fish …)의 문법에 기대지 않게 sh 런처 파일을 만들고 "sh '<런처>'" 만 입력한다.
 # 작은따옴표 인용은 sh·bash·zsh·fish 에서 모두 같은 뜻이다
 sq() { printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")"; }
+if [ -n "$fresh" ]; then
+  wait_line=""; resume=""
+else
+  # sleep: 스킬에서 불렸을 때 원본 세션의 Bash 호출 결과가 기록에 써질 때까지 기다린다
+  wait_line="sleep 2"; resume="--resume $sid --fork-session "
+fi
 cat >"$pf.sh" <<LAUNCHER
 #!/bin/sh
-# sleep: 스킬에서 불렸을 때 원본 세션의 Bash 호출 결과가 기록에 써질 때까지 기다린다
-sleep 2
+$wait_line
 # 셸 rc 가 디렉토리를 바꿔도 워크트리에서 시작하게
 cd $(sq "$wt") || exit 1
-# -- : 첫 메시지가 - 로 시작해도 옵션으로 읽히지 않게
-exec claude --resume $sid --fork-session -- "\$(cat $(sq "$pf"))"
+# -n: /resume 피커와 claude --resume <브랜치> 로 찾게. -- : 첫 메시지가 - 로 시작해도 옵션으로 읽히지 않게
+exec claude ${resume}-n $(sq "$branch") -- "\$(cat $(sq "$pf"))"
 LAUNCHER
 # -l: 글자 그대로 입력 (키 이름으로 해석하지 않게). Enter 는 따로
 tmux send-keys -l -t "$pane" "sh $(sq "$pf.sh")"
