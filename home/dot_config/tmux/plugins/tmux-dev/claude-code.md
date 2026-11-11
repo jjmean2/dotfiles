@@ -64,11 +64,12 @@ Claude Code 의 `WorktreeCreate` 훅은 `claude -w`, EnterWorktree, 백그라운
 - 훅이 만든 브랜치는 Claude 가 지우지 않는다. 삭제는 `--hook-remove` 또는 ctrl-x 가 한다(둘 다 보관 먼저).
 - Bash 로 직접 친 `git worktree add` 에는 훅이 발화하지 않는다. 그래서 위 지침에 "직접 치지 않는다" 가 있다.
 
-## 메인에서 설계하다가 넘기기: worktree-handoff
+## 메인에서 설계하다가 넘기기: jw 플러그인의 handoff
 
-메인 체크아웃에서 범위를 정한 대화를 그대로 들고 워크트리로 가려면 `/worktree-handoff:handoff <브랜치>`.
+메인 체크아웃에서 범위를 정한 대화를 그대로 들고 워크트리로 가려면 `/jw:handoff <브랜치>`.
 대화를 포크해서 tmux-dev 규칙의 워크트리에 새 윈도우를 백그라운드로 열고 거기서 이어 가며, 메인 세션은 남는다.
-dotfiles 저장소의 `claude-plugins/worktree-handoff/README.md` 참고 (이 파일은 홈에 배포되므로 상대 링크를 쓰지 않는다).
+대화 없이 작업 지시서만 넘긴 새 세션으로 시작하려면 `/jw:handoff-fresh <브랜치>`.
+dotfiles 저장소의 `claude-plugins/jw/README.md` 참고 (이 파일은 홈에 배포되므로 상대 링크를 쓰지 않는다).
 
 ## 백그라운드 변형
 

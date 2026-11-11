@@ -1,8 +1,8 @@
 {
-  "name": "dotfiles",
+  "name": "justwonder",
   "owner": { "name": "jjmean2" },
   "description": "dotfiles 에 함께 두는 개인 Claude Code 플러그인",
   "plugins": [
-    { "name": "worktree-handoff", "source": "./claude-plugins/worktree-handoff" }
+    { "name": "jw", "source": "./claude-plugins/jw" }
   ]
 }
