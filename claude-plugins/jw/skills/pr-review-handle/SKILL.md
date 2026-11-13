@@ -115,7 +115,6 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 |---|---|---|---|---|---|
 
 ## 1. <파일:줄> — <판정> (<리뷰어 role>, <종류>)
-`<thread_id>` (리뷰 본문·PR 댓글이면 `<node_id>`)
 **리뷰 요지** — 풀어 쓴 설명
 **검증** — 따라가 본 코드와 찾은 것
 **판정 근거** — 파일:줄
@@ -166,20 +165,13 @@ git push --force-with-lease origin <고친 PR 브랜치> <그 위 브랜치들�
 ## 8. 답글·해결 처리 (이 스킬이 끝난 뒤, 사용자가 고른 항목만)
 
 이 스킬 안에서는 게시하지 않는다. 결과를 본 사용자가 "3번 답글 달고 해결해 줘"처럼 고르면 그 항목만 처리한다.
-위 결과의 `thread_id` 를 쓰고, 그 사이에 시간이 지났으면 `pr-review-fetch` 를 다시 돌려 스레드 상태
-(`resolved`, `viewer_can_reply`, `viewer_can_resolve`)를 확인한다. 권한이 없으면(`false`) 하지 않고 알린다.
-게시하는 본문은 사용자에게 먼저 보여 준다.
 
-```sh
-# 리뷰 스레드에 답글 (thread_id = PRRT_…)
-gh api graphql -f query='mutation($t:ID!,$b:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$t,body:$b}){comment{url}}}' \
-  -f t=<thread_id> -f b=<본문>
-# 스레드 해결 / 해결 취소
-gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -f t=<thread_id>
-gh api graphql -f query='mutation($t:ID!){unresolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -f t=<thread_id>
-# GraphQL 을 쓸 수 없는 환경: 스레드 첫 댓글의 database_id 로 REST 답글
-gh api repos/<owner>/<repo>/pulls/<번호>/comments/<database_id>/replies -f body=<본문>
-```
-
-리뷰 본문(`reviews`)과 PR 댓글(`comments`)은 스레드가 아니라 해결 처리가 없다. 답할 때는
-`gh pr comment <번호> --body <본문>` 으로 새 댓글을 달고 원문 링크(`url`)를 인용한다.
+- 키는 스레드의 `thread_id`(`PRRT_…`)다. 댓글 ID 가 아니다. 원본 출력이 맥락에 없으면 `pr-review-fetch` 를 다시 돌려
+  파일:줄과 리뷰 요지로 그 스레드를 찾는다. 순번(`id`)은 해결 상태가 바뀌면 밀리므로 그것으로 맞추지 않는다.
+- 쓰기 직전에 `pr-review-fetch --threads <thread_id>,…` 로 고른 스레드의 지금 상태를 확인한다. 이미 해결됐으면 건너뛰고,
+  분석 뒤에 새 댓글이 달렸으면(`last_comments`) 사용자에게 보여 주고 멈춘다. `viewer_can_reply`·`viewer_can_resolve` 가
+  false 면 하지 않고 알린다.
+- 게시할 본문은 먼저 보여 준다. 답글은 `addPullRequestReviewThreadReply`, 해결은 `resolveReviewThread` mutation 이다.
+  GraphQL 을 쓸 수 없으면 스레드의 `comment_database_id` 로 REST 답글
+  (`POST repos/<owner>/<repo>/pulls/<번호>/comments/<comment_database_id>/replies`)을 단다.
+- 리뷰 본문·PR 댓글은 스레드가 아니라 해결 처리가 없다. 원문 링크를 인용한 새 PR 댓글로 답한다.
