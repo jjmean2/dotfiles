@@ -58,7 +58,7 @@ tmux 세션 (세션 디렉토리 = @tmux-dev-path, 없으면 session_path)
   `worktree | prunable | branch | remote | dir`.
 - 행 모양 `<이름 30칸> <창·최근> <상태> <dirty N> <나이> <짧은 위치 | (branch) 제목 | (remote) 제목>` (2026-11-09).
   마커를 위치보다 앞에 둔다: 위치가 길어(50~70자) 미리보기가 켜진 목록 폭에서는 뒤에 붙인 마커가 잘려 안 보였다.
-- 마커: `●N` 열린 창 · `◷` 최근 · 상태는 **베이스 기준 하나**: `merged`(모두 들어감. 뒤의 `·r ·s ·t` 는 판정 방법) · `new`(브랜치 끝이 베이스 끝과 같다 =
+- 마커: `●N` 열린 창 · `◷` 최근 · 상태는 **베이스 기준 하나**: `merged`(모두 들어감. 뒤의 `·r ·s ·t ·p` 는 판정 방법) · `new`(브랜치 끝이 베이스 끝과 같다 =
   아직 커밋이 없다) · `+N`(베이스에 없는 커밋 수) · `dirty N`(커밋 안 된 변경 수) · `missing` · `locked` · 나이(마지막 커밋,
   `5m 3h 2d 3w 4mo 2y`). 브랜치 자신의 업스트림 대비(ahead/behind/gone)는 행에서 빼고 미리보기에 말로 쓴다
   ("2 not pushed to origin/x", "upstream … was deleted"). 두 기준이 한 행에 섞여 헷갈렸다.
@@ -157,7 +157,13 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
   변경을 그대로 합치므로 diff 문맥이 달라져도, 스택 PR 이 차례로 squash 돼도 잡는다). 캐시
   `~/.cache/tmux-dev/merged/<브랜치 커밋>` 에 `<베이스 커밋> <0|방법>`, 베이스 쪽 집합 `patchids/<베이스 커밋>`.
 - **판정 방법 표시 (2026-11-13).** 처음 맞은 방법을 `merged` 뒤에 흐린 글자로: 없음 = 조상(ff·merge commit), `·r` rebase,
-  `·s` squash(diff patch-id), `·t` tree(merge-tree). 미리보기에는 말로.
+  `·s` squash(diff patch-id), `·t` tree(merge-tree), `·p` GitHub PR. 미리보기에는 말로.
+- **GitHub PR (2026-11-13).** 로컬 판정이 모두 아니면 머지된 PR 목록을 본다. 브랜치 커밋이 PR head 와 같거나, 같은 이름 PR 의
+  head 가 로컬에 있고 브랜치 커밋을 담으면(로컬이 뒤처짐) merged. 이름이 아니라 커밋으로 비교해 이름을 다시 써도 안전하다.
+  리뷰 제안처럼 GitHub 에서만 생긴 커밋까지 squash 돼 로컬 판정이 다 실패하는 경우를 잡는다. 목록은 백그라운드 fetch 때
+  `gh pr list --state merged --limit 300` 으로 받아 `~/.cache/tmux-dev/prs/<origin URL 해시>` 를 통째로 바꾼다(저장소당 파일
+  하나, `<head 커밋> <번호> <head 브랜치>`). fetch 와 동시에 돌고, 목록이 바뀌어도 다시 읽는다. gh 가 없거나 실패하면 예전
+  파일을 두고, 파일이 없으면 건너뛴다. 60일 동안 안 갱신된 파일은 `cache_prune` 이 치운다. `TMUX_DEV_PR_LIMIT` 로 개수 조절.
 - **merge-tree 는 임시 오브젝트 디렉토리에 쓴다.** `--write-tree` 는 결과 블롭·트리를 저장소에 써서, 머지 안 된 브랜치마다 참조
   없는 루즈 오브젝트가 gc 전까지 쌓인다. `GIT_OBJECT_DIRECTORY=<임시>` + `GIT_ALTERNATE_OBJECT_DIRECTORIES=<저장소 objects>`
   로 새 것은 임시 디렉토리에만 쓰고 바로 지운다. 죽어서 남은 `$TMPDIR/tmux-dev.mt.*` 는 기존 `tmux-dev.*` 1시간 정리가 치운다.
