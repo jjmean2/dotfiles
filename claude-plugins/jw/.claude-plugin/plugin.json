@@ -1,6 +1,6 @@
 {
   "name": "jw",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "개인 작업 흐름 스킬 모음: 대화를 브랜치 워크트리로 넘기기(포크·새 세션·이동), PR 리뷰 댓글 분석",
   "author": {
     "name": "jjmean2"
