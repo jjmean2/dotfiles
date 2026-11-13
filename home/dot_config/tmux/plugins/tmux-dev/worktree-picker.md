@@ -58,7 +58,7 @@ tmux 세션 (세션 디렉토리 = @tmux-dev-path, 없으면 session_path)
   `worktree | prunable | branch | remote | dir`.
 - 행 모양 `<이름 30칸> <창·최근> <상태> <dirty N> <나이> <짧은 위치 | (branch) 제목 | (remote) 제목>` (2026-11-09).
   마커를 위치보다 앞에 둔다: 위치가 길어(50~70자) 미리보기가 켜진 목록 폭에서는 뒤에 붙인 마커가 잘려 안 보였다.
-- 마커: `●N` 열린 창 · `◷` 최근 · 상태는 **베이스 기준 하나**: `merged`(모두 들어감) · `new`(브랜치 끝이 베이스 끝과 같다 =
+- 마커: `●N` 열린 창 · `◷` 최근 · 상태는 **베이스 기준 하나**: `merged`(모두 들어감. 뒤의 `·r ·s ·t` 는 판정 방법) · `new`(브랜치 끝이 베이스 끝과 같다 =
   아직 커밋이 없다) · `+N`(베이스에 없는 커밋 수) · `dirty N`(커밋 안 된 변경 수) · `missing` · `locked` · 나이(마지막 커밋,
   `5m 3h 2d 3w 4mo 2y`). 브랜치 자신의 업스트림 대비(ahead/behind/gone)는 행에서 빼고 미리보기에 말로 쓴다
   ("2 not pushed to origin/x", "upstream … was deleted"). 두 기준이 한 행에 섞여 헷갈렸다.
@@ -152,8 +152,16 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
 ## 머지 판정
 
 - `merged` = 브랜치의 변경이 베이스에 모두 들어 있다. ff·merge commit 은 `for-each-ref --merged` 로, rebase(새 SHA)는 고유 커밋의
-  patch-id 가 베이스 쪽 집합에 있는지로, squash 는 merge-base 와 브랜치 트리의 diff 하나의 patch-id 로 본다. 캐시
-  `~/.cache/tmux-dev/merged/<브랜치 커밋>`, 베이스 쪽 집합 `patchids/<베이스 커밋>`.
+  patch-id 가 베이스 쪽 집합에 있는지로, squash 는 merge-base 와 브랜치 트리의 diff 하나의 patch-id 로 본다. 그래도 아니면
+  `git merge-tree --write-tree <베이스> <브랜치>` 의 결과 트리가 베이스 트리와 같은지 본다 (3-way 머지는 양쪽에 똑같이 들어간
+  변경을 그대로 합치므로 diff 문맥이 달라져도, 스택 PR 이 차례로 squash 돼도 잡는다). 캐시
+  `~/.cache/tmux-dev/merged/<브랜치 커밋>` 에 `<베이스 커밋> <0|방법>`, 베이스 쪽 집합 `patchids/<베이스 커밋>`.
+- **판정 방법 표시 (2026-11-13).** 처음 맞은 방법을 `merged` 뒤에 흐린 글자로: 없음 = 조상(ff·merge commit), `·r` rebase,
+  `·s` squash(diff patch-id), `·t` tree(merge-tree). 미리보기에는 말로.
+- **merge-tree 는 임시 오브젝트 디렉토리에 쓴다.** `--write-tree` 는 결과 블롭·트리를 저장소에 써서, 머지 안 된 브랜치마다 참조
+  없는 루즈 오브젝트가 gc 전까지 쌓인다. `GIT_OBJECT_DIRECTORY=<임시>` + `GIT_ALTERNATE_OBJECT_DIRECTORIES=<저장소 objects>`
+  로 새 것은 임시 디렉토리에만 쓰고 바로 지운다. 죽어서 남은 `$TMPDIR/tmux-dev.mt.*` 는 기존 `tmux-dev.*` 1시간 정리가 치운다.
+  `--quiet`(오브젝트를 안 쓰는 옵션)는 git 2.43 에 없고 트리 비교도 못 해서 쓰지 않는다.
 - **기준 ref (`judge_ref`).** 로컬 베이스가 업스트림의 조상(같거나 뒤처짐)이면 `origin/<베이스>` 로, 아니면 로컬로. 업스트림이
   둘을 다 담으므로 "로컬 main 또는 origin/main 에 들어 있으면 머지됨" 을 계산 한 번으로 얻는다. 그래서 PR 로 머지한 뒤 pull
   하지 않아도 `merged` 로 보이고, 예전의 "main 을 origin 에 맞출까요?" 질문이 필요 없어졌다.

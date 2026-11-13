@@ -199,7 +199,8 @@ nvim +'Lazy restore'                                         # lockfile 의 comm
   - `prefix W` (`tmux-dev worktree [브랜치|경로]`): 저장소의 워크트리·브랜치·원격 브랜치를 한 목록에서 고르면 그 워크트리의
     윈도우로, 없으면 `git worktree add` 와 윈도우를 만든다. 없는 이름을 치면 로컬 main 에서 새 브랜치. alt-l 로 레이아웃을
     골라서 열 수 있다(위 S 와 같은 규칙). 행에 `●N`(열린
-    윈도우), `dirty`, `merged`(ff·merge commit·rebase 머지는 `git cherry`, squash 머지는 merge-base 위 임시 단일 커밋으로 판정),
+    윈도우), `dirty`, `merged`(ff·merge commit 은 조상 관계, rebase 는 커밋별 patch-id, squash 는 diff 전체의 patch-id, 그래도 아니면
+    `git merge-tree` 로 머지해 봐서 바뀌는 게 없는지. 뒤에 `·r ·s ·t` 로 판정 방법 표시),
     `[ahead n, behind m]` 마커가 붙는다(목록을 먼저 띄우고 fzf 의 load 이벤트에서 마커를 얹는 두 번 읽기. 머지 판정은 ff 는
     `for-each-ref --merged` 한 번, rebase·squash 는 main 커밋들의 patch-id 집합과 비교하며 `~/.cache/tmux-dev/` 에 캐시.
     행 작업은 코어 수만큼만 동시에). ctrl-x 가 먼저 main 을 origin 에 맞출지 물은 뒤(판정이 로컬 main 기준이라 PR 머지 뒤엔

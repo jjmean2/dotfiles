@@ -87,6 +87,12 @@ tmux 세션 "dotfiles"   = 프로젝트   ~/dev/jwlee/dotfiles          ← pref
 | fast-forward, merge commit | 브랜치 끝이 베이스의 조상인가 (`for-each-ref --merged`) |
 | rebase (커밋 해시가 바뀜) | 브랜치 고유 커밋의 patch-id 가 베이스 쪽에 모두 있는가 |
 | squash | merge-base 와 브랜치 끝의 diff 전체를 한 커밋으로 본 patch-id 가 베이스 쪽에 있는가 |
+| squash (위로 못 잡은 것) | 베이스에 브랜치를 머지해 보면(`git merge-tree`) 베이스 트리가 그대로인가 |
+
+위에서부터 처음 맞은 방법이 행의 `merged` 뒤에 글자로 붙는다: 없음 = 조상, `·r` = rebase, `·s` = squash, `·t` = merge-tree.
+마지막 방법은 squash 뒤 베이스가 근처 줄을 고쳐 diff 문맥이 달라진 경우, 스택 PR 이 차례로 squash 된 경우를 잡는다.
+머지 시뮬레이션이 만드는 오브젝트는 임시 디렉토리에 쓰고 지우므로 저장소에 남지 않는다. 여전히 못 잡는 것: GitHub 에서만
+생긴 커밋(리뷰 제안 반영 등)이 함께 squash 되고, 그 뒤 베이스가 같은 줄을 다시 고친 경우.
 
 **기준 ref.** 로컬 베이스가 업스트림(`origin/main`)과 같거나 뒤처져 있으면 업스트림으로, 아니면 로컬로 판정한다. 업스트림이
 둘 다를 담으므로 "로컬 main 또는 origin/main 에 들어 있으면 머지됨" 을 한 번의 계산으로 얻는다. 피커가 뜰 때 백그라운드에서
