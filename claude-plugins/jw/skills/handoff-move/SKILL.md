@@ -1,7 +1,7 @@
 ---
 name: handoff-move
 description: 브랜치 워크트리를 만들고(있으면 그대로), 지금 세션을 그 워크트리로 옮기는 /cd 명령을 알려 준다. 사용자가 /jw:handoff-move 로 부를 때만 쓴다.
-argument-hint: <브랜치>
+argument-hint: <브랜치> [--in-stack|--new-worktree]
 disable-model-invocation: true
 allowed-tools: Bash(worktree-handoff:*)
 ---
@@ -10,9 +10,14 @@ allowed-tools: Bash(worktree-handoff:*)
 
 `$0` 이 비어 있거나 브랜치 이름으로 보이지 않으면 실행하지 말고 브랜치 이름을 물어본다.
 
+**스택 워크트리**: 인자(`$ARGUMENTS`)에 `--in-stack` 이나 `--new-worktree` 가 있으면 그대로 붙인다 (없으면 붙이지 않는다).
+브랜치가 어디에도 체크아웃돼 있지 않은데 그 브랜치를 품은 스택 워크트리가 있으면 스크립트가 옵션 없이는 멈춘다.
+그때는 오류를 보여 주고 어느 쪽으로 할지 묻는다: 워크트리 하나에서 브랜치를 바꿔 가며 쌓는 스택이면 `--in-stack`
+(그 스택 워크트리를 쓰고 체크아웃은 바꾸지 않는다), 따로 떼어 작업할 거면 `--new-worktree`.
+
 1. Bash 로 한 번 실행한다:
    ```
-   worktree-handoff path -- '$0'
+   worktree-handoff path [--in-stack|--new-worktree] -- '$0'
    ```
 2. 실패하면 오류를 그대로 보여 주고 멈춘다. 성공하면 워크트리 경로를 알리고, 출력의 `move:` 줄(`/cd '<경로>'`)을
    그대로 보여 주며 사용자가 입력하도록 안내한다. `/cd` 는 세션 기록·설정·스킬·CLAUDE.md 를 새 디렉토리로 옮긴다.

@@ -4,9 +4,9 @@
 
 | 스킬 | 하는 일 |
 |---|---|
-| `/jw:handoff <브랜치> [추가 지시]` | 지금 대화를 브랜치 워크트리로 **포크**한 세션을 연다 |
-| `/jw:handoff-fresh <브랜치> [추가 지시]` | 대화 없이, 자기완결적인 작업 지시서를 첫 메시지로 넣은 **새 세션**을 연다 |
-| `/jw:handoff-move <브랜치>` | 워크트리만 만들고, **지금 세션**을 그리로 옮기는 `/cd` 명령을 알려 준다 |
+| `/jw:handoff <브랜치> [--in-stack\|--new-worktree] [추가 지시]` | 지금 대화를 브랜치 워크트리로 **포크**한 세션을 연다 |
+| `/jw:handoff-fresh <브랜치> [--in-stack\|--new-worktree] [추가 지시]` | 대화 없이, 자기완결적인 작업 지시서를 첫 메시지로 넣은 **새 세션**을 연다 |
+| `/jw:handoff-move <브랜치> [--in-stack\|--new-worktree]` | 워크트리만 만들고, **지금 세션**을 그리로 옮기는 `/cd` 명령을 알려 준다 |
 | `/jw:pr-review-handle [PR] [--all] [--stack]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 수정안과 배경 원리를 설명한다 |
 
 ## 개념
@@ -65,14 +65,36 @@ resume:   cd '…/feat-x' && claude --resume 'feat/x@1111-1530'
 | 상황 | 워크트리 |
 |---|---|
 | 그 브랜치의 워크트리가 이미 있음 | 그대로 쓴다 (메인 체크아웃이나 지금 세션이 있는 체크아웃이면 거부) |
+| 없음, 그 브랜치를 품은 스택 워크트리가 있음 | 멈춘다. `--in-stack` 이면 그 워크트리, `--new-worktree` 면 아래처럼 새로 (아래 스택 워크트리) |
 | 없음 | `git worktree add` 로 `<root>/<저장소>/<브랜치의 / 를 - 로>` |
 | 없음, `create=tmux-dev` | `tmux-dev worktree [--base <ref>] --hook-create` (그 위치·셋업 훅). tmux-dev·jq 가 없거나 실패하면 git 으로 |
 
 새로 만들 때 브랜치는 로컬에 있으면 그것을, `--base` 없이 원격 하나에만 있으면 추적 브랜치를, 아니면 `--base`
 (기본: `origin/HEAD` 가 가리키는 로컬 브랜치 → `main`/`master` → 메인의 HEAD)에서 새로 만든다.
+
 어디에 만들든 `git worktree list` 로 보이고, tmux-dev 피커(`prefix W`)도 그 목록을 읽는다.
 bare 저장소는 지원하지 않는다. 정리는 `git worktree remove <경로>` 와 `git branch -d <브랜치>`. `.env` 처럼 추적되지 않는 파일은
 복사하지 않는다 (필요하면 `create=tmux-dev` 의 셋업 훅).
+
+### 스택 워크트리
+
+워크트리 하나에서 브랜치를 바꿔 가며 PR 을 쌓으면 (`main ← a ← b ← c`, 워크트리에는 `c`) 하위 브랜치 `a`·`b` 는 어디에도
+체크아웃돼 있지 않다. 이때 `a` 로 새 워크트리를 만들면 스택 워크트리에서 `a` 를 체크아웃할 수 없고
+`git rebase --update-refs` 도 `a` 를 옮기지 않아 스택이 갈라진다. 그래서 브랜치가 체크아웃돼 있지 않은데 그 브랜치를
+조상으로 품은 워크트리(기본 브랜치의 워크트리는 제외)가 있으면 스크립트가 멈추고 둘 중 하나를 고르게 한다.
+
+| 옵션 | 동작 |
+|---|---|
+| `--in-stack` | 그 스택 워크트리를 쓴다. 체크아웃은 바꾸지 않는다. `branch:` 줄에 `(스택 워크트리, 체크아웃: c)` 가 붙고, 포크의 기본 첫 메시지에 고치는 방법이 들어간다 |
+| `--new-worktree` | 그래도 새 워크트리를 만든다 |
+
+품은 워크트리가 여럿이면 지금 체크아웃을, 아니면 커밋 차이가 가장 적은(바로 위) 워크트리를 고른다. 스택 워크트리에서
+하위 브랜치를 고칠 때는 체크아웃을 바꾸지 않고 fixup 커밋을 만든 뒤 스택 전체를 다시 쌓는다:
+
+```sh
+git commit --fixup=<a 의 커밋>
+git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base main
+```
 
 ## 설정
 
@@ -115,9 +137,10 @@ ln -s "$(pwd)/claude-plugins/jw/bin/worktree-handoff" "$(pwd)/claude-plugins/jw/
 ## 스크립트를 직접 쓰기
 
 ```sh
-worktree-handoff fork  --session <세션 ID> [--prompt-file <파일|->] [--base <ref>] [--open <방식>] <브랜치>
-worktree-handoff fresh --prompt-file <파일|->                     [--base <ref>] [--open <방식>] <브랜치>
-worktree-handoff path                                             [--base <ref>]                 <브랜치>
+worktree-handoff fork  --session <세션 ID> [--prompt-file <파일|->] [--base <ref>] [--open <방식>] [<스택>] <브랜치>
+worktree-handoff fresh --prompt-file <파일|->                     [--base <ref>] [--open <방식>] [<스택>] <브랜치>
+worktree-handoff path                                             [--base <ref>]                 [<스택>] <브랜치>
+# <스택> = --in-stack | --new-worktree
 ```
 
 세션 ID 는 Claude 안의 `/status` 에서 확인한다. fork 에서 `--prompt-file` 이 없으면 기본 첫 메시지를 쓴다.
@@ -149,6 +172,11 @@ PR 에 이미 달린 리뷰 댓글을 처리한다. 코드를 직접 리뷰하�
 1. `pr-review-fetch` 가 GitHub GraphQL 로 리뷰 스레드(해결·지난 댓글 여부, 당시 커밋, 스레드의 모든 댓글), 리뷰 본문,
    PR 댓글을 끝까지 받아 JSON 하나로 낸다. 기본은 해결 안 된 스레드만, `--all` 이면 전부.
    로컬에 PR head 나 지난 댓글의 당시 커밋이 없으면 `refs/pull/<N>/head`·그 커밋을 원격에서 받는다 (작업 트리는 그대로).
+   로컬 상태는 워크트리가 아니라 로컬 PR 브랜치 기준이다. 고칠 곳(`local.checkout`)은 PR 브랜치가 체크아웃된 워크트리
+   (`self`), 없으면 그 브랜치를 품은 스택 워크트리(`stack`), 둘 다 없으면 `none`. `stack` 이면 그 작업 트리는 위 브랜치의
+   코드라 이 PR 의 로컬로 쓰지 않고, 다음 단계는 `--in-stack` handoff 나 그 자리의 fixup 으로 안내한다.
+   지금 브랜치에 PR 이 없으면 (스택 맨 위의 작업 중 브랜치) 그 아래 쌓인 PR 을 찾는다: `--stack` 이면 가장 가까운 PR 부터
+   스택을 모으고, 아니면 목록을 보여 주고 멈춘다.
    `--stack` 이면 그 PR 이 속한 스택(base 를 따라 아래로, 그 PR 위에 쌓인 열린 PR 을 따라 위로, 갈라지면 모든 가지)을
    찾아 PR 마다 같은 내용을 모은다. fork PR 은 스택으로 잇지 않는다.
 2. 스킬이 항목마다 리뷰 시점 / PR head / 로컬 세 시점의 코드를 구분해 읽고 판정한다:

@@ -2,7 +2,7 @@
 name: pr-review-handle
 description: GitHub PR 에 이미 달린 리뷰 댓글(Copilot·사람)을 모아 쉽게 풀어 설명하고, 실제 코드와 대조해 타당성을 판정하고, 수정이 필요한 것은 수정안과 그 배경 원리를 설명한다. "PR 리뷰 댓글 정리해줘", "리뷰 받은 거 봐줘", "Copilot 리뷰 맞는 말이야?", "스택 PR 리뷰 전부 봐줘" 처럼 남이 단 리뷰를 다룰 때 쓴다. 코드를 직접 리뷰해 달라는 요청에는 쓰지 않는다.
 argument-hint: "[PR 번호|URL|브랜치] [--all] [--stack]"
-allowed-tools: Bash(pr-review-fetch:*), Bash(git show:*), Bash(git diff:*), Bash(git log:*), Bash(git blame:*), Bash(gh pr view:*), Bash(gh pr diff:*)
+allowed-tools: Bash(pr-review-fetch:*), Bash(git show:*), Bash(git diff:*), Bash(git log:*), Bash(git blame:*), Bash(git rev-list:*), Bash(gh pr view:*), Bash(gh pr diff:*)
 ---
 
 PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명만** 한다. 코드 수정·커밋·푸시, GitHub 에 답글 게시·스레드
@@ -16,6 +16,8 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 ## 1. 수집
 
 `pr-review-fetch $ARGUMENTS` 를 한 번 실행한다 (인자가 없으면 지금 브랜치의 PR). 실패하면 오류를 그대로 보여 주고 멈춘다.
+지금 브랜치에 PR 이 없어서 실패하면 (스택 맨 위의 작업 중 브랜치) 오류에 그 아래 쌓인 PR 목록이 있다. 그것을 보여 주고
+특정 PR 인지 스택 전체(`--stack`)인지 묻는다.
 출력의 `warnings` 는 결과 맨 위에 그대로 옮긴다. `threads` 가 비어 있고 `reviews`·`comments` 에도 다룰 것이 없으면
 "다룰 리뷰가 없다"고 한 줄로 끝낸다.
 
@@ -33,10 +35,16 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
   `outdated: true` 이면 `line` 은 비어 있고 지금 head 의 같은 줄 번호는 다른 코드다. 그 커밋이 `missing_commits` 에 있으면
   `diff_hunk` 만 근거로 쓴다.
 - **PR head**: `pr.head_oid`. 지금 GitHub 에 올라가 있는 코드다. `git show <head_oid>:<path>`.
-- **로컬**: PR 브랜치가 체크아웃된 워크트리 `local.pr_worktree` 의 작업 트리. 지금 디렉토리(`local.cwd_root`)가 아닐 수 있다
-  (handoff 흐름에서는 메인 체크아웃에서 부르고 PR 브랜치는 별도 워크트리에 있다). 그 경로의 파일을 읽는다.
-  `local.ahead_of_pr_head > 0` 이거나 `local.uncommitted_changes` 이면 아직 푸시하지 않은 수정이 있다.
-  `local.pr_worktree` 가 null 이면 로컬 시점은 없다 (🔁 의 미푸시 판정을 하지 않는다).
+- **로컬**: 로컬 PR 브랜치. 커밋된 상태는 체크아웃 여부와 상관없이 `git show <local.branch_head>:<path>` 로 읽는다.
+  `local.ahead_of_pr_head > 0` 이면 아직 푸시하지 않은 커밋이 있다. 작업 트리는 `local.checkout` 에 따라 다르다:
+  - `self`: PR 브랜치가 `local.worktree` 에 체크아웃돼 있다. 그 경로의 파일이 이 PR 의 작업 트리이고,
+    `local.uncommitted_changes` 가 이 PR 의 미커밋 변경이다. 지금 디렉토리(`local.cwd_root`)가 아닐 수 있다
+    (handoff 흐름에서는 메인 체크아웃에서 부르고 PR 브랜치는 별도 워크트리에 있다).
+  - `stack`: PR 브랜치는 어디에도 체크아웃돼 있지 않고, 그 브랜치를 품은 스택 워크트리 `local.worktree` 에
+    위 브랜치 `local.worktree_branch` 가 체크아웃돼 있다 (워크트리 하나에서 브랜치를 바꿔 가며 쌓는 흐름). 그 작업 트리의
+    파일은 **위 브랜치의 코드**라 이 PR 의 로컬로 쓰지 않는다. `local.worktree_dirty` 도 위 브랜치의 변경이다.
+    `local.stack_needs_restack` 이 true 면 로컬 PR 브랜치에 새 커밋이 있는데 위 브랜치들은 아직 그 위로 다시 쌓이지 않았다.
+  - `none`: 고칠 워크트리가 없다. `local.branch_head` 가 null 이면 로컬 시점도 없다 (🔁 의 미푸시 판정을 하지 않는다).
 
 `local.repo_match` 가 false 이면 코드는 `diff_hunk` 와 `gh pr diff` 로만 보고, 판정마다 "전체 코드를 보지 못함"을 밝힌다.
 
@@ -117,16 +125,34 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 <아래 규칙에 따른 안내>. 답글 초안은 게시하지 않았다.
 ```
 
-다음 단계 안내는 수정할 곳에 따라 다르다. 한 작업 트리는 한 세션만 고친다 (handoff 스킬들과 같은 원칙).
-- `local.in_pr_worktree` 가 true: "적용할 항목 번호를 알려 주면 고친다."
-- PR 워크트리가 따로 있음 (`local.pr_worktree` 가 있고 지금 그 안이 아님): 그 워크트리의 파일을 이 세션에서 고치지 않는다.
-  `/jw:handoff-move <PR 브랜치>` 로 이 세션을 옮기거나, `/jw:handoff-fresh <PR 브랜치>` 로 고를 항목의 수정안을 담은
-  지시서를 넘기라고 안내한다.
-- PR 브랜치가 어디에도 체크아웃돼 있지 않음: 위 두 명령이 그 브랜치의 워크트리를 만든다고 안내한다.
+다음 단계 안내는 `local.checkout` 과 `local.in_worktree` 에 따라 다르다. 한 작업 트리는 한 세션만 고친다
+(handoff 스킬들과 같은 원칙).
 
-`--stack` 이면 맨 위에 스택 요약을 두고 PR 마다 위 형식을 아래→위 순서로 반복한다. 다음 단계 안내는 PR 마다
-그 PR 의 `local` 로 정하되, 고칠 PR 이 여러 개면 한 세션이 한 워크트리만 고친다는 원칙에 따라 PR 별로 나눠 안내한다.
-아래 PR 을 고치면 위 PR 들을 그 위로 다시 쌓아야(rebase) 한다는 것도 적는다.
+| checkout | 지금 그 워크트리 안 | 안내 |
+|---|---|---|
+| `self` | 예 | "적용할 항목 번호를 알려 주면 고친다." |
+| `self` | 아니오 | 그 워크트리의 파일은 이 세션에서 고치지 않는다. `/jw:handoff-move <PR 브랜치>` 로 이 세션을 옮기거나 `/jw:handoff-fresh <PR 브랜치>` 로 고를 항목의 수정안을 담은 지시서를 넘긴다 |
+| `stack` | 예 | "적용할 항목 번호를 알려 주면 고친다." 고치는 방법(아래 **스택에서 고치기**)도 함께 적는다 |
+| `stack` | 아니오 | `/jw:handoff-move <PR 브랜치> --in-stack` 으로 이 세션을 스택 워크트리로 옮기거나 `/jw:handoff-fresh <PR 브랜치> --in-stack` 으로 넘긴다. `--in-stack` 없이 부르면 스크립트가 멈춘다 (새 워크트리를 만들면 스택이 갈라진다) |
+| `none` | | 위 handoff 명령이 그 브랜치의 워크트리를 만든다고 안내한다 |
+
+**스택에서 고치기** — 스택 워크트리의 체크아웃(`worktree_branch`)은 바꾸지 않는다:
+
+```sh
+git stash                                   # worktree_dirty 가 true 일 때만
+# 고친 뒤, 고칠 PR 의 해당 커밋을 겨냥해서
+git commit --fixup=<PR 브랜치의 커밋>
+git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base <stack.root_base 또는 그 PR 의 base>
+git push --force-with-lease origin <고친 PR 브랜치> <그 위 브랜치들…>   # 사용자가 확인한 뒤에만
+```
+
+`--update-refs`(git 2.38+) 가 중간 브랜치들을 함께 옮긴다. 다른 워크트리에 체크아웃된 브랜치는 옮기지 않으므로 그런 브랜치가
+스택에 있으면 알린다. `stack_needs_restack` 이 true 면 고치기 전에 같은 rebase 로 먼저 다시 쌓는다.
+대안은 그 브랜치로 `git switch` 해서 고치고 위 브랜치들을 다시 쌓는 것이다 (그 사이 위 브랜치의 작업 트리가 바뀐다).
+
+`--stack` 이면 맨 위에 스택 요약을 두고 PR 마다 위 형식을 아래→위 순서로 반복한다. 다음 단계 안내는 스택 끝에 한 번
+쓴다. 보통 모든 PR 이 같은 스택 워크트리를 가리키니 (`local.worktree` 가 같다) 그 워크트리 하나에서 스택에서 고치기로
+아래 PR 부터 고친다고 안내한다. 워크트리가 PR 마다 다르면 한 세션이 한 워크트리만 고친다는 원칙에 따라 나눠 안내한다.
 
 ```
 ## 스택 리뷰 요약 (<root_base> ← #a ← #b ← …, 시작: #<current>)
