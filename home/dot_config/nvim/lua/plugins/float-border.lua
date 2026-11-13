@@ -17,6 +17,9 @@ return {
     "folke/noice.nvim",
     opts = {
       presets = { lsp_doc_border = true },
+      -- K 는 버퍼에 붙은 모든 LSP 에 호버를 요청하고 응답을 LSP 마다 따로 처리한다. 빈 결과를 돌려준 LSP
+      -- (eslint, tailwind 등)마다 "No information available" 알림이 툴팁과 같이 뜨는 것을 끈다.
+      lsp = { hover = { silent = true } },
     },
   },
   {
