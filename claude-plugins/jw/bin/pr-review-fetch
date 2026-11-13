@@ -19,10 +19,12 @@
 #             pr_worktree·in_pr_worktree 는 self 일 때만 (이전 출력과 같은 뜻),
 #             로컬에 없는 커밋 (PR head 가 없으면 refs/pull/<N>/head 를, 지난 댓글의 당시 커밋이 없으면
 #             그 커밋을 원격에서 받아 본다. 작업 트리와 브랜치는 건드리지 않는다)
-#   threads   리뷰 스레드 (기본: 해결 안 된 것). 위치·당시 커밋·지난 댓글 여부·diff 조각·코드 제안 여부·
+#   threads   리뷰 스레드 (기본: 해결 안 된 것). id 는 출력 안의 순번, thread_id 는 GitHub 노드 ID (PRRT_…, 답글·해결 처리에 쓴다)와
+#             viewer_can_reply/resolve/unresolve·resolved_by. 위치·당시 커밋·지난 댓글 여부·diff 조각·코드 제안 여부·
 #             스레드의 모든 댓글 (role: copilot | human | author | bot)
 #   reviews   본문이 있는 리뷰 (승인/수정 요청/코멘트)
 #   comments  PR 대화 탭의 댓글 (copilot·사람·작성자). 다른 봇 댓글은 bot_comments 에 개수만
+#   (스레드 댓글·리뷰·PR 댓글마다 node_id (GraphQL 노드 ID)와 database_id (REST 숫자 ID))
 #   warnings  잘린 데이터, 받지 못한 커밋 등
 #
 # --stack 출력 (JSON 하나):
@@ -148,13 +150,14 @@ gql() {
 }
 AUTHOR='author{login __typename}'
 threads=$(gql "reviewThreads(first:50,after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{
-  isResolved isOutdated path line startLine originalLine originalStartLine
-  comments(first:100){totalCount nodes{$AUTHOR body url createdAt diffHunk commit{oid} originalCommit{oid}}}}}") ||
+  id isResolved isOutdated path line startLine originalLine originalStartLine
+  viewerCanReply viewerCanResolve viewerCanUnresolve resolvedBy{login}
+  comments(first:100){totalCount nodes{id databaseId $AUTHOR body url createdAt diffHunk commit{oid} originalCommit{oid}}}}}") ||
   die "리뷰 스레드를 가져오지 못했습니다 (gh auth status 확인)"
 reviews=$(gql "reviews(first:100,after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{
-  $AUTHOR state body url submittedAt commit{oid}}}") || die "리뷰를 가져오지 못했습니다"
+  id databaseId $AUTHOR state body url submittedAt commit{oid}}}") || die "리뷰를 가져오지 못했습니다"
 comments=$(gql "comments(first:100,after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{
-  $AUTHOR body url createdAt}}") || die "PR 댓글을 가져오지 못했습니다"
+  id databaseId $AUTHOR body url createdAt}}") || die "PR 댓글을 가져오지 못했습니다"
 
 # --- 로컬 저장소 ---------------------------------------------------------------
 # 지난 댓글이 가리키는 당시 커밋들 (로컬에 있어야 그 시점 코드를 읽는다)
@@ -268,20 +271,22 @@ jq -n --argjson view "$view" --argjson threads "$threads" --argjson reviews "$re
       counts: {threads_total: ($all_threads | length), threads_resolved: ($all_threads | map(select(.isResolved)) | length),
                threads_shown: ($sel | length)},
       threads: ($sel | to_entries | map(.key as $i | .value | (.comments.nodes[0] // {}) as $first | {
-        id: ($i + 1), path, resolved: .isResolved, outdated: .isOutdated,
+        id: ($i + 1), thread_id: .id, path, resolved: .isResolved, resolved_by: .resolvedBy.login, outdated: .isOutdated,
+        viewer_can_reply: .viewerCanReply, viewer_can_resolve: .viewerCanResolve, viewer_can_unresolve: .viewerCanUnresolve,
         line, start_line: .startLine, original_line: .originalLine, original_start_line: .originalStartLine,
         commit: $first.commit.oid, original_commit: $first.originalCommit.oid,
         diff_hunk: (($first.diffHunk // "") | tail_lines(20)),
         has_suggestion: any(.comments.nodes[]; .body | test("```suggestion")),
-        comments: [.comments.nodes[] | {by: who, role: role, at: .createdAt, url, body}],
+        comments: [.comments.nodes[] | {node_id: .id, database_id: .databaseId, by: who, role: role, at: .createdAt, url, body}],
         comments_truncated: (.comments.totalCount > (.comments.nodes | length))
       })),
       # Copilot 은 리뷰할 때마다 개요를 새로 단다. 최신 것 하나만 kind: overview 로 남긴다 (그 안의 이슈 목록은 그 시점 기준)
       reviews: ([$reviews | pages("reviews")[] | .nodes[]
-        | select((.body // "") | test("\\S")) | {by: who, role: role, state, at: .submittedAt, commit: .commit.oid, url, body}]
+        | select((.body // "") | test("\\S"))
+        | {node_id: .id, database_id: .databaseId, by: who, role: role, state, at: .submittedAt, commit: .commit.oid, url, body}]
         | (map(select(.role == "copilot")) | sort_by(.at) | .[-1:] | map(. + {kind: "overview", body: (.body | strip_html)}))
           + map(select(.role != "copilot") + {kind: "review"})),
-      comments: [$all_comments[] | select(.role != "bot") | {by: who, role, at: .createdAt, url, body}],
+      comments: [$all_comments[] | select(.role != "bot") | {node_id: .id, database_id: .databaseId, by: who, role, at: .createdAt, url, body}],
       bot_comments: ($all_comments | map(select(.role == "bot")) | group_by(.author.login)
                      | map({by: .[0].author.login, count: length})),
       warnings: ([
