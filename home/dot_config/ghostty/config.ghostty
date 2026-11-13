@@ -24,6 +24,10 @@ font-family = "Fira Code Light"
 # 한글 등 특정 글리프를 다른 폰트로 대체 (font-family 를 여러 번 쓰면 fallback 순서가 됨)
 font-family = "D2Coding"
 #font-family = "Noto Sans CJK KR"
+# 프롬프트의 🅩(U+1F169) 등 검은 원 라틴 대문자. 위 폰트들에 없어 macOS 가 Spoqa Han Sans 로
+# 대신 그리던 것을 SF Compact 로 고정. SF Compact 는 기본 폰트가 아님 → brew install --cask font-sf-compact
+# (없는 머신에서는 이 줄이 무시되고 macOS 대체 폰트로 그려짐)
+font-codepoint-map = U+1F150-U+1F169=SF Compact
 
 # 폰트 크기 (기본값: macOS 13)
 font-size = 11
