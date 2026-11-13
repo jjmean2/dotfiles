@@ -4,7 +4,7 @@
 #   설정   $XDG_CONFIG_HOME/tmux-dev/ignore            디렉토리 탐색에서 뺄 경로 (gitignore 문법, 머신별. lib/dirs.sh)
 #   상태   $XDG_STATE_HOME/tmux-dev/history            prefix S 피커로 고른 곳 (최근 순)
 #   데이터 $XDG_DATA_HOME/tmux-dev/worktrees/<저장소>/<브랜치>   tmux-dev worktree 가 만드는 워크트리
-#   캐시   $XDG_CACHE_HOME/tmux-dev/{merged,patchids}/   머지 판정 결과와 main 커밋 patch-id 집합 (지워도 다시 계산된다)
+#   캐시   $XDG_CACHE_HOME/tmux-dev/{merged,patchids,prs}/   머지 판정 결과, main 커밋 patch-id 집합, 머지된 GitHub PR 목록 (지워도 다시 계산된다)
 # 워크트리는 저장소에서 파생된 체크아웃이고 영속적인 것은 브랜치라, 도구가 관장하는 데이터 자리에 둔다.
 # 저장소별로 바꾸려면 git config tmux-dev.worktree.root (tmux-dev worktree --help).
 TMUX_DEV_IGNORE="${TMUX_DEV_IGNORE:-${XDG_CONFIG_HOME:-$HOME/.config}/tmux-dev/ignore}"
