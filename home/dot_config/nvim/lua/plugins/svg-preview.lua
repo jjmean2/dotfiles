@@ -614,6 +614,14 @@ return {
         -- 이미지 모듈을 켜면 기본으로 markdown 등 문서 안의 이미지·수식도 그리기 시작한다.
         -- 여기서는 SVG 미리보기와 이미지 파일 열기만 원해서 끈다. 원하면 true 로.
         doc = { enabled = false },
+        -- SVG 의 투명한 부분을 투명하게 그린다. snacks 기본 인자(convert.magick.vector)에는 -background 가 없어서
+        -- ImageMagick 이 SVG 를 흰 바탕 위에 그린다. -background none 은 입력 파일({src}) 앞에 와야 그릴 때 적용된다.
+        -- 형식 이름 키(svg)가 vector 보다 먼저 쓰이므로 eps·ai 등 다른 벡터 형식은 기본 그대로 둔다.
+        convert = {
+          magick = {
+            svg = { "-background", "none", "-density", 192, "{src}[{page}]" },
+          },
+        },
       },
       picker = {
         sources = {
