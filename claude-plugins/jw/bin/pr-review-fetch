@@ -3,14 +3,20 @@
 #
 #   pr-review-fetch [<PR 번호|URL|브랜치>] [--all] [--stack]
 #
-# PR 을 주지 않으면 지금 브랜치의 PR. --all 이면 해결(resolved)된 스레드도 포함한다.
+# PR 을 주지 않으면 지금 브랜치의 PR. 지금 브랜치에 PR 이 없으면 (스택 맨 위의 작업 중 브랜치) HEAD 아래에 쌓인 열린 PR 중
+# 가장 가까운 것을 찾는다: --stack 이면 그 PR 부터 스택을 모으고, 아니면 그 목록을 보여 주고 멈춘다. --all 이면 해결(resolved)된 스레드도 포함한다.
 # --stack 이면 그 PR 이 속한 스택 전체를 모은다: base 브랜치를 head 로 하는 열린 PR 을 따라 아래로, 그 PR 의 head 를
 # base 로 하는 열린 PR 을 따라 위로 (갈라지면 모든 가지). fork PR 은 스택으로 잇지 않는다.
 #
 # 출력 (JSON 하나):
 #   pr        번호·URL·제목·본문·작성자·base/head·head 커밋
-#   local     지금 디렉토리가 그 저장소인지, PR 브랜치가 체크아웃된 워크트리(pr_worktree)와 지금 그 안인지,
-#             그 워크트리의 HEAD·PR head 와의 앞섬/뒤처짐·미커밋 변경 여부,
+#   local     지금 디렉토리가 그 저장소인지, 로컬 PR 브랜치의 끝(branch_head)과 PR head 와의 앞섬/뒤처짐,
+#             고칠 워크트리(worktree)와 checkout 종류:
+#               self   PR 브랜치가 체크아웃된 워크트리. uncommitted_changes 는 이 PR 의 미커밋 변경
+#               stack  PR 브랜치는 체크아웃돼 있지 않고, 그 브랜치를 조상으로 품은 워크트리(스택 워크트리)가 있다.
+#                      그 작업 트리는 worktree_branch(위 브랜치)의 코드다. worktree_dirty 는 그 위 브랜치의 변경
+#               none   둘 다 없다
+#             pr_worktree·in_pr_worktree 는 self 일 때만 (이전 출력과 같은 뜻),
 #             로컬에 없는 커밋 (PR head 가 없으면 refs/pull/<N>/head 를, 지난 댓글의 당시 커밋이 없으면
 #             그 커밋을 원격에서 받아 본다. 작업 트리와 브랜치는 건드리지 않는다)
 #   threads   리뷰 스레드 (기본: 해결 안 된 것). 위치·당시 커밋·지난 댓글 여부·diff 조각·코드 제안 여부·
@@ -42,8 +48,29 @@ done
 command -v gh >/dev/null || die "gh 가 PATH 에 없습니다 (설치 후 gh auth login)"
 command -v jq >/dev/null || die "jq 가 PATH 에 없습니다"
 
-view=$(gh pr view ${pr:+"$pr"} --json number,url,title,body,author,state,baseRefName,headRefName,headRefOid,isCrossRepository) ||
-  die "PR 을 찾지 못했습니다${pr:+: $pr} (지금 브랜치에 PR 이 없으면 번호나 URL 을 주세요)"
+FIELDS=number,url,title,body,author,state,baseRefName,headRefName,headRefOid,isCrossRepository
+start_note=""
+if [ -n "$pr" ]; then
+  view=$(gh pr view "$pr" --json "$FIELDS") || die "PR 을 찾지 못했습니다: $pr"
+elif ! view=$(gh pr view --json "$FIELDS" 2>/dev/null); then
+  # 지금 브랜치에 PR 이 없다. 스택 맨 위에서 작업 중일 수 있으니 HEAD 아래에 쌓인 열린 PR 을 찾는다
+  view=""; cur=$(git symbolic-ref -q --short HEAD 2>/dev/null || true)
+  best=""; bestn=""; below=()
+  if [ -n "$cur" ]; then
+    open_prs=$(gh pr list --state open --limit 200 --json number,headRefName,isCrossRepository 2>/dev/null || echo '[]')
+    while IFS=$'\t' read -r n h; do
+      [ -n "$h" ] && [ "$h" != "$cur" ] && git show-ref --verify -q "refs/heads/$h" || continue
+      git merge-base --is-ancestor "refs/heads/$h" HEAD 2>/dev/null || continue
+      c=$(git rev-list --count "refs/heads/$h..HEAD")
+      below+=("#$n ($h, HEAD 아래 ${c}커밋)")
+      if [ -z "$best" ] || [ "$c" -lt "$bestn" ]; then best=$n; bestn=$c; fi
+    done < <(jq -r '.[] | select(.isCrossRepository | not) | "\(.number)\t\(.headRefName)"' <<<"$open_prs")
+  fi
+  [ -n "$best" ] || die "PR 을 찾지 못했습니다 (지금 브랜치${cur:+ $cur}에 PR 이 없고 그 아래에 쌓인 열린 PR 도 없습니다. 번호나 URL 을 주세요)"
+  $stack || die "지금 브랜치 $cur 에는 PR 이 없습니다. 그 아래에 쌓인 열린 PR: ${below[*]}. 번호를 주거나 --stack 으로 스택 전체를 보세요"
+  pr=$best; start_note="지금 브랜치 $cur 에는 PR 이 없어 그 아래 가장 가까운 PR #$best 부터 스택을 찾았다 ($cur 의 변경은 어느 PR 에도 없다)"
+  view=$(gh pr view "$pr" --json "$FIELDS") || die "PR 을 찾지 못했습니다: #$pr"
+fi
 
 # https://<host>/<owner>/<repo>/pull/<N>
 url=$(jq -r .url <<<"$view")
@@ -61,7 +88,7 @@ if $stack; then
     gh pr list -R "$R" --state open --limit 100 --json number,url,title,headRefName,baseRefName,isCrossRepository "$@" |
       jq '[.[] | select(.isCrossRepository | not) | {number, url, title, head: .headRefName, base: .baseRefName}]'
   }
-  swarn=()
+  swarn=(); [ -z "$start_note" ] || swarn+=("$start_note")
   me=$(jq '{number, url, title, head: .headRefName, base: .baseRefName}' <<<"$view")
   seen=" $head_branch "
 
@@ -154,28 +181,63 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
     done
     missing=()
     for o in $head_oid $orig_oids; do has_commit "$o" || missing+=("$o"); done
-    # "로컬" = PR 브랜치가 체크아웃된 워크트리. handoff 흐름에서는 메인 체크아웃에서 부르고 PR 브랜치는 별도 워크트리에
-    # 있으므로, 실행한 디렉토리가 아니라 그 워크트리의 HEAD·미커밋 변경을 본다. 없으면 로컬 상태는 null
+    # "로컬" = 로컬 PR 브랜치. 고칠 곳은 그 브랜치가 체크아웃된 워크트리(self), 없으면 그 브랜치를 조상으로 품은 워크트리
+    # (stack: 워크트리 하나에서 브랜치를 바꿔 가며 쌓는 흐름에서 하위 브랜치는 어디에도 체크아웃돼 있지 않다).
+    # 기본 브랜치가 체크아웃된 워크트리는 스택 워크트리로 보지 않는다 (머지된 브랜치를 품을 뿐이다)
     here=$(git rev-parse --show-toplevel)
-    pr_wt=$(git worktree list --porcelain | awk -v b="refs/heads/$head_branch" '
-      /^worktree /{p=substr($0,10)} $0=="branch " b {print p; exit}')
-    wt_head=""; ahead=null; behind=null; dirty=null
-    if [ -n "$pr_wt" ] && [ -d "$pr_wt" ]; then
-      wt_head=$(git -C "$pr_wt" rev-parse HEAD)
-      if has_commit "$head_oid"; then
-        ahead=$(git rev-list --count "$head_oid..$wt_head"); behind=$(git rev-list --count "$wt_head..$head_oid")
-      fi
-      dirty=false; [ -z "$(git -C "$pr_wt" status --porcelain 2>/dev/null)" ] || dirty=true
+    branch_head=$(git rev-parse -q --verify "refs/heads/$head_branch^{commit}" 2>/dev/null || true)
+    # 품었는지 볼 커밋: 로컬 브랜치 끝, 안 되면 PR head (로컬 브랜치에만 새 커밋이 있고 위 브랜치를 아직 다시 쌓지 않았을 때)
+    tips=(); [ -z "$branch_head" ] || tips+=("$branch_head")
+    if has_commit "$head_oid" && [ "$head_oid" != "$branch_head" ]; then tips+=("$head_oid"); fi
+    defb=$(git symbolic-ref -q --short "refs/remotes/$remote/HEAD" 2>/dev/null || true); defb=${defb#"$remote"/}
+    # 워크트리 표: 경로 \t HEAD \t 브랜치 (detached 면 빈 칸)
+    wts=$(git worktree list --porcelain | awk '
+      /^worktree /{p=substr($0,10); h=""; b=""} /^HEAD /{h=$2} /^branch /{b=substr($0,8); sub("^refs/heads/","",b)}
+      /^$/{if (p!="") print p "\t" h "\t" b; p=""} END{if (p!="") print p "\t" h "\t" b}')
+    checkout=none; wt=""; wt_branch=""; cands=(); stale=false
+    self_wt=$(awk -F'\t' -v b="$head_branch" '$3==b {print $1; exit}' <<<"$wts")
+    if [ -n "$self_wt" ] && [ -d "$self_wt" ]; then
+      checkout=self; wt=$self_wt; wt_branch=$head_branch
     else
-      pr_wt=""
+      for tip in ${tips[@]+"${tips[@]}"}; do
+        bestn=""; cands=()
+        while IFS=$'\t' read -r p h b; do
+          [ -n "$p" ] && [ -d "$p" ] && [ -n "$h" ] || continue
+          if [ -n "$b" ] && { [ "$b" = "$defb" ] || [ "$b" = main ] || [ "$b" = master ]; }; then continue; fi
+          git merge-base --is-ancestor "$tip" "$h" 2>/dev/null || continue
+          n=$(git rev-list --count "$tip..$h"); cands+=("$p")
+          # 지금 디렉토리가 후보면 그것, 아니면 이 브랜치 바로 위(커밋 차이가 가장 적은) 워크트리
+          if [ "$p" = "$here" ]; then wt=$p; wt_branch=$b; bestn=-1
+          elif [ "$bestn" != -1 ] && { [ -z "$wt" ] || [ "$n" -lt "$bestn" ]; }; then wt=$p; wt_branch=$b; bestn=$n; fi
+        done <<<"$wts"
+        if [ -n "$wt" ]; then checkout=stack; [ -z "$branch_head" ] || [ "$tip" = "$branch_head" ] || stale=true; break; fi
+      done
     fi
-    local_json=$(jq -n --arg remote "$remote" --arg here "$here" --arg wt "$pr_wt" --arg head "$wt_head" \
+    wt_head=""; dirty=null; ahead=null; behind=null
+    if [ -n "$wt" ]; then
+      wt_head=$(git -C "$wt" rev-parse HEAD)
+      dirty=false; [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || dirty=true
+    fi
+    # 미푸시·뒤처짐은 워크트리가 아니라 로컬 브랜치 기준 (체크아웃 여부와 무관)
+    if [ -n "$branch_head" ] && has_commit "$head_oid"; then
+      ahead=$(git rev-list --count "$head_oid..$branch_head"); behind=$(git rev-list --count "$branch_head..$head_oid")
+    fi
+    cands_json=$(printf '%s\n' ${cands[@]+"${cands[@]}"} | jq -R . | jq -sc 'map(select(. != ""))')
+    local_json=$(jq -n --arg remote "$remote" --arg here "$here" --arg bh "$branch_head" --arg co "$checkout" \
+      --arg wt "$wt" --arg wtb "$wt_branch" --arg wth "$wt_head" --argjson cands "$cands_json" --argjson stale "${stale:-false}" \
       --argjson ahead "$ahead" --argjson behind "$behind" --argjson dirty "$dirty" \
-      --arg missing "${missing[*]:-}" '{
+      --arg missing "${missing[*]:-}" '
+      def nul: if . == "" then null else . end;
+      {
         repo_match: true, remote: $remote, cwd_root: $here,
-        pr_worktree: (if $wt == "" then null else $wt end), in_pr_worktree: ($wt != "" and $wt == $here),
-        head: (if $head == "" then null else $head end),
-        ahead_of_pr_head: $ahead, behind_pr_head: $behind, uncommitted_changes: $dirty,
+        branch_head: ($bh | nul), ahead_of_pr_head: $ahead, behind_pr_head: $behind,
+        checkout: $co, worktree: ($wt | nul), worktree_branch: ($wtb | nul), worktree_head: ($wth | nul),
+        in_worktree: ($wt != "" and $wt == $here),
+        uncommitted_changes: (if $co == "self" then $dirty else null end),
+        worktree_dirty: (if $co == "stack" then $dirty else null end),
+        stack_worktree_candidates: (if $co == "stack" then $cands else [] end),
+        stack_needs_restack: (if $co == "stack" then $stale else null end),
+        pr_worktree: (if $co == "self" then $wt else null end), in_pr_worktree: ($co == "self" and $wt == $here),
         missing_commits: ($missing | split(" ") | map(select(. != "")))}')
   fi
 fi
@@ -229,8 +291,15 @@ jq -n --argjson view "$view" --argjson threads "$threads" --argjson reviews "$re
           | "스레드 \(.path):\(.line // .originalLine) 의 댓글이 \(.comments.totalCount)개라 앞 100개만 받았습니다"),
         (if $local.repo_match then empty
          else "지금 디렉토리가 이 PR 의 저장소가 아니거나 그 저장소를 가리키는 원격이 없습니다. 코드는 diff_hunk 로만 볼 수 있습니다" end),
-        (if $local.repo_match and $local.pr_worktree == null
-         then "PR 브랜치(\($view.headRefName))가 체크아웃된 워크트리가 없다. 로컬 미푸시 수정은 확인할 수 없다" else empty end),
+        (if $local.repo_match and $local.checkout == "none" then
+           if $local.branch_head == null
+           then "PR 브랜치(\($view.headRefName))가 로컬에 없다. 로컬 시점은 없다"
+           else "PR 브랜치(\($view.headRefName))가 로컬에 있지만 체크아웃된 워크트리도, 그 브랜치를 품은 워크트리도 없다. 로컬 커밋은 branch_head 로 본다" end
+         else empty end),
+        (if $local.stack_needs_restack == true
+         then "로컬 PR 브랜치(\($view.headRefName))에 스택 워크트리 \($local.worktree) 의 HEAD 에 없는 커밋이 있다. 위 브랜치들을 다시 쌓아야(rebase) 한다" else empty end),
+        (if $local.checkout == "stack" and ($local.stack_worktree_candidates | length) > 1
+         then "PR 브랜치를 품은 워크트리가 여럿이다: \($local.stack_worktree_candidates | join(", ")). \($local.worktree) 를 골랐다" else empty end),
         ($local.missing_commits // [] | .[] | "커밋 \(.) 이 로컬에 없습니다 (force push 로 사라졌을 수 있다). 그 커밋 기준 코드는 diff_hunk 로만 본다")
       ])
     }'

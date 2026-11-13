@@ -2,9 +2,10 @@
 # worktree-handoff — 브랜치 워크트리를 만들고(있으면 그대로), 그 워크트리에서 Claude 세션을 포크하거나 새로 연다.
 #                    세션에 다시 들어가는 명령을 출력하고 끝낸다. tmux 는 필요 없다 (있으면 윈도우까지 열어 준다).
 #
-#   worktree-handoff fork  --session <id> [--prompt-file <파일|->] [--base <ref>] [--open <방식>] <브랜치>
-#   worktree-handoff fresh --prompt-file <파일|->                  [--base <ref>] [--open <방식>] <브랜치>
-#   worktree-handoff path                                          [--base <ref>]                 <브랜치>
+#   worktree-handoff fork  --session <id> [--prompt-file <파일|->] [--base <ref>] [--open <방식>] [<스택>] <브랜치>
+#   worktree-handoff fresh --prompt-file <파일|->                  [--base <ref>] [--open <방식>] [<스택>] <브랜치>
+#   worktree-handoff path                                          [--base <ref>]                 [<스택>] <브랜치>
+#   <스택> = --in-stack | --new-worktree
 #
 # 동작
 #   fork   지금 대화를 포크한 세션: claude --resume <id> --fork-session -n <이름> -- "<첫 메시지>"
@@ -25,6 +26,13 @@
 #   없으면 git worktree add 로 <root>/<저장소>/<브랜치의 / 를 - 로> 에 만든다
 #   (로컬 브랜치 → 그것, --base 없이 원격 하나에만 있으면 → 추적 브랜치, 아니면 → 베이스에서 새 브랜치).
 #   create=tmux-dev 면 tmux-dev worktree --hook-create 로 만든다 (그 위치·셋업 훅). 실패하면 git 으로
+#
+# 스택 워크트리
+#   워크트리 하나에서 브랜치를 바꿔 가며 PR 을 쌓으면 하위 브랜치는 어디에도 체크아웃돼 있지 않다. 그 브랜치로 새 워크트리를
+#   만들면 스택 워크트리에서 그 브랜치를 체크아웃할 수 없고 git rebase --update-refs 도 그 브랜치를 옮기지 않는다.
+#   그래서 브랜치가 체크아웃돼 있지 않은데 그 브랜치를 조상으로 품은 워크트리(기본 브랜치의 워크트리는 제외)가 있으면 멈춘다.
+#   --in-stack      그 스택 워크트리를 쓴다 (체크아웃은 바꾸지 않는다. 고칠 때는 fixup 커밋 + rebase --update-refs)
+#   --new-worktree  그래도 새 워크트리를 만든다
 #
 # 설정: ${XDG_CONFIG_HOME:-~/.config}/worktree-handoff/config 의 key=value (# 주석). 환경 변수가 먼저다
 #   root=<절대 경로|~/…>   WORKTREE_HANDOFF_ROOT    기본 ${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees
@@ -61,7 +69,7 @@ case ${1:-} in
   "") usage >&2; exit 1 ;;
   *) die "동작을 먼저 주세요: fork | fresh | path (받은 것: $1)" ;;
 esac
-sid=${WORKTREE_HANDOFF_SESSION:-}; base=""; prompt_file=""; branch=""
+sid=${WORKTREE_HANDOFF_SESSION:-}; base=""; prompt_file=""; branch=""; stack_mode=""
 while [ $# -gt 0 ]; do
   case $1 in --session|--base|--prompt-file|--open) [ $# -ge 2 ] || die "$1 에 값이 없습니다" ;; esac
   case $1 in   # macOS 기본 bash 3.2 에서도 돌게 ;;& 는 쓰지 않는다
@@ -69,6 +77,9 @@ while [ $# -gt 0 ]; do
     --base) base=$2; shift 2 ;;
     --prompt-file) prompt_file=$2; shift 2 ;;
     --open) open=$2; shift 2 ;;
+    --in-stack|--new-worktree)
+      [ -z "$stack_mode" ] || [ "$stack_mode" = "$1" ] || die "--in-stack 과 --new-worktree 는 함께 쓸 수 없습니다"
+      stack_mode=$1; shift ;;
     -h|--help) usage; exit 0 ;;
     --) shift; branch=${1:-}; break ;;
     -*) die "unknown option: $1" ;;
@@ -134,7 +145,43 @@ fi
 # --- 워크트리 ------------------------------------------------------------------
 existing=$(git worktree list --porcelain | awk -v b="refs/heads/$branch" '
   /^worktree /{p=substr($0,10)} $0=="branch " b {print p; exit}')
-wt=""
+wt=""; stack_cur=""
+# 스택 워크트리: 브랜치가 체크아웃돼 있지 않은데 그 브랜치를 조상으로 품은 워크트리 (기본 브랜치의 워크트리 제외).
+# 지금 체크아웃이 후보면 그것, 아니면 커밋 차이가 가장 적은(바로 위) 것
+if [ -z "$existing" ] && [ "$stack_mode" != --new-worktree ] &&
+   tip=$(git rev-parse -q --verify "refs/heads/$branch^{commit}" 2>/dev/null); then
+  defb=$(default_base); sw=""; swb=""; swn=""; others=()
+  while IFS=$(printf '\t') read -r p h b; do
+    [ -n "$p" ] && [ -d "$p" ] && [ -n "$h" ] || continue
+    if [ -n "$b" ] && { [ "$b" = "$defb" ] || [ "$b" = main ] || [ "$b" = master ]; }; then continue; fi
+    git merge-base --is-ancestor "$tip" "$h" 2>/dev/null || continue
+    n=$(git rev-list --count "$tip..$h"); others+=("$p")
+    if [ "$p" = "$here" ]; then sw=$p; swb=$b; swn=-1
+    elif [ "$swn" != -1 ] && { [ -z "$sw" ] || [ "$n" -lt "$swn" ]; }; then sw=$p; swb=$b; swn=$n; fi
+  done <<WTS
+$(git worktree list --porcelain | awk '
+  /^worktree /{p=substr($0,10); h=""; b=""} /^HEAD /{h=$2} /^branch /{b=substr($0,8); sub("^refs/heads/","",b)}
+  /^$/{if (p!="") print p "\t" h "\t" b; p=""} END{if (p!="") print p "\t" h "\t" b}')
+WTS
+  if [ -n "$sw" ]; then
+    swb=${swb:-detached HEAD}
+    if [ "$stack_mode" != --in-stack ]; then
+      msg="$branch 는 어디에도 체크아웃돼 있지 않지만 스택 워크트리 $sw (체크아웃: $swb) 에 들어 있습니다."
+      [ ${#others[@]} -le 1 ] || msg="$msg (그 브랜치를 품은 워크트리: ${others[*]})"
+      die "$msg
+  새 워크트리를 만들면 스택 워크트리에서 $branch 를 체크아웃할 수 없고 rebase --update-refs 도 $branch 를 옮기지 않습니다.
+  스택 워크트리를 쓰려면 --in-stack, 그래도 새로 만들려면 --new-worktree 를 붙이세요"
+    fi
+    [ "$sw" != "$main" ] || die "$branch 의 스택이 메인 체크아웃($swb)에 있습니다. 메인을 기본 브랜치로 돌리고 다시 하세요"
+    if [ "$sw" = "$here" ]; then
+      [ "$mode" = path ] && die "$branch 를 품은 스택 워크트리가 지금 이 체크아웃입니다. 옮길 곳이 없습니다 (여기서 고치면 됩니다)"
+      die "$branch 를 품은 스택 워크트리가 지금 이 세션이 있는 체크아웃입니다. 같은 트리를 두 세션이 고치게 되므로 넘기지 않습니다"
+    fi
+    wt=$sw; stack_cur=$swb
+  fi
+fi
+[ "$stack_mode" != --in-stack ] || [ -n "$existing" ] || [ -n "$wt" ] ||
+  die "--in-stack: $branch 를 품은 스택 워크트리가 없습니다"
 if [ -n "$existing" ]; then
   [ "$existing" != "$main" ] || die "$branch 는 메인 체크아웃에 체크아웃돼 있습니다. 메인을 기본 브랜치로 돌리고 다시 하세요"
   if [ "$existing" = "$here" ]; then
@@ -143,6 +190,8 @@ if [ -n "$existing" ]; then
   fi
   [ -d "$existing" ] || die "$branch 의 워크트리($existing)가 없습니다. git worktree prune 후 다시 하세요"
   wt=$existing
+elif [ -n "$wt" ]; then
+  :   # 스택 워크트리
 elif [ "$create" = tmux-dev ]; then
   td=$(command -v tmux-dev 2>/dev/null || true)
   [ -n "$td" ] || { [ -x "$HOME/.config/tmux/plugins/tmux-dev/bin/tmux-dev" ] && td=$HOME/.config/tmux/plugins/tmux-dev/bin/tmux-dev; } || true
@@ -173,18 +222,25 @@ fi
 # --- path: 지금 세션을 옮기는 안내만 -----------------------------------------
 if [ "$mode" = path ]; then
   echo "worktree: $wt"
-  echo "branch:   $branch"
+  echo "branch:   $branch${stack_cur:+ (스택 워크트리, 체크아웃: $stack_cur)}"
   echo "move:     /cd $(sq "$wt")"
   exit 0
 fi
 
 # --- 첫 메시지 (포크의 기본 문구) ----------------------------------------------
+stack_note() {
+  [ -n "$stack_cur" ] || return 0
+  echo "- 이 워크트리에는 $stack_cur 가 체크아웃돼 있고 $branch 는 그 아래에 쌓인 브랜치다. 체크아웃을 바꾸지 말고"
+  echo "  $branch 의 커밋을 겨냥한 fixup 커밋을 만든 뒤 git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base <$branch 의 base>"
+  echo "  로 스택 전체를 다시 쌓는다."
+}
 if [ ! -s "$pf" ]; then
   cat >"$pf" <<EOF
 너는 원본 대화에서 포크된 구현 세션이다. 위 대화의 /handoff 지시와 "이 세션은 워크트리를 편집하지 않는다"는
 원본 세션에 대한 것이다. 이 세션은 아래 워크트리에서 구현한다.
 - 작업 디렉토리: $wt (브랜치 $branch)
 - 메인 체크아웃($main)의 파일은 읽기만 하고 수정하지 않는다.
+$(stack_note)
 지금까지 합의한 범위를 짧게 요약한 뒤 시작해.
 EOF
 fi
@@ -251,7 +307,7 @@ case $open in
 esac
 
 echo "worktree: $wt"
-echo "branch:   $branch"
+echo "branch:   $branch${stack_cur:+ (스택 워크트리, 체크아웃: $stack_cur)}"
 echo "session:  $name"
 echo "open:     $where"
 [ -n "$failed" ] || [ "$open" != bg ] || echo "attach:   claude attach $(sq "$name")"
