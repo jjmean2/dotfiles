@@ -8,8 +8,10 @@
 # 무엇을 하나 (설계: docs/machine-profiles.md)
 #   - sudo 를 쓰지 않는다. 자기 파일은 모두 $ROOT(~/.local/state/jw-ephemeral) 한곳에 둔다:
 #     chezmoi 바이너리, 저장소 사본, chezmoi 설정·상태, 백업, 필수 도구.
-#   - chezmoi 를 profile=ephemeral 로 init 하고 apply --exclude=scripts 로 설정 파일만 깐다
-#     (설치 스크립트는 sudo·시스템 패키지를 쓰므로 돌리지 않는다).
+#   - chezmoi 를 profile=ephemeral 로 init 하고 apply --exclude=scripts,remove 로 설정 파일만 깐다.
+#     scripts: 설치 스크립트는 sudo·시스템 패키지를 쓰므로 돌리지 않는다.
+#     remove:  .chezmoiremove 의 경로(옛 이름 정리용)를 서버에서 백업 없이 지우지 않게 한다.
+#   - 설치가 중간에 실패하면 그때까지 한 일을 uninstall 로 되돌린다.
 #   - 필수 도구(fzf rg fd jq nvim)는 mise install-into 로 받아 $ROOT/bin 에 둔다. 셸 설정
 #     (shell/profile.sh)이 그 디렉터리가 있으면 PATH 앞에 넣는다. git·tmux 는 서버에 있는 것을 쓴다.
 #
@@ -122,6 +124,26 @@ cmd_install() {
 	command -v git >/dev/null 2>&1 || die "git 이 필요하다"
 	command -v curl >/dev/null 2>&1 || die "curl 이 필요하다"
 
+	# 본체는 서브셸에서 set -e 로 돌리고, 실패하면 그때까지 한 일을 되돌린다.
+	# (if ! … 안에서는 set -e 가 꺼지므로 종료 코드를 따로 받는다)
+	local rc
+	set +e
+	(
+		set -e
+		install_body
+	)
+	rc=$?
+	set -e
+	if ((rc != 0)); then
+		log "설치 실패 (종료 코드 $rc). 그때까지 한 일을 되돌린다"
+		cmd_uninstall
+		exit "$rc"
+	fi
+	log "끝. 새 로그인 셸을 열면 적용된다: exec \$SHELL -l"
+	log "되돌리기: $ROOT/jw-ephemeral uninstall"
+}
+
+install_body() {
 	# $ROOT 를 만들기 전에, 그 부모 중 없던 것을 기억해 둔다 (~/.local/state 등).
 	local root_parents
 	root_parents="$(record_missing_parents "$ROOT/x")"
@@ -130,16 +152,22 @@ cmd_install() {
 	echo "$ROOT" >>"$CREATED_DIRS"
 
 	log "chezmoi 를 $LIBEXEC 에 받는다"
-	sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$LIBEXEC" >/dev/null
+	# curl 이 실패해도 sh -c "$(curl …)" 는 빈 스크립트로 성공할 수 있어서 파일로 받아 확인한다.
+	curl -fsSL https://get.chezmoi.io -o "$ROOT/get-chezmoi.sh"
+	sh "$ROOT/get-chezmoi.sh" -b "$LIBEXEC" >/dev/null
+	[[ -x $LIBEXEC/chezmoi ]] || die "chezmoi 를 받지 못했다"
 
 	log "저장소를 받는다: $REPO"
 	git clone -q --depth 1 "$REPO" "$SRC"
+	# status·uninstall 을 그 자리에서 부를 수 있게 이 스크립트를 $ROOT 에 둔다.
+	cp "$SRC/jw-ephemeral" "$ROOT/jw-ephemeral"
+	chmod +x "$ROOT/jw-ephemeral"
 
 	local email="${JW_EPHEMERAL_EMAIL:-$(git config --global user.email 2>/dev/null || true)}"
 	cz init --config-path "$CFG" --promptChoice profile=ephemeral --promptString "Email address=$email" >/dev/null
 
 	# 관리 대상 목록 (설치 스크립트 제외, 파일·링크만). 이것이 백업과 되돌림의 기준이다.
-	cz managed --path-style=absolute --include=files,symlinks --exclude=scripts >"$MANAGED"
+	cz managed --path-style=absolute --include=files,symlinks --exclude=scripts,remove >"$MANAGED"
 
 	log "관리 대상 $(wc -l <"$MANAGED" | tr -d ' ')개 중 이미 있는 것을 백업한다"
 	local p existing=() created_dirs=()
@@ -173,41 +201,39 @@ cmd_install() {
 	fi
 	sort -u -o "$CREATED_DIRS" "$CREATED_DIRS"
 
-	log "설정 파일을 깐다 (설치 스크립트는 돌리지 않는다)"
-	cz apply --exclude=scripts --force
+	log "설정 파일을 깐다 (설치 스크립트와 .chezmoiremove 의 삭제는 하지 않는다)"
+	cz apply --exclude=scripts,remove --force
 
 	install_tools
-
-	# 이 스크립트를 $ROOT 에 남겨 status·uninstall 을 그 자리에서 부를 수 있게 한다.
-	cp "$SRC/jw-ephemeral" "$ROOT/jw-ephemeral"
-	chmod +x "$ROOT/jw-ephemeral"
-
-	log "끝. 새 로그인 셸을 열면 적용된다: exec \$SHELL -l"
-	log "되돌리기: $ROOT/jw-ephemeral uninstall"
 }
 
+# 설치가 어느 단계에서 멈췄든 돌 수 있게, 기록 파일은 있는 것만 쓴다.
 cmd_uninstall() {
 	[[ -d $ROOT ]] || die "설치돼 있지 않다: $ROOT"
 
-	log "chezmoi 가 깐 파일을 지운다"
 	local p
-	while IFS= read -r p; do
-		[[ -n $p ]] && rm -f "$p"
-	done <"$MANAGED"
+	if [[ -f $MANAGED ]]; then
+		log "chezmoi 가 깐 파일을 지운다"
+		while IFS= read -r p; do
+			[[ -n $p ]] && rm -f "$p"
+		done <"$MANAGED"
+	fi
 
 	if [[ -f $BACKUP ]]; then
 		log "깔기 전 파일을 복원한다"
 		tar -C / -xpf "$BACKUP"
 	fi
 
-	log "깔기 전에 없던 런타임 상태를 지운다"
-	while IFS= read -r p; do
-		[[ -n $p ]] && rm -rf "$p"
-	done <"$ABSENT"
+	if [[ -f $ABSENT ]]; then
+		log "깔기 전에 없던 런타임 상태를 지운다"
+		while IFS= read -r p; do
+			[[ -n $p ]] && rm -rf "$p"
+		done <"$ABSENT"
+	fi
 
 	# $ROOT 를 지우기 전에 목록을 읽어 둔다.
-	local dirs
-	dirs="$(cat "$CREATED_DIRS")"
+	local dirs=""
+	[[ -f $CREATED_DIRS ]] && dirs="$(cat "$CREATED_DIRS")"
 	rm -rf "$ROOT"
 
 	# 새로 생긴 디렉터리를 깊은 것부터 지운다. 그 사이 사용자가 파일을 둔 디렉터리는 비어 있지 않아 남는다.
