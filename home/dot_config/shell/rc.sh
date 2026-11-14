@@ -31,6 +31,10 @@ if command -v nvim >/dev/null 2>&1; then
 	# export VISUAL='nvim'
 	export EDITOR='nvim'
 
+	# 플러그인 없는 nvim (~/.config/nvim-lite). LazyVim 이 있는 머신에서도 가볍게 열고 싶을 때 쓴다.
+	# LazyVim 이 없는 머신에서는 profile.sh 가 NVIM_APPNAME 을 정해 두어 nvim 자체가 이것이다.
+	alias nvim-lite='NVIM_APPNAME=nvim-lite nvim'
+
 	if [ -n "$ZSH_VERSION" ]; then
 		bindkey -e
 	elif [ -n "$BASH_VERSION" ]; then

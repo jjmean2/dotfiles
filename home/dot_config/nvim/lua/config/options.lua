@@ -2,39 +2,10 @@
 -- Default options that are always set: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/options.lua
 -- Add any additional options here
 
--- 인코딩: 한글 레거시 파일(cp949 / EUC-KR)을 latin1 보다 먼저 시도한다.
--- 'fileencodings' 는 파일을 읽을 때 앞에서부터 시도해 오류 없이 읽히는 첫 인코딩을 쓴다.
--- 기본값은 "ucs-bom,utf-8,default,latin1" 이라 UTF-8 이 아닌 한글 파일이 latin1 로 읽혀 깨져
--- 보인다. latin1 은 어떤 바이트열이든 읽히므로 맨 뒤에 두어야 한다. LazyVim 은 이 옵션을 건드리지 않는다.
--- 읽힌 인코딩은 :set fenc? 로 확인한다. 저장도 그 인코딩으로 하므로 원본 인코딩이 유지된다.
-vim.opt.fileencodings:remove("latin1")
-vim.opt.fileencodings:append({ "cp949", "latin1" })
-
--- 철자 검사: 한글(과 한자·가나)은 검사하지 않는다.
--- 'spelllang' 의 특수 값 "cjk" 는 동아시아 문자를 철자 검사 대상에서 빼고, 영어 단어 검사는 그대로 둔다.
--- 이게 없으면 LazyVim 이 markdown·gitcommit 등에서 켜는 spell 이 한글 단어마다 빨간 밑줄을 긋는다.
--- 일시적으로 한글도 검사하려면 :setlocal spelllang-=cjk
-vim.opt.spelllang = { "en", "cjk" }
-
--- chezmoi 소스의 셸 설정 파일: 대상 이름(.zshrc 등)이 아니라 dot_ 접두사 이름이라 nvim 이 셸로
--- 알아보지 못한다(dot_zshrc 는 conf 로 잡힌다). 파일 형식을 직접 정해 하이라이트·포맷(shfmt)이
--- 붙게 한다. .vscode/settings.json 의 files.associations 와 같은 목록이다.
--- .tmpl 은 Go 템플릿 문법이 섞여 셸로 포맷하면 깨지므로 넣지 않는다.
-local function bash(_, bufnr)
-  return "sh", function(b)
-    vim.b[b or bufnr].is_bash = 1
-  end
-end
-vim.filetype.add({
-  filename = {
-    dot_zshrc = "zsh",
-    dot_zshenv = "zsh",
-    dot_zprofile = "zsh",
-    source_zsh_variants = "zsh", -- zsh autoload 함수 (shebang 없음)
-    dot_bashrc = bash,
-    dot_bash_profile = bash,
-  },
-})
+-- 플러그인에 기대지 않는 옵션(한글 인코딩, 철자 검사, chezmoi 소스 파일 형식, 셸 탭)은 nvim-lite 와
+-- 함께 쓴다. 원본은 ~/.config/nvim-lite/lua/jw/options.lua. 형제 디렉터리를 stdpath 로 찾으므로
+-- XDG_CONFIG_HOME 을 바꿔도 따라간다. nvim-lite 는 모든 머신에 배포되는 필수 설정이다.
+dofile(vim.fs.joinpath(vim.fs.dirname(vim.fn.stdpath("config")), "nvim-lite", "lua", "jw", "options.lua"))
 
 -- LSP 색상 표시: 색상값 앞에 색상 박스를 붙인다 (VS Code Tailwind IntelliSense 처럼).
 -- Neovim 0.12 부터 LSP documentColor 가 기본으로 켜져 있고, tailwindcss LSP 는 className 의
