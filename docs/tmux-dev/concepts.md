@@ -1,7 +1,7 @@
 # 개념과 동작 원리
 
-tmux-dev 가 왜 그렇게 동작하는지 설명한다. 사용 절차는 [작업별 안내](how-to.md), 설계 결정의 전체 기록은 플러그인의
-`session-picker.md`, `worktree-picker.md` 를 본다.
+tmux-dev 가 왜 그렇게 동작하는지 설명한다. 사용 절차는 [작업별 안내](how-to.md), 설계 결정의 전체 기록은
+[`design/session-picker.md`](design/session-picker.md), [`design/worktree-picker.md`](design/worktree-picker.md) 를 본다.
 
 ## 세 층의 대응
 

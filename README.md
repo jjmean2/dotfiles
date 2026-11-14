@@ -196,36 +196,11 @@ nvim +'Lazy restore'                                         # lockfile 의 comm
   얹는다(`prefix c` 의 보통 윈도우, 저장소 아닌 세션은 그대로). "플러그인" 의 실체는 tmux.conf 의 `run-shell` 한 줄이
   진입 스크립트 `tmux-dev.tmux` 를 돌리고 그 스크립트가 `bind-key` 를 부르는 것이다(TPM 은 그 위의 설치기일 뿐).
   키·팝업 크기·레이아웃은 `@tmux-dev-*` 사용자 옵션으로 `run-shell` 앞에서 바꾼다. 셸에서는 `tmux-dev project|worktree`
-  (bin 이 PATH 에 들어 있다, `--help`). 사용 가이드(튜토리얼·작업별 안내·레퍼런스·문제 해결)는 [`docs/tmux-dev/`](docs/tmux-dev/README.md).
-  - `prefix S` (`tmux-dev project [경로]`): 디렉토리 하나를 고르면 그 디렉토리의 세션으로 간다. 세션이 없으면 만들고(레이아웃
-    적용), 디렉토리가 없으면 만든다. 세션은 이름이 아니라 경로로 찾는다(세션 옵션 `@tmux-dev-path`, 없으면 `session_path`).
-    모드는 저장소(메인 체크아웃만) ↔ 디렉토리(전부)를 alt-m / alt-n 으로. 후보는 열린 세션 → 피커로 최근 고른 곳 → 홈 전체 탐색 순이고,
-    탐색은 숨김 디렉토리를 빼고 머신별 `~/.config/tmux-dev/ignore`(gitignore 문법, chezmoi 가 처음 한 번만 만든다)의 패턴을 뺀다.
-    enter 는 열기만 하고, 새로 만들기는 alt-enter 다. 친 이름으로 위치 피커(최근 만든 곳 → 커서 옆 → 디렉토리 전부)가 겹쳐 뜨고,
-    거기서 enter 면 만들고 연다(저장소 모드는 `git init` 까지, alt-l 이면 레이아웃을 골라서). `/` 나 `~` 로 시작하는 검색어는 경로
-    접두 일치로 거르고, enter 는 그 경로가 있으면 열고 alt-enter 는 그 자리에 바로 만든다. ctrl-] 는 커서 경로를 검색어에 채운다.
-    팝업은 테두리 없이 띄우고 fzf 가 tmux 팝업과 같은 모양의 테두리를 그려 윗변에 모드 탭을 둔다. 워크트리 경로를 고르면 그
-    워크트리의 윈도우로 간다. 설계와 판단 근거는 플러그인의 `session-picker.md`.
-    alt-l 은 레이아웃(어느 패널에 무엇을 띄우나)을 겹쳐 뜬 목록에서 골라서 열고(esc 는 한 단계 뒤로), 거기서 alt-enter 면 저장소
-    기본값으로도 남긴다(`git config tmux-dev.layout`). Enter 는 묻지 않고 저장소 설정 → 전역 `@tmux-dev-layout` → plain(셸 하나) 순으로 쓴다.
-    개인 레이아웃은 `~/.config/tmux-dev/layouts.sh` 에 함수 하나와 `layout_register` 한 줄.
-    내장 레이아웃: `plain`(셸 하나, 기본값), `ide`(셸 | nvim), `ide-dev`(셸 | nvim + dev 서버), `nvim`, `nvim-dev`(nvim / dev 서버).
-    dev 서버 명령은 `git config tmux-dev.dev`, 없으면 package.json 의 `dev` 스크립트(lockfile 로 pnpm/yarn/bun/npm 선택).
-  - `prefix W` (`tmux-dev worktree [브랜치|경로]`): 저장소의 워크트리·브랜치·원격 브랜치를 한 목록에서 고르면 그 워크트리의
-    윈도우로, 없으면 `git worktree add` 와 윈도우를 만든다. 없는 이름을 치면 로컬 main 에서 새 브랜치. alt-l 로 레이아웃을
-    골라서 열 수 있다(위 S 와 같은 규칙). 행에 `●N`(열린
-    윈도우), `dirty`, `merged`(ff·merge commit 은 조상 관계, rebase 는 커밋별 patch-id, squash 는 diff 전체의 patch-id, 그래도 아니면
-    `git merge-tree` 로 머지해 봐서 바뀌는 게 없는지, 마지막으로 `gh` 로 받은 머지된 PR 목록. 뒤에 `·r ·s ·t ·p` 로 판정 방법 표시),
-    `[ahead n, behind m]` 마커가 붙는다(목록을 먼저 띄우고 fzf 의 load 이벤트에서 마커를 얹는 두 번 읽기. 머지 판정은 ff 는
-    `for-each-ref --merged` 한 번, rebase·squash 는 main 커밋들의 patch-id 집합과 비교하며 `~/.cache/tmux-dev/` 에 캐시.
-    행 작업은 코어 수만큼만 동시에). ctrl-x 가 먼저 main 을 origin 에 맞출지 물은 뒤(판정이 로컬 main 기준이라 PR 머지 뒤엔
-    이게 먼저) 워크트리 제거(변경 있으면 거절) + 윈도우 닫기 + 브랜치 삭제를 매번 확인하며 한다. 브랜치는 지우기 전에 항상
-    `refs/archive/<날짜>/<브랜치>` 에 보관하므로 머지 안 된 것도 "보관하고 삭제" 를 고를 수 있다(`--archived` 로 목록·복구).
-    로컬 머지와 PR 머지 어느 쪽이든 같은 ctrl-x 로 닫는다. 워크트리가 숨은 경로에 있으니 정리는 이 팝업에서 한다.
-  - 파일은 XDG 세 디렉토리에 종류별로: 설정 `~/.config/tmux-dev/`(ignore, layouts.sh), 상태 `~/.local/state/tmux-dev/`(history), 데이터(워크트리)
-    `~/.local/share/tmux-dev/worktrees/<저장소>/<브랜치>`. 워크트리 위치·셋업 훅은 `git config tmux-dev.worktree.*`.
-  - Claude Code 와 함께 쓰는 흐름(워크트리를 먼저 만들고 그 안에서 `claude`), `WorktreeCreate/Remove` 훅으로 에이전트가 만드는
-    워크트리도 같은 자리에 두는 설정, 전역 CLAUDE.md 지침은 플러그인의 `claude-code.md`.
+  (bin 이 PATH 에 들어 있다, `--help`).
+  - `prefix S` (`tmux-dev project`): 디렉토리 하나를 고르면 그 디렉토리의 세션으로 간다. 없으면 만든다.
+  - `prefix W` (`tmux-dev worktree`): 저장소의 워크트리·브랜치를 고르면 그 워크트리의 윈도우로 간다. 없으면 만들고, ctrl-x 로 정리한다.
+  - 키, 명령줄 옵션, 설정 항목, 파일 위치, Claude Code 연동은 사용 가이드 [`docs/tmux-dev/`](docs/tmux-dev/README.md)
+    (시작하기 · 작업별 안내 · 레퍼런스 · 개념 · 문제 해결). 설계 결정의 기록은 [`docs/tmux-dev/design/`](docs/tmux-dev/design/).
   - tmux.conf 나 진입 스크립트가 바뀌면 `run_onchange_after_40-reload-tmux.sh.tmpl` 이 apply 뒤 살아 있는 tmux 서버에
     `source-file` 을 보낸다 (파일 해시를 주석에 박아 그 파일이 바뀔 때만 실행되는 chezmoi 관례). 서버가 없으면 건너뛴다.
 

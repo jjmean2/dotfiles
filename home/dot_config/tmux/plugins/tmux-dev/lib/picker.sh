@@ -14,7 +14,7 @@
 #   --choose-layout → choose_layout_step   --choose-location → choose_location_step   --loc-preview <경로> → loc_preview
 #   --layout-art <이름> → layout_art (lib/layout.sh)
 # 상태 키 (부른 쪽과 공유): mode, name, near, loc, pending, near_pick, layout. 모드가 repo 면 새로 만드는 것이 저장소다.
-# 설계와 판단 근거: ../session-picker.md (구현 구조 절)
+# 설계와 판단 근거: 저장소의 docs/tmux-dev/design/session-picker.md (구현 구조 절)
 
 # shellcheck disable=SC2034  # 부른 쪽 스크립트가 쓴다
 US=$'\x1f'         # tmux·git 포맷 출력의 칸 구분자 (빈 칸이 있을 수 있다)
