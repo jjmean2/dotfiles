@@ -1,20 +1,44 @@
-{{- /* chezmoi init 시 ~/.config/chezmoi/chezmoi.toml 을 생성하는 템플릿 */ -}}
+{{- /* chezmoi init 시 ~/.config/chezmoi/chezmoi.toml 을 생성하는 템플릿. 설계는 docs/machine-profiles.md */ -}}
 {{- $email := promptStringOnce . "email" "Email address" -}}
 
+{{- /* 머신 프로필. 이 머신이 무엇인지 한 번 묻고, 아래 기능 스위치의 처음 값을 정하는 데만 쓴다.
+         personal  개인 머신. 전부 켠다
+         work      회사 머신. 개인 credential 도구는 끈다
+         ephemeral 서버·dev container 처럼 잠깐 쓰는 곳. 필수 도구와 설정만
+       질문 없이 init 하려면 chezmoi init --promptChoice profile=ephemeral 처럼 미리 답을 준다.
+       --promptChoice 의 키는 경로가 아니라 질문 문구 자체라서, 문구를 짧은 "profile" 로 고정해 둔다. */ -}}
+{{- $profile := promptChoiceOnce . "profile" "profile" (list "personal" "work" "ephemeral") "personal" -}}
+{{- $ephemeral := eq $profile "ephemeral" -}}
+
 {{- /* 머신별 기능 스위치. 목록(무엇을 설치하는지)은 .chezmoidata/packages.yaml 의 packages.<os>.features 에
-       있고, 여기서는 이 머신이 그 기능을 쓰는지만 정한다. *Once 라서 이미 값이 있으면 다시 묻지 않는다.
-       값을 바꾸려면 ~/.config/chezmoi/chezmoi.toml 의 [data.features] 를 고치고 chezmoi apply.
-       해당 OS 가 아니면 묻지 않고 false 다 (Linux dev container 의 init 이 여기서 멈추지 않게). */ -}}
+       있고, 여기서는 이 머신이 그 기능을 쓰는지만 정한다.
+       - 처음 init 때 프로필에 따라 기본값이 정해지고, 이미 값이 있으면 그대로 둔다 (dig 로 기존 값을 먼저 읽는다).
+         그래서 프로필을 나중에 바꿔도 이미 저장된 스위치는 바뀌지 않는다.
+       - 값을 바꾸려면 chezmoi edit-config 로 [data.features] 를 고치고 chezmoi apply.
+       - 꺼도 이미 설치된 것은 지우지 않는다 (관리만 멈춘다).
+       karabiner 만 묻는다: 보안 소프트웨어가 관리하는 머신에서는 설치하면 안 되므로 사람이 정한다. */ -}}
 {{- $karabiner := false -}}
-{{- if eq .chezmoi.os "darwin" -}}
+{{- if and (eq .chezmoi.os "darwin") (not $ephemeral) -}}
 {{-   $karabiner = promptBoolOnce . "features.karabiner" "Karabiner-Elements 설치 (보안 소프트웨어가 관리하는 머신이면 n)" true -}}
 {{- end -}}
+{{- $ide := dig "features" "ide" (not $ephemeral) . -}}
+{{- $dev := dig "features" "dev" (not $ephemeral) . -}}
+{{- $credentials := dig "features" "credentials" (eq $profile "personal") . -}}
 
 {{- /* 기본 위치(~/.local/share/chezmoi)가 아닌 곳의 저장소로 init 한 경우에도 그 위치를 유지한다. */ -}}
 sourceDir = {{ .chezmoi.workingTree | quote }}
 
 [data]
   email = {{ $email | quote }}
+  # personal | work | ephemeral. 아래 스위치의 처음 값을 정할 때만 쓴다.
+  profile = {{ $profile | quote }}
 
 [data.features]
+  # Karabiner-Elements (macOS)
   karabiner = {{ $karabiner }}
+  # nvim IDE 모드: LazyVim 설정(~/.config/nvim)과 그 빌드 도구. 끄면 nvim-lite 만 쓴다
+  ide = {{ $ide }}
+  # 언어 런타임: mise 로 shared.toml 의 node·python 등을 설치한다
+  dev = {{ $dev }}
+  # 인증이 필요한 개인 도구 (gh 등)
+  credentials = {{ $credentials }}

@@ -29,6 +29,11 @@
 {{ if not (dig "features" "karabiner" false .) -}}
 .config/karabiner
 {{ end -}}
+# nvim IDE 모드(LazyVim). 끈 머신에서는 플러그인 없는 ~/.config/nvim-lite 만 배포되고, 셸이 그것을 고른다
+# (shell/profile.sh 의 NVIM_APPNAME). 스위치가 없는 config 에서는 지금까지처럼 배포한다 (기본값 true).
+{{ if not (dig "features" "ide" true .) -}}
+.config/nvim
+{{ end -}}
 
 # nvim 상태 파일 두 개.
 # - lazyvim.json (LazyVim 의 extras 목록): git 으로 추적하되 배포하지 않는다. LazyVim 이 소스 디렉터리의
