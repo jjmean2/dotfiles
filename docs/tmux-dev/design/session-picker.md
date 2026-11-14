@@ -1,6 +1,7 @@
 # prefix S 세션 피커: 멘탈 모델과 설계
 
 상태: 구현됨 (2026-11-07). 코드는 `libexec/tmux-dev-project`, 탐색은 `lib/dirs.sh`. 판단을 바꿀 때는 이 문서부터 고친다.
+이 문서의 코드 경로는 플러그인 디렉터리(`home/dot_config/tmux/plugins/tmux-dev/`) 기준이다.
 결정한 내용과 그 이유는 끝의 "결정 기록" 절에 있다.
 
 ## 한 줄 모델

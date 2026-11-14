@@ -403,7 +403,7 @@ tmux 밖에서 `tmux-dev worktree <브랜치>` 를 실행하면 윈도우 없이
 
 격리 서브에이전트의 임시 워크트리에는 `WorktreeRemove` 가 불리지 않는다. 남은 것은 `prefix W` 의 `ctrl-t` → `ctrl-x` 로 정리한다.
 
-전역 `~/.claude/CLAUDE.md` 에 둘 지침과 백그라운드 세션 흐름은 플러그인의 `claude-code.md` 를 본다.
+전역 `~/.claude/CLAUDE.md` 에 둘 지침과 백그라운드 세션 흐름은 [`design/claude-code.md`](design/claude-code.md) 를 본다.
 
 ---
 

@@ -2,6 +2,7 @@
 
 `tmux-dev worktree` (prefix W). 2026-11-08~09 에 다시 짰다 (4단계: PR #63 공용 lib, #64 새 피커, #65 정리, 그리고 pane 전환).
 prefix S(`session-picker.md`)와 같은 기준이고 공용 부분은 `lib/picker.sh` 를 쓴다. 이 문서는 W 에만 있는 것을 적는다.
+이 문서의 코드 경로는 플러그인 디렉터리(`home/dot_config/tmux/plugins/tmux-dev/`) 기준이다.
 
 ## 한 줄 모델
 
