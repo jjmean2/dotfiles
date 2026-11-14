@@ -16,8 +16,9 @@ opt.relativenumber = true
 opt.cursorline = true
 opt.signcolumn = "yes"
 opt.mouse = "a"
--- SSH 로 접속했을 때는 시스템 클립보드와 묶지 않는다 (LazyVim 과 같은 규칙). 원격에서의 "+ 복사는
--- nvim 이 터미널의 OSC 52 로 처리한다.
+-- SSH 로 접속했을 때는 시스템 클립보드와 묶지 않는다 (LazyVim 과 같은 규칙). LazyVim 은 그 이유를
+-- "OSC 52 연동이 자동으로 동작하게" 라고 적어 둔다 (lazyvim/config/options.lua). 서버에서 "+ 복사가
+-- 실제로 로컬 클립보드에 닿는지는 터미널(OSC 52 지원)에 달려 있고, 아직 직접 확인하지 않았다.
 opt.clipboard = vim.env.SSH_CONNECTION and "" or "unnamedplus"
 opt.expandtab = true
 opt.shiftwidth = 2
