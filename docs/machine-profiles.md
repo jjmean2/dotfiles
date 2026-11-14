@@ -24,9 +24,11 @@
 | `karabiner` | Karabiner-Elements (macOS). init 때 묻는다 | 묻기 (기본 켬) | 묻기 (보안 SW 가 있으면 끔) | 끔 |
 | `ide` | nvim IDE 모드: LazyVim 설정(`~/.config/nvim`)과 빌드 도구(tree-sitter-cli, cmake, imagemagick) | 켬 | 켬 | 끔 |
 | `dev` | 언어 런타임: mise 로 `shared.toml` 의 node·python·go 등 설치 | 켬 | 켬 | 끔 |
-| `credentials` | 로그인이 필요한 개인 도구 (gh) | 켬 | 끔 | 끔 |
+| `credentials` | 로그인이 필요한 도구 (gh). 회사 머신에서도 회사 계정으로 쓴다 | 켬 | 켬 | 끔 |
 
 - 처음 init 때 위 표대로 채워지고, 그 뒤로는 저장된 값을 그대로 쓴다. **프로필을 바꿔도 이미 저장된 스위치는 바뀌지 않는다.**
+- 지금은 personal 과 work 의 기본값이 같다. 실질적인 구분은 ephemeral(로그인·설치를 최소로) 대 나머지다.
+  work 는 회사 전용 기본값(회사 git 이메일, 회사 도구 묶음 등)이 생기면 그 자리가 되도록 남겨 둔다.
 - 켜고 끄기: `chezmoi edit-config` 로 `[data.features]` 를 고치고 `chezmoi apply`.
 - 꺼도 이미 설치된 것은 지우지 않는다 (관리만 멈춘다). 새 기능을 더할 때는 `packages.yaml` 에 묶음을, `.chezmoi.toml.tmpl` 에 기본값 한 줄을 넣는다.
 
