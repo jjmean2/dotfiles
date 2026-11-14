@@ -114,7 +114,7 @@ open=bg
 
 ## 필요한 것
 
-- handoff: `claude`, git. `create=tmux-dev` 면 [tmux-dev](../../home/dot_config/tmux/plugins/tmux-dev/claude-code.md) 와 jq,
+- handoff: `claude`, git. `create=tmux-dev` 면 [tmux-dev](../../docs/tmux-dev/design/claude-code.md) 와 jq,
   `--open tmux` 면 tmux.
 - pr-review-handle: git, `gh` (`gh auth login` 한 번), jq.
 

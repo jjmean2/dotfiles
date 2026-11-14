@@ -6,6 +6,10 @@
 .jongwan/share/tmux
 .config/tmux-sessionizer
 .local/state/tmux-sessionizer
+# tmux-dev 설계 문서는 저장소의 docs/tmux-dev/design/ 으로 옮겼다 (2026-11-15). 머신에는 코드만 배포한다.
+.config/tmux/plugins/tmux-dev/session-picker.md
+.config/tmux/plugins/tmux-dev/worktree-picker.md
+.config/tmux/plugins/tmux-dev/claude-code.md
 
 # nvim 직접 조립 설정 → LazyVim starter 로 전환. 소스에서 지운 파일은 대상에 남아 있으면
 # LazyVim 의 { import = "plugins" } 가 옛 plugins/*.lua 를 같이 읽으므로 명시적으로 지운다.

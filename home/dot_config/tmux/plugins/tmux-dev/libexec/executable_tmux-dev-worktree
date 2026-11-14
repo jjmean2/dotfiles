@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tmux-dev worktree: 지금 세션에 윈도우를 연다 (prefix W). 출처는 세 모드다.
 #
-# 멘탈 모델 (자세히: ../worktree-picker.md. 공용 규칙은 ../session-picker.md)
+# 멘탈 모델 (자세히: 저장소의 docs/tmux-dev/design/worktree-picker.md. 공용 규칙은 같은 곳의 session-picker.md)
 #   W 가 만드는 것은 윈도우다. 세션은 그대로 두고 그 안에 윈도우를 연다(이미 있으면 그리로 간다).
 #   worktree      세션 디렉토리가 git 저장소일 때만. 워크트리 = 브랜치 = 윈도우. 없으면 워크트리를 만들어 준다
 #   subdirectory  세션 디렉토리 아래의 아무 디렉토리. directory 와 같은 흐름이고 시작 경로만 제한한다
@@ -52,7 +52,7 @@
 # subdirectory / directory 목록: 이 세션에 열린 윈도우의 디렉토리(●N) → 최근 고른 곳(◷) → 탐색.
 # 최근 기록: ~/.local/state/tmux-dev/windows (피커로 연 것만).
 #
-# Claude Code 훅 (에이전트가 만드는 워크트리도 같은 위치·이름·베이스로. 설치 방법은 claude-code.md)
+# Claude Code 훅 (에이전트가 만드는 워크트리도 같은 위치·이름·베이스로. 설치 방법은 저장소의 docs/tmux-dev/design/claude-code.md)
 #   tmux-dev worktree --hook-create      WorktreeCreate 훅. stdin JSON 의 name·cwd 로 워크트리를 만들고(있으면 그대로)
 #                                        경로 한 줄만 stdout 에 쓴다. 질문 없음. 브랜치는 name 그대로, 베이스는 로컬 main
 #   tmux-dev worktree --hook-remove      WorktreeRemove 훅. stdin JSON 의 worktree_path 를 강제 제거하고, 브랜치는 베이스에

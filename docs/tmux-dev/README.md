@@ -31,11 +31,12 @@ tmux 의 기본 개념(prefix 키, 세션·윈도우·패널)과 git 브랜치�
 | [개념과 동작 원리](concepts.md) | 설명 | 세션을 어떻게 찾는지, 머지를 어떻게 판정하는지 같은 동작의 이유를 알고 싶다 |
 | [문제 해결](troubleshooting.md) | 문제 해결 | 기대한 대로 동작하지 않는다 |
 
-설계 결정의 기록과 구현 세부는 플러그인 안의 설계 문서에 있다. 이 가이드는 사용법을 다루고, 설계 문서는 판단 근거를 다룬다.
+설계 결정의 기록과 구현 세부는 [`design/`](design/) 의 설계 문서에 있다. 이 가이드는 사용법을 다루고, 설계 문서는 판단 근거를 다룬다.
+설계 문서는 저장소에만 있고 머신에는 배포되지 않는다 (코드는 `home/dot_config/tmux/plugins/tmux-dev/`).
 
-- `home/dot_config/tmux/plugins/tmux-dev/session-picker.md` — `prefix S` 설계
-- `home/dot_config/tmux/plugins/tmux-dev/worktree-picker.md` — `prefix W` 설계
-- `home/dot_config/tmux/plugins/tmux-dev/claude-code.md` — Claude Code 연동 설계
+- [`design/session-picker.md`](design/session-picker.md) — `prefix S` 설계
+- [`design/worktree-picker.md`](design/worktree-picker.md) — `prefix W` 설계
+- [`design/claude-code.md`](design/claude-code.md) — Claude Code 연동 설계
 
 ## 한눈에 보기
 
