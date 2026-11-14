@@ -29,7 +29,6 @@ vim.filetype.add({
     dot_zshrc = "zsh",
     dot_zshenv = "zsh",
     dot_zprofile = "zsh",
-    source_zsh_variants = "zsh", -- zsh autoload 함수 (shebang 없음)
     dot_bashrc = bash,
     dot_bash_profile = bash,
   },
