@@ -1,12 +1,25 @@
 # shellcheck shell=bash disable=SC1091,SC1090
 
+# # 대화형 쉘의 초기화 스크립트 (뼈대)
+#
+# 구조: 이 파일에는 다른 것이 기대는 것과 셸 자체의 설정만 순서대로 둔다.
+#   1. PATH        mise 활성화 → 개인 도구
+#   2. 셸 공통     에디터, alias, 함수
+#   3. 셸 전용     rc.zsh / rc.bash (프롬프트, 옵션, 키, 완성 시스템 초기화)
+#   4. rc.d/       도구별 대화형 초기화 (fzf, fasd 등). 프롬프트와 완성 시스템이 준비된 뒤에 읽힌다
+#   5. terminal/   터미널별 셸 통합 (iTerm2, tmux). 프롬프트와 훅이 다 갖춰진 뒤 맨 나중에 얹는다
+#   6. 맨 끝이어야 하는 것 (SDKMAN)
+# 도구 하나의 초기화는 rc.d/<도구>.sh 에, 터미널 하나의 통합은 terminal/<터미널>.<셸> 에 따로 두고,
+# 각 파일이 자기 조건(도구가 깔렸는지, 그 터미널 안인지)을 스스로 확인한다. 이 머신에만 필요한 것은
+# 관리 밖 rc.d/<이름>.local.sh 에 둔다. 읽는 순서와 규칙은 load-dir.sh.
+
 # ==================================================
 # 🕹️ PATH 설정
 # ==================================================
 
 # cd를 할 때마다 PATH를 변경하는 hook을 등록한다.
 # 이 방식은 대화형 세션에서만 사용하고,
-# 비대화형 세션에서는 shims 방식을 쓰도록 .zshenv에서 설정함
+# 비대화형 세션에서는 shims 방식을 쓰도록 profile.sh 에서 설정함
 # mise shell activation
 if command -v mise >/dev/null 2>&1; then
 	if [ -n "$ZSH_VERSION" ]; then
@@ -49,11 +62,6 @@ if command -v nvim >/dev/null 2>&1; then
 fi
 
 # 터미널 색상 활성화
-# lazygit 설정 파일. macOS 에서 XDG_CONFIG_HOME 이 없으면 lazygit 은
-# ~/Library/Application Support/lazygit/config.yml 을 읽으므로, dotfiles 가 관리하는 위치를
-# 직접 가리킨다. nvim 안의 snacks lazygit 모듈은 이 값 뒤에 자기 테마 파일을 덧붙인다.
-export LG_CONFIG_FILE="$HOME/.config/lazygit/config.yml"
-
 export CLICOLOR=1
 export LSCOLORS=gxBxhxDxfxhxhxhxhxcxcx
 
@@ -89,88 +97,14 @@ fi
 #printf "\033]0;`date "+%a %d %b %Y %I:%M %p"`\007"
 
 # ==================================================
-# 🕹️ 도구 초기화
+# 🕹️ 함수 정의 모음 (functions.sh 와 functions.d/)
 # ==================================================
-
-# fasd 초기화
-# if command -v fasd >/dev/null 2>&1; then
-# 	# https://github.com/clvv/fasd
-# 	eval "$(fasd --init auto)"
-# fi
-
-# fasd 초기화 최적화
-if command -v fasd >/dev/null 2>&1; then
-  if [ -n "$ZSH_VERSION" ]; then
-    _fasd_cache="$HOME/.fasd-init-zsh"
-  elif [ -n "$BASH_VERSION" ]; then
-    _fasd_cache="$HOME/.fasd-init-bash"
-  else
-    _fasd_cache="$HOME/.fasd-init-posix-shell"
-  fi
-
-  # https://github.com/clvv/fasd
-  # 캐시가 없거나 fasd 실행 파일이 캐시보다 최신이면 갱신
-  if [ ! -s "$_fasd_cache" ] || [ "$(command -v fasd)" -nt "$_fasd_cache" ]; then
-    if [ -n "$ZSH_VERSION" ]; then
-      fasd --init posix-alias zsh-hook zsh-ccomp zsh-ccomp-install zsh-wcomp zsh-wcomp-install >| "$_fasd_cache" 2>/dev/null
-    elif [ -n "$BASH_VERSION" ]; then
-      fasd --init posix-alias bash-hook bash-ccomp bash-ccomp-install >| "$_fasd_cache" 2>/dev/null
-    else
-      fasd --init posix-alias posix-hook >| "$_fasd_cache" 2>/dev/null
-    fi
-  fi
-
-  # 캐시 로드
-  [ -s "$_fasd_cache" ] && . "$_fasd_cache"
-  # 임시 변수 정리
-  unset _fasd_cache _fasd_opts
-fi
-
-# fzf 초기화
-if command -v fzf >/dev/null 2>&1; then
-	# fzf 키 바인딩 설정
-	# Use `fd` instead of `find` command for `fzf`, CTRL_T and ALT_C
-	if command -v fd >/dev/null 2>&1; then
-		export FZF_DEFAULT_COMMAND='fd --type f --hidden --exclude .git --no-ignore'
-		export FZF_CTRL_T_COMMAND='fd --hidden --exclude .git --no-ignore'
-		export FZF_ALT_C_COMMAND='fd --type d --hidden --exclude .git --no-ignore'
-	fi
-
-	if [ -n "$ZSH_VERSION" ]; then
-		# Set up fzf key bindings and fuzzy completion
-		source <(fzf --zsh)
-	elif [ -n "$BASH_VERSION" ]; then
-		# Set up fzf key bindings and fuzzy completion
-		eval "$(fzf --bash)"
-
-	fi
-
-	if command -v fd >/dev/null 2>&1; then
-		# Use `fd` instead of `find` command for path completion (e.g. vim **<TAB>) and dir completion (e.g. cd **<TAB>)
-		_fzf_compgen_path() {
-			echo "$1"
-			fd --hidden --follow --exclude ".git" --no-ignore . "$1"
-		}
-
-		_fzf_compgen_dir() {
-			fd --type d --hidden --follow --exclude ".git" --no-ignore . "$1"
-		}
-	fi
-fi
-
-
-# iPhone ShellFish 앱
-if [ -e "$HOME/.shellfishrc" ]; then
-	. "$HOME/.shellfishrc"
-fi
-
-# 함수 정의 모음
 if [ -f "$HOME/.config/shell/functions.sh" ]; then
 	. "$HOME/.config/shell/functions.sh"
 fi
 
 # ==================================================
-# 🛠️ Shell 별 전용 설정 로드 (completion 설정은 여기서 진행)
+# 🛠️ Shell 별 전용 설정 로드 (프롬프트, 키, completion 시스템 초기화는 여기서 진행)
 # ==================================================
 
 if [ -n "$ZSH_VERSION" ]; then
@@ -180,41 +114,22 @@ elif [ -n "$BASH_VERSION" ]; then
 fi
 
 # ==================================================
-# 🛠️ rc.d/ 스크립트 로드
+# 🛠️ 도구별 대화형 초기화: rc.d/
 # ==================================================
-
-# rc.d/ 내 파일을 lexical 순서로 순회하며, 확장자에 맞는 shell에서만 sourcing
-if [ -d "$HOME/.config/shell/rc.d" ]; then
-	for _rc_file in "$HOME/.config/shell/rc.d"/*; do
-		[ -e "$_rc_file" ] || continue
-		case "$_rc_file" in
-		*.zsh)
-			[ -n "$ZSH_VERSION" ] && . "$_rc_file"
-			;;
-		*.bash)
-			[ -n "$BASH_VERSION" ] && . "$_rc_file"
-			;;
-		*.sh)
-			. "$_rc_file"
-			;;
-		esac
-	done
-	unset _rc_file
-fi
+_jw_dir="$HOME/.config/shell/rc.d"
+. "$HOME/.config/shell/load-dir.sh"
 
 # ==================================================
-# 🛠️ 각 도구에서 진행하는 completion
+# 🪄 터미널별 셸 통합: terminal/
 # ==================================================
+# 셸이 대화하는 터미널마다 파일 하나 (iterm2.zsh, tmux.zsh 등). 터미널을 더하려면 파일을 넣는다.
+# Ghostty 는 띄우는 셸에 통합을 스스로 주입하므로 파일이 없다.
+_jw_dir="$HOME/.config/shell/terminal"
+. "$HOME/.config/shell/load-dir.sh"
 
-# Google Cloud SDK
-# The next line enables shell command completion for gcloud.
-if [ -n "$ZSH_VERSION" ]; then
-	[ -f "$HOME/dev/toolbox/google-cloud-sdk/completion.zsh.inc" ] &&
-		. "$HOME/dev/toolbox/google-cloud-sdk/completion.zsh.inc"
-elif [ -n "$BASH_VERSION" ]; then
-	[ -f "$HOME/dev/toolbox/google-cloud-sdk/completion.bash.inc" ] &&
-		. "$HOME/dev/toolbox/google-cloud-sdk/completion.bash.inc"
-fi
+# ==================================================
+# 🛠️ 맨 끝이어야 하는 것
+# ==================================================
 
 # SDKMAN
 #THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
@@ -222,4 +137,3 @@ if [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
 	export SDKMAN_DIR="$HOME/.sdkman"
 	. "$HOME/.sdkman/bin/sdkman-init.sh"
 fi
-

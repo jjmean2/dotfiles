@@ -80,19 +80,7 @@ if [ -r "$HOME/.config/shell/inputrc" ]; then
 	bind -f "$HOME/.config/shell/inputrc"
 fi
 
-# ==================================================
-# 🪄 iTerm2 shell integration
-# ==================================================
-# iTerm2 shell integration
-if [ "$TERM_PROGRAM" = "iTerm.app" ] || [ "$LC_TERMINAL" = "iTerm2" ]; then
-	if [ -e "$HOME/.config/shell/iterm2/iterm2_shell_integration.bash" ]; then
-		. "$HOME/.config/shell/iterm2/iterm2_shell_integration.bash"
-	fi
-
-	iterm2_print_user_vars() {
-		iterm2_set_user_var gitBranch "$( (git branch 2>/dev/null) | grep '\*' | cut -c3-)"
-	}
-fi
+# 터미널별 셸 통합(iTerm2)은 여기가 아니라 terminal/ 에 있고, rc.sh 가 맨 나중에 읽는다.
 
 # ==================================================
 # 🪄 Bash 자동 완성 및 Readline 바인딩 초기화

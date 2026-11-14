@@ -129,37 +129,7 @@ autoload -Uz edit-command-line
 zle -N edit-command-line
 bindkey "^X^E" edit-command-line
 
-# ==================================================
-# 🪄 iTerm2 shell integration
-# ==================================================
-# iTerm2 shell integration
-if [ "$TERM_PROGRAM" = "iTerm.app" ] || [ "$LC_TERMINAL" = "iTerm2" ]; then
-	if [ -e "$HOME/.config/shell/iterm2/iterm2_shell_integration.zsh" ]; then
-		. "$HOME/.config/shell/iterm2/iterm2_shell_integration.zsh"
-	fi
-
-	iterm2_print_user_vars() {
-		iterm2_set_user_var gitBranch "$( (git branch 2>/dev/null) | grep '\*' | cut -c3-)"
-	}
-
-	# iTerm2 유틸리티(imgcat, it2copy, it2dl …)를 이름 그대로 쓸 수 있게 alias로 건다.
-	# (설치 스크립트가 통합 스크립트 끝에 붙이던 alias 줄을 대신한다.)
-	for _it2_util in $HOME/.iterm2/*(N.x); do
-		alias ${_it2_util:t}=$_it2_util
-	done
-	unset _it2_util
-fi
-
-# ==================================================
-# 🪄 tmux shell integration
-# ==================================================
-# tmux 안에서는 셸이 대화하는 터미널이 tmux 다. 터미널 에뮬레이터(Ghostty/iTerm2)의 통합은
-# tmux 가 띄운 셸엔 주입되지 않고, 주입돼도 tmux 가 OSC 133 을 밖으로 넘기지 않는다.
-# 대신 tmux 용 통합을 소싱해 tmux 자신이 프롬프트 위치를 알게 한다 (previous-prompt 등).
-# 자세한 설명은 스크립트 머리말 참고.
-if [[ -n $TMUX && -r $HOME/.config/shell/tmux/tmux_shell_integration.zsh ]]; then
-	source "$HOME/.config/shell/tmux/tmux_shell_integration.zsh"
-fi
+# 터미널별 셸 통합(iTerm2, tmux)은 여기가 아니라 terminal/ 에 있고, rc.sh 가 맨 나중에 읽는다.
 
 # ==================================================
 # 🪄 Zsh 자동 완성 시스템 초기화 (compinit)

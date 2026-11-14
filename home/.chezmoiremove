@@ -27,3 +27,7 @@
 
 # nvim-lock-push → nvim-extras-push (lazy-lock.json 을 머신 상태로 돌리면서 lazyvim.json 만 커밋하게 됨)
 .jongwan/bin/nvim-lock-push
+
+# 셸 설정을 도구별·터미널별 파일로 나누면서 옮긴 것 (2026-11-15):
+# shell/tmux/tmux_shell_integration.zsh → shell/terminal/tmux.zsh
+.config/shell/tmux
