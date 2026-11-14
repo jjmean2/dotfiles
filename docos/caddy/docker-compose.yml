@@ -17,7 +17,8 @@ services:
       # 로컬 기기에서만 사용할 mkcert 인증서
       - ./caddy/certs:/etc/caddy/certs
       # macOS mkcert CA 인증서를 Caddy가 신뢰할 수 있도록 mount
-      - "/Users/ljw/Library/Application Support/mkcert:/etc/caddy/root-certs"
+      # (docker compose 가 ${HOME} 을 실행한 사람의 홈으로 바꾼다)
+      - "${HOME}/Library/Application Support/mkcert:/etc/caddy/root-certs"
     networks:
       - proxy_net
 

@@ -52,7 +52,7 @@
 sudo 를 써도 되고 되돌릴 필요가 없다. 평소처럼 init 하되 질문 없이 프로필을 준다.
 
 ```sh
-sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptChoice profile=ephemeral --promptString "Email address=" jjmean2
+sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptChoice profile=ephemeral --promptString "Email address=" --promptString "Full name (git user.name)=" jjmean2
 ```
 
 필수 도구만 apt 등으로 설치되고, LazyVim·언어 런타임·gh 는 빠진다.

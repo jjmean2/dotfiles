@@ -21,7 +21,7 @@
 #   - 디렉터리: 깔면서 새로 생긴 빈 디렉터리를 지운다.
 #   - 그 밖에 쓰는 동안 사용자가 만든 파일은 건드리지 않는다.
 #
-# 환경변수: JW_DOTFILES_REPO (clone 할 저장소, 로컬 경로도 됨), JW_EPHEMERAL_EMAIL (git 이메일),
+# 환경변수: JW_DOTFILES_REPO (clone 할 저장소, 로컬 경로도 됨), JW_EPHEMERAL_EMAIL·JW_EPHEMERAL_NAME (git 신원),
 #           JW_EPHEMERAL_FORCE_TOOLS=1 (시험용: 서버에 이미 있는 도구도 받는다)
 set -euo pipefail
 
@@ -167,8 +167,11 @@ install_body() {
 	cp "$SRC/jw-ephemeral" "$ROOT/jw-ephemeral"
 	chmod +x "$ROOT/jw-ephemeral"
 
+	# git 신원은 서버에 이미 있는 값을 쓴다. --promptString 의 키는 .chezmoi.toml.tmpl 의 질문 문구 그대로다.
 	local email="${JW_EPHEMERAL_EMAIL:-$(git config --global user.email 2>/dev/null || true)}"
-	cz init --config-path "$CFG" --promptChoice profile=ephemeral --promptString "Email address=$email" >/dev/null
+	local name="${JW_EPHEMERAL_NAME:-$(git config --global user.name 2>/dev/null || true)}"
+	cz init --config-path "$CFG" --promptChoice profile=ephemeral \
+		--promptString "Email address=$email" --promptString "Full name (git user.name)=$name" >/dev/null
 
 	# 관리 대상 목록 (설치 스크립트 제외, 파일·링크만). 이것이 백업과 되돌림의 기준이다.
 	cz managed --path-style=absolute --include=files,symlinks --exclude=scripts,remove >"$MANAGED"
