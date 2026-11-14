@@ -10,7 +10,7 @@
 | 범위 | 언제 | 설치 (도구 자체) | nvim 연결 (LSP·파서·포맷터) | dotfiles 수정 |
 |---|---|---|---|---|
 | **모든 머신** | 매일 쓰는 주력 도구 (프론트엔드 등) | `home/dot_config/mise/conf.d/shared.toml`, `packages.yaml` | `:LazyExtras` → `lazyvim.json`, `lua/plugins/*.lua` | 함 |
-| **일부 머신 (관리)** | 개인 머신 둘에서만 맞춰 쓰는 것 | `features.<이름>` 스위치 (아래 B) | 모든 머신과 같은 nvim 설정. 도구가 없는 머신에서는 런타임에 건너뜀 | 함 |
+| **일부 머신 (관리)** | 개인 머신 둘에서만 맞춰 쓰는 것 | 기능 `packages.features.<이름>` (아래 B) | 모든 머신과 같은 nvim 설정. 도구가 없는 머신에서는 런타임에 건너뜀 | 함 |
 | **이 머신만** | 한 머신에서 잠깐, 또는 관리할 만큼 중요하지 않은 것 | `mise use -g …` → `~/.config/mise/config.toml` | `~/.config/nvim/lua/plugins/local-*.lua` (관리 밖 파일) | 안 함 |
 | **이 프로젝트만** | 특정 저장소에서만 쓰는 도구·버전 (Zig/Ghostty 등) | 프로젝트의 `mise.local.toml` | 프로젝트의 `.lazy.lua` | 안 함 |
 
@@ -78,34 +78,39 @@ deno = "latest"
 
 ---
 
-## B. 일부 머신 (관리): `features.<이름>` 스위치
+## B. 일부 머신 (관리): 기능 (`packages.features.<이름>`)
 
-개인 머신 여러 대에서 **같게 맞추고 싶은** 도구. 스위치 값은 머신의 `~/.config/chezmoi/chezmoi.toml` 에 있고 저장소에는
-들어가지 않는다. `false` 는 "이 머신에서 안 쓴다" 가 아니라 "dotfiles 가 관리하지 않는다" 이다 (손으로 깔아 써도 된다).
-자세한 규칙은 README 의 "머신별 기능".
+개인 머신 여러 대에서 **같게 맞추고 싶은** 도구. 기능의 선언(무엇을 깔고 기본으로 켜는지)은 저장소에 있고, 머신에는
+기본값과 다르게 둘 스위치만 적는다 (`~/.config/chezmoi/chezmoi.toml` 의 `[data.features]`, 저장소에는 들어가지 않는다).
+`false` 는 "이 머신에서 안 쓴다" 가 아니라 "dotfiles 가 관리하지 않는다" 이다 (손으로 깔아 써도 된다).
+켜지는 규칙은 [machines.md](machines.md).
 
-### 예 B-1. 기존 스위치 바꾸기
+### 예 B-1. 이 머신에서 기능 켜고 끄기
 
 ```sh
-$EDITOR ~/.config/chezmoi/chezmoi.toml   # [data.features] karabiner = true / false
-chezmoi apply                            # 켠 기능의 패키지 설치, 설정 파일 배포
+chezmoi edit-config      # [data.features] 에 karabiner = false 처럼 한 줄
+chezmoi apply            # 켠 기능의 패키지 설치, 설정 파일 배포
+chezmoi execute-template '{{ includeTemplate "enabled-features" . }}'   # 지금 켜진 기능
 ```
 
 ### 예 B-2. 새 기능 추가 (brew 앱 하나)
 
-1. `home/.chezmoidata/packages.yaml` 의 `packages.darwin.features` 에 묶음:
+1. `home/.chezmoidata/packages.yaml` 의 `packages.features` 에 블록 하나:
    ```yaml
-   features:
-     myapp:
+   myapp:
+     tier: opt-in               # 켠다고 적은 머신에서만. minimal 이 아닌 모든 머신이면 full
+     ignore: [.config/myapp]    # 꺼진 머신에는 배포하지 않을 전용 설정 (없으면 생략)
+     darwin:
        casks:
          - myapp
    ```
-2. `home/.chezmoi.toml.tmpl` 의 darwin 블록에 묻는 줄 (`karabiner` 를 본뜬다) 과 `[data.features]` 의 `myapp = {{ $myapp }}`.
-3. 그 도구 전용 설정 파일이 있으면 `home/.chezmoiignore` 에 스위치가 꺼졌을 때 뺄 경로.
-4. PR → 머지 → 각 머신에서 `chezmoi init` (새 질문만 묻는다) → `chezmoi apply`.
+2. PR → 머지 → 각 머신에서 `chezmoi apply`. `tier: full` 이면 그대로 깔리고, `opt-in` 이면 쓸 머신에서만
+   `[data.features]` 에 `myapp = true` 를 적는다. `chezmoi init` 을 다시 할 필요는 없다.
 
-mise 로 설치하는 도구라면 brew 묶음 대신 `home/dot_config/mise/conf.d/<이름>.toml` 을 만들고 3 처럼 스위치로 뺀다.
-이때 `run_onchange_after_20-install-mise-tools.sh.tmpl` 에 그 파일의 해시와 스위치 값을 넣어야 켜거나 버전을 바꿀 때
+깔면 안 되는 머신이 있어서 init 때 물어야 하는 기능만 `home/.chezmoi.toml.tmpl` 에 질문 한 줄을 더한다 (`karabiner` 를 본뜬다).
+
+mise 로 설치하는 도구라면 패키지 묶음 대신 `home/dot_config/mise/conf.d/<이름>.toml` 을 만들고 그 경로를 `ignore` 에 넣는다.
+이때 `run_onchange_after_20-install-mise-tools.sh.tmpl` 에 그 파일의 해시와 기능이 켜졌는지를 넣어야 켜거나 버전을 바꿀 때
 `mise install` 이 다시 돈다.
 
 ---

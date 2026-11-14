@@ -12,8 +12,8 @@
 | `docos/<project>/docker-compose.yml` | 로컬에서 띄우는 docker compose 서비스. `doco <project> up` 으로 실행 |
 | `snippets/` | 기억해 두고 싶은 코드 스니펫 |
 | `claude-plugins/` | 개인 Claude Code 플러그인. 루트의 `.claude-plugin/marketplace.json` 이 이 저장소를 마켓플레이스로 만든다 (`claude plugin marketplace add jjmean2/dotfiles`, 마켓플레이스 이름 `justwonder`). 지금은 작업 스킬 모음 `jw` 하나 |
-| `docs/` | 설계·운영 문서. [`docs/tool-scope.md`](docs/tool-scope.md): 개발 도구를 모든 머신 / 일부 머신 / 이 머신 / 이 프로젝트 중 어디에 둘지. [`docs/machine-profiles.md`](docs/machine-profiles.md): 머신 프로필(personal / work / ephemeral)과 선택 기능, 임시 서버 설치·되돌리기 |
-| `jw-ephemeral` | 내 계정으로 접속한 서버에 sudo 없이 깔았다가 되돌리는 래퍼 ([`docs/machine-profiles.md`](docs/machine-profiles.md)) |
+| `docs/` | 설계·운영 문서. [`docs/tool-scope.md`](docs/tool-scope.md): 개발 도구를 모든 머신 / 일부 머신 / 이 머신 / 이 프로젝트 중 어디에 둘지. [`docs/machines.md`](docs/machines.md): 머신마다 무엇을 까나 (등급 minimal / full 과 기능), 임시 서버 설치·되돌리기 |
+| `jw-ephemeral` | 내 계정으로 접속한 서버에 sudo 없이 깔았다가 되돌리는 래퍼 ([`docs/machines.md`](docs/machines.md)) |
 
 `home/` 밖의 파일은 chezmoi 가 배포하지 않는다.
 
@@ -63,11 +63,11 @@ sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --source ~/dev/jwle
 
 ### 경우 4. 잠깐 쓰는 서버·dev container
 
-필수 도구와 설정만 깐다 (프로필 `ephemeral`). 자세한 내용은 [`docs/machine-profiles.md`](docs/machine-profiles.md).
+필수 도구와 설정만 깐다 (등급 `minimal`). 자세한 내용은 [`docs/machines.md`](docs/machines.md).
 
 ```sh
-# dev container (버리는 환경, sudo 가능)
-sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptChoice profile=ephemeral --promptString "Email address=" --promptString "Full name (git user.name)=" jjmean2
+# dev container (버리는 환경, sudo 가능). nvim IDE·언어 런타임까지 깔려면 minimal=false
+sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptBool minimal=true --promptString "Email address=" --promptString "Full name (git user.name)=" jjmean2
 # 내 계정으로 접속한 서버 (sudo 없이, 나중에 되돌린다)
 curl -fsSL https://raw.githubusercontent.com/jjmean2/dotfiles/main/jw-ephemeral | bash -s install
 ```
@@ -101,8 +101,8 @@ Stow 로 관리하던 머신은 `stow -D <패키지>` 로 링크를 먼저 걷�
 
 ### 첫 apply 에서 일어나는 일
 
-1. `.chezmoi.toml.tmpl` 이 이메일, git 이름, 머신 프로필(personal / work / ephemeral), macOS 면 Karabiner 를 쓸지 묻고
-   `~/.config/chezmoi/chezmoi.toml` 을 만든다 (한 번만 묻는다). 나머지 기능 스위치는 프로필로 처음 값이 정해진다.
+1. `.chezmoi.toml.tmpl` 이 이메일, git 이름, 머신 등급(minimal 인지), macOS 면 Karabiner 를 쓸지 묻고
+   `~/.config/chezmoi/chezmoi.toml` 을 만든다 (한 번만 묻는다). 나머지 기능은 등급에 따라 저장소의 선언대로 켜진다.
 2. `run_onchange_before_*`: Homebrew 설치, `packages.yaml` 의 brew/cask 설치 (macOS) 또는 배포판 패키지와 mise 본체 설치 (Linux). 몇 분 걸린다.
 3. `home/` 의 파일이 홈에 배포된다.
 4. `run_onchange_after_*`: `mise install` 로 `conf.d/shared.toml` 의 런타임 설치, fasd, (macOS) tmux/ghostty terminfo.
@@ -112,7 +112,8 @@ Stow 로 관리하던 머신은 `stow -D <패키지>` 로 링크를 먼저 걷�
 
 ```sh
 chezmoi doctor        # source-dir, config-file 이 기대한 위치인지
-chezmoi data          # email 과 features 가 맞는지
+chezmoi data          # email 과 minimal 이 맞는지
+chezmoi execute-template '{{ includeTemplate "enabled-features" . }}'   # 이 머신에서 켜진 기능
 chezmoi status        # 비어 있어야 정상
 exec $SHELL -l        # 새 셸 (PATH, LG_CONFIG_FILE 등)
 nvim                  # 첫 실행에서 lazy.nvim 이 LazyVim 과 플러그인의 최신 버전을, mason 이 LSP 서버와 포맷터를 받는다. :checkhealth
@@ -154,9 +155,10 @@ nvim +'Lazy restore'                                         # lockfile 의 comm
 ### 자주 하는 조정
 
 - 이메일이나 git 이름을 바꾸려면: `chezmoi init --prompt` (다시 묻는다). 옵션 없이 `chezmoi init` 을 다시 실행하면 기존 값을 유지한다.
-- 기능 스위치를 바꾸려면: `~/.config/chezmoi/chezmoi.toml` 의 `[data.features]` 값을 고치고 `chezmoi apply`
-  (또는 `chezmoi init --prompt` 로 전부 다시 답한다). 아래 "머신별 기능" 규칙 참고.
-- `config file template has changed` 경고가 나오면 `chezmoi init` 을 실행한다. 새로 생긴 질문만 묻고 기존 답은 유지한다.
+- 기능을 켜고 끄려면: `chezmoi edit-config` 로 `[data.features]` 에 `<이름> = true / false` 를 적고 `chezmoi apply`.
+  기본값과 다르게 둘 것만 적는다. 아래 "머신별 기능" 규칙 참고.
+- `config file template has changed` 경고가 나오면 `chezmoi init` 을 실행한다. 새로 생긴 질문만 묻고 기존 답과
+  `[data.features]` 에 적어 둔 값은 유지한다.
 - 스크립트를 강제로 다시 돌리려면 내용을 조금 바꾸거나 `chezmoi state delete-bucket --bucket=entryState` 후 `chezmoi apply`.
 - 머신 전용 값은 `*.local` 파일, `~/.config/mise/config.toml`, `~/.config/ghostty/auto/theme.ghostty` 처럼 chezmoi 가 관리하지 않는 자리에 둔다 (`home/.chezmoiignore` 참고).
 
@@ -165,16 +167,12 @@ nvim +'Lazy restore'                                         # lockfile 의 comm
 - **플랫폼 전용 파일**: `.zshrc` → `.zshrc.darwin` / `.zshrc.linux` 처럼 이름에 OS 토큰을 붙이면,
   `home/.chezmoiignore` 가 다른 OS 의 파일을 설치하지 않는다. 기본 파일이 런타임에 해당 OS 파일과
   `.local` 파일을 찾아 불러온다. 실행할 내용이 없는 플랫폼 파일은 만들지 않는다.
-- **머신별 기능**: 머신마다 설치 여부가 다른 것은 `packages.yaml` 의 `packages.<os>.features.<이름>` 에 묶음
-  (brews / casks)으로 두고, 이 머신이 쓰는지는 머신의 `chezmoi.toml` 의 `features.<이름>` 스위치가 정한다
-  (`.chezmoi.toml.tmpl` 이 init 때 프로필로 처음 값을 정한다. 저장소에는 들어가지 않는다). 같은 스위치로 설치 스크립트가 패키지를 넣고
-  `home/.chezmoiignore` 가 그 도구 전용 설정 파일을 뺀다. 공용 설정 파일 안에서 선택 도구를 부르는 부분은 템플릿이 아니라
-  실행 시점의 `command -v` 확인으로 처리한다. 스위치를 꺼도 설치된 앱과 이미 배포된 설정 파일은 지우지 않는다
+- **머신별 기능**: 머신마다 설치 여부가 다른 것은 `packages.yaml` 의 `packages.features.<이름>` 에 블록 하나
+  (기본값 `tier`, 패키지 묶음, 꺼진 머신에서 뺄 설정 경로)로 선언한다. 머신의 `chezmoi.toml` 에는 등급(`minimal`)과
+  기본값과 다르게 둘 스위치만 적는다. 지금 있는 기능: `ide`, `dev`, `credentials`, `karabiner`. 켜지는 규칙과 기능을
+  더하는 방법은 [`docs/machines.md`](docs/machines.md) 한 곳에 있다. 공용 설정 파일 안에서 선택 도구를 부르는 부분은
+  템플릿이 아니라 실행 시점의 `command -v` 확인으로 처리한다. 기능을 꺼도 설치된 앱과 이미 배포된 설정 파일은 지우지 않는다
   (관리만 멈춘다). 필요하면 `brew uninstall --cask <이름>` 과 설정 디렉터리 삭제를 손으로 한다.
-  새 기능은 `packages.yaml` 에 묶음을, `.chezmoi.toml.tmpl` 에 기본값 줄을, 필요하면 `.chezmoiignore` 에 경로를 추가한다.
-  지금 있는 기능: `karabiner` (macOS. 가상 HID 드라이버 확장을 설치하므로 보안 소프트웨어가 관리하는 머신에서는 끈다),
-  `ide` (LazyVim 과 빌드 도구), `dev` (mise 언어 런타임), `credentials` (gh). 프로필별 기본값은
-  [`docs/machine-profiles.md`](docs/machine-profiles.md).
 - **도구의 범위**: 다른 머신에서도 똑같이 필요한 도구만 dotfiles 에 넣는다. 한 머신에서만 쓰면 머신 전용 파일
   (`mise use -g` → `~/.config/mise/config.toml`, `~/.config/nvim/lua/plugins/local-*.lua`), 한 프로젝트에서만 쓰면
   그 프로젝트의 `mise.local.toml` + `.lazy.lua` (`.git/info/exclude` 로 무시) 에 둔다. 범위별 절차와 예시는

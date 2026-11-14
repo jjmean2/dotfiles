@@ -1,4 +1,4 @@
-{{ if dig "features" "dev" false . -}}
+{{ if has "dev" (includeTemplate "enabled-features" . | fromJson) -}}
 #!/usr/bin/env bash
 set -euo pipefail
 
