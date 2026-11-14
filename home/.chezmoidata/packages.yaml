@@ -6,8 +6,11 @@
 #   OS 별     packages.darwin / packages.linux         위 키가 OS 아래에 있는 것 자체
 #   머신 선택 packages.<os>.features.<이름>             이 머신의 스위치 features.<이름> 이 켜졌을 때만
 # 스위치 값은 저장소가 아니라 머신의 ~/.config/chezmoi/chezmoi.toml 에 있다
-# (.chezmoi.toml.tmpl 이 init 때 묻는다). 기능 하나 = 패키지 + 그 설정 파일 + 후처리이고,
+# (.chezmoi.toml.tmpl 이 init 때 프로필로 처음 값을 정한다). 기능 하나 = 패키지 + 그 설정 파일 + 후처리이고,
 # 설정 파일은 .chezmoiignore 가 같은 스위치로 뺀다. 스위치를 꺼도 설치된 것은 지우지 않는다.
+#
+# 필수에는 터미널 작업에 늘 쓰는 것만 둔다 (OS·프로젝트와 상관없이). 프로필 설계는 docs/machine-profiles.md.
+# sudo 없는 임시 서버에는 이 목록이 아니라 저장소 루트 jw-ephemeral 의 목록으로 사용자 영역에 설치한다.
 packages:
   darwin:
     # brew bundle 로 설치한다. 이미 설치된 formula 의 버전 업그레이드는 하지 않는다.
@@ -16,31 +19,26 @@ packages:
       - bash
       - git
       - jq
-      # GitHub CLI. jw 플러그인의 pr-review-fetch 가 쓴다 (설치 후 gh auth login 한 번)
-      - gh
       - ripgrep
       - fzf
       - fd
       - neovim
       - mise
       - coreutils
+      # envsubst (dot_jongwan/bin/doco 가 쓴다)
       - gettext
-      - cmake
-      - tree-sitter-cli
       - tmux
       # tmux 상태바의 git 상태 표시 (tmux.conf 의 status-right 가 호출)
       - gitmux
       # 구문 단위 diff (dot_config/git/config.darwin 의 diff.external)
       - difftastic
-      # nvim snacks.image 가 SVG 등을 PNG 로 바꿀 때 쓴다 (dot_config/nvim/lua/plugins/svg-preview.lua)
-      - imagemagick
     # brew install --cask 로 설치하는 GUI 앱과 폰트
     casks:
       - ghostty
       # ghostty 의 한글 fallback 폰트 (config.ghostty 의 font-family)
       - font-d2coding
     # 머신마다 켜고 끄는 기능. 키 이름이 스위치 이름(features.<이름>)이고, 각 묶음은 brews / casks 를 가질 수 있다.
-    # 새 기능을 추가하면 .chezmoi.toml.tmpl 에 그 스위치를 묻는 줄도 함께 추가한다.
+    # 새 기능을 추가하면 .chezmoi.toml.tmpl 에 그 스위치의 기본값 줄도 함께 추가한다.
     features:
       # 키 리매퍼. 한글 입력 상태에서 tmux prefix/Esc 를 누르면 영문으로 바꾼다 (dot_config/private_karabiner/private_karabiner.json).
       # 설치 후 System Settings 에서 백그라운드 항목·드라이버 확장·손쉬운 사용 권한을 한 번 승인해야 동작한다.
@@ -48,8 +46,21 @@ packages:
       karabiner:
         casks:
           - karabiner-elements
+      # nvim IDE 모드(LazyVim)가 쓰는 빌드·변환 도구. 끄면 ~/.config/nvim 도 배포하지 않는다 (.chezmoiignore)
+      ide:
+        brews:
+          # nvim-treesitter 가 파서를 빌드할 때 쓴다
+          - tree-sitter-cli
+          - cmake
+          # nvim snacks.image 가 SVG 등을 PNG 로 바꿀 때 쓴다 (dot_config/nvim/lua/plugins/svg-preview.lua)
+          - imagemagick
+      # 로그인이 필요한 개인 도구
+      credentials:
+        brews:
+          # GitHub CLI. jw 플러그인의 pr-review-fetch 가 쓴다 (설치 후 gh auth login 한 번)
+          - gh
     # 언어 런타임은 여기가 아니라 dot_config/mise/conf.d/shared.toml 에 선언한다.
-    # 설치 스크립트가 mise install 로 그 파일을 읽어 설치한다.
+    # features.dev 가 켜진 머신에서만 설치 스크립트가 mise install 로 그 파일을 읽어 설치한다.
   linux:
     # 도구 이름(= canonical 실행파일 이름). 패키지/실행파일 이름이 다른 경우는
     # 설치 스크립트 안의 default_pkg/pkg_override/bin_override 테이블에 등록한다.
@@ -60,10 +71,16 @@ packages:
       - rg
       - fd
       - jq
-      # GitHub CLI. jw 플러그인의 pr-review-fetch 가 쓴다 (설치 후 gh auth login 한 번)
-      - gh
       - gettext
-      - tree-sitter-cli
       - bash-completion
       # fasd 를 소스에서 빌드(make install)할 때 필요
       - make
+    # darwin 의 features 와 같은 규칙. 묶음은 tools 를 가진다.
+    features:
+      ide:
+        tools:
+          - tree-sitter-cli
+      credentials:
+        tools:
+          # GitHub CLI. jw 플러그인의 pr-review-fetch 가 쓴다 (설치 후 gh auth login 한 번)
+          - gh
