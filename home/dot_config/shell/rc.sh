@@ -16,6 +16,12 @@ if command -v mise >/dev/null 2>&1; then
 	fi
 fi
 
+# jw-ephemeral 이 설치한 필수 도구 (profile.sh 참고). 위 mise activate 가 PATH 를 다시 짜면 시스템 도구가
+# 앞으로 올 수 있어서 여기서 다시 앞에 넣는다.
+if [ -d "${XDG_STATE_HOME:-$HOME/.local/state}/jw-ephemeral/bin" ]; then
+	PATH="${XDG_STATE_HOME:-$HOME/.local/state}/jw-ephemeral/bin:$PATH"
+fi
+
 # 개인 도구 경로, 우선순위 가장 높게 설정 (+ tmux-dev 플러그인의 bin: tmux-dev project|worktree)
 PATH="$HOME/.jongwan/bin:$HOME/.config/tmux/plugins/tmux-dev/bin:$PATH"
 

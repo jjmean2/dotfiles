@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+# jw-ephemeral — 내 계정으로 접속한 서버에 dotfiles 를 잠깐 깔고, 끝나면 깔기 전으로 되돌린다.
+#
+#   설치:   curl -fsSL https://raw.githubusercontent.com/jjmean2/dotfiles/main/jw-ephemeral | bash -s install
+#   상태:   ~/.local/state/jw-ephemeral/jw-ephemeral status
+#   되돌림: ~/.local/state/jw-ephemeral/jw-ephemeral uninstall
+#
+# 무엇을 하나 (설계: docs/machine-profiles.md)
+#   - sudo 를 쓰지 않는다. 자기 파일은 모두 $ROOT(~/.local/state/jw-ephemeral) 한곳에 둔다:
+#     chezmoi 바이너리, 저장소 사본, chezmoi 설정·상태, 백업, 필수 도구.
+#   - chezmoi 를 profile=ephemeral 로 init 하고 apply --exclude=scripts 로 설정 파일만 깐다
+#     (설치 스크립트는 sudo·시스템 패키지를 쓰므로 돌리지 않는다).
+#   - 필수 도구(fzf rg fd jq nvim)는 mise install-into 로 받아 $ROOT/bin 에 둔다. 셸 설정
+#     (shell/profile.sh)이 그 디렉터리가 있으면 PATH 앞에 넣는다. git·tmux 는 서버에 있는 것을 쓴다.
+#
+# 되돌리기의 범위
+#   - chezmoi 가 깐 파일: 깔기 전에 있던 것은 백업에서 복원하고, 없던 것은 지운다.
+#   - 런타임 상태: RUNTIME_PATHS 중 깔기 전에 없던 것만 지운다 (nvim-lite 데이터, fasd 캐시 등).
+#   - 디렉터리: 깔면서 새로 생긴 빈 디렉터리를 지운다.
+#   - 그 밖에 쓰는 동안 사용자가 만든 파일은 건드리지 않는다.
+#
+# 환경변수: JW_DOTFILES_REPO (clone 할 저장소, 로컬 경로도 됨), JW_EPHEMERAL_EMAIL (git 이메일),
+#           JW_EPHEMERAL_FORCE_TOOLS=1 (시험용: 서버에 이미 있는 도구도 받는다)
+set -euo pipefail
+
+ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/jw-ephemeral"
+REPO="${JW_DOTFILES_REPO:-https://github.com/jjmean2/dotfiles.git}"
+
+BIN="$ROOT/bin"                  # 필수 도구. profile.sh 가 PATH 에 넣는다
+LIBEXEC="$ROOT/libexec"          # chezmoi, mise 본체. PATH 에 넣지 않는다 (기본 위치의 chezmoi 와 헷갈리지 않게)
+SRC="$ROOT/source"               # 저장소 사본 (.chezmoiroot 가 home/ 을 가리킨다)
+CFG="$ROOT/chezmoi.toml"         # ~/.config/chezmoi 를 쓰지 않는다
+PSTATE="$ROOT/chezmoistate.boltdb"
+BACKUP="$ROOT/backup.tar"        # 깔기 전에 있던 관리 대상 파일
+MANAGED="$ROOT/managed.txt"      # chezmoi 가 깐 파일 (절대 경로)
+ABSENT="$ROOT/absent.txt"        # 깔기 전에 없던 런타임 경로
+CREATED_DIRS="$ROOT/created-dirs.txt" # 깔면서 새로 생긴 디렉터리
+
+# chezmoi 가 모르는, 쓰는 동안 도구가 만드는 상태. 깔기 전에 없던 것만 uninstall 이 지운다.
+RUNTIME_PATHS=(
+	"$HOME/.local/share/nvim-lite" "$HOME/.local/state/nvim-lite" "$HOME/.cache/nvim-lite"
+	"$HOME/.fasd" "$HOME/.fasd-init-zsh" "$HOME/.fasd-init-bash" "$HOME/.fasd-init-posix-shell"
+	"$HOME/.local/share/tmux-dev" "$HOME/.local/state/tmux-dev" "$HOME/.cache/tmux-dev"
+	"$HOME/.zcompdump" "$HOME/.zsh_history"
+)
+
+# 필수 도구: "mise 도구@버전 실행파일이름". 목록의 기준은 .chezmoidata/packages.yaml 의 필수 도구 중
+# 미리 빌드된 바이너리를 받을 수 있는 것. neovim 은 기본 백엔드(vfox)가 아니라 aqua 로 받는다.
+TOOLS=(
+	"fzf@latest fzf"
+	"ripgrep@latest rg"
+	"fd@latest fd"
+	"jq@latest jq"
+	"aqua:neovim/neovim@latest nvim"
+)
+FASD_URL="https://raw.githubusercontent.com/clvv/fasd/master/fasd"
+
+log() { printf '\033[1m[jw-ephemeral]\033[0m %s\n' "$*" >&2; }
+die() { log "$*"; exit 1; }
+
+cz() { "$LIBEXEC/chezmoi" -S "$SRC" -c "$CFG" --persistent-state "$PSTATE" --no-tty "$@"; }
+
+# $1 의 부모들 중 아직 없는 것을 CREATED_DIRS 에 기록한다 ($HOME 까지).
+record_missing_parents() {
+	local d
+	d="$(dirname "$1")"
+	while [[ $d != "$HOME" && $d != "/" && ! -e $d ]]; do
+		echo "$d"
+		d="$(dirname "$d")"
+	done
+}
+
+# 시스템에 쓸 만한 nvim(0.10 이상)이 있으면 0. nvim-lite 가 vim.fs.joinpath·vim.keycode 를 쓴다.
+# --clean 이어도 nvim 은 로그 파일을 만들므로, uninstall 이 지우는 nvim-lite 상태 디렉터리에 남게 한다.
+system_nvim_ok() {
+	command -v nvim >/dev/null 2>&1 || return 1
+	NVIM_APPNAME=nvim-lite nvim --headless --clean '+lua io.stdout:write(vim.fn.has("nvim-0.10"))' +qa 2>/dev/null | grep -q 1
+}
+
+install_tools() {
+	log "mise 를 $LIBEXEC 에 받는다"
+	curl -fsSL https://mise.run | MISE_INSTALL_PATH="$LIBEXEC/mise" sh >/dev/null 2>&1 ||
+		die "mise 설치 실패 (curl https://mise.run 을 직접 실행해 원인을 확인할 것)"
+	# mise 의 데이터·캐시·설정을 모두 $ROOT 안으로 돌려서 홈에 흔적을 남기지 않는다.
+	# 방금 깐 ~/.config/mise 의 shared.toml(언어 런타임)도 읽지 않게 설정 위치를 바꾼다.
+	export MISE_DATA_DIR="$ROOT/mise/data" MISE_CACHE_DIR="$ROOT/mise/cache" MISE_STATE_DIR="$ROOT/mise/state"
+	export MISE_CONFIG_DIR="$ROOT/mise/config" MISE_GLOBAL_CONFIG_FILE="$ROOT/mise/config/config.toml" MISE_YES=1
+
+	local entry spec bin dir exe
+	for entry in "${TOOLS[@]}"; do
+		read -r spec bin <<<"$entry"
+		if [[ -n ${JW_EPHEMERAL_FORCE_TOOLS:-} ]]; then
+			: # 시험용: 서버에 있어도 받는다
+		elif [[ $bin == nvim ]] && system_nvim_ok; then
+			log "nvim: 서버에 0.10 이상이 있어 그것을 쓴다"
+			continue
+		elif [[ $bin != nvim ]] && command -v "$bin" >/dev/null 2>&1; then
+			log "$bin: 서버에 있는 것을 쓴다 ($(command -v "$bin"))"
+			continue
+		fi
+		dir="$ROOT/tools/$bin"
+		log "$bin: $spec 받는 중"
+		(cd "$ROOT" && "$LIBEXEC/mise" install-into "$spec" "$dir" >/dev/null)
+		exe="$(find "$dir" -type f -name "$bin" -perm -u+x | head -n 1)"
+		[[ -n $exe ]] || die "$bin: $dir 에서 실행 파일을 찾지 못했다"
+		ln -sf "$exe" "$BIN/$bin"
+	done
+
+	if [[ -n ${JW_EPHEMERAL_FORCE_TOOLS:-} ]] || ! command -v fasd >/dev/null 2>&1; then
+		log "fasd: 스크립트 하나를 받는다"
+		curl -fsSL "$FASD_URL" -o "$BIN/fasd"
+		chmod +x "$BIN/fasd"
+	fi
+
+	for bin in git tmux; do
+		command -v "$bin" >/dev/null 2>&1 || log "주의: $bin 이 서버에 없다 (sudo 없이 받을 수 있는 바이너리가 없어 설치하지 않는다)"
+	done
+}
+
+cmd_install() {
+	[[ -e $ROOT ]] && die "이미 설치돼 있다: $ROOT (다시 깔려면 먼저 uninstall)"
+	command -v git >/dev/null 2>&1 || die "git 이 필요하다"
+	command -v curl >/dev/null 2>&1 || die "curl 이 필요하다"
+
+	# $ROOT 를 만들기 전에, 그 부모 중 없던 것을 기억해 둔다 (~/.local/state 등).
+	local root_parents
+	root_parents="$(record_missing_parents "$ROOT/x")"
+	mkdir -p "$BIN" "$LIBEXEC"
+	printf '%s\n' "$root_parents" | sed '/^$/d' >"$CREATED_DIRS"
+	echo "$ROOT" >>"$CREATED_DIRS"
+
+	log "chezmoi 를 $LIBEXEC 에 받는다"
+	sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$LIBEXEC" >/dev/null
+
+	log "저장소를 받는다: $REPO"
+	git clone -q --depth 1 "$REPO" "$SRC"
+
+	local email="${JW_EPHEMERAL_EMAIL:-$(git config --global user.email 2>/dev/null || true)}"
+	cz init --config-path "$CFG" --promptChoice profile=ephemeral --promptString "Email address=$email" >/dev/null
+
+	# 관리 대상 목록 (설치 스크립트 제외, 파일·링크만). 이것이 백업과 되돌림의 기준이다.
+	cz managed --path-style=absolute --include=files,symlinks --exclude=scripts >"$MANAGED"
+
+	log "관리 대상 $(wc -l <"$MANAGED" | tr -d ' ')개 중 이미 있는 것을 백업한다"
+	local p existing=() created_dirs=()
+	while IFS= read -r p; do
+		if [[ -e $p || -L $p ]]; then
+			existing+=("${p#/}")
+		else
+			while IFS= read -r d; do created_dirs+=("$d"); done < <(record_missing_parents "$p")
+		fi
+	done <"$MANAGED"
+	# chezmoi 가 직접 만드는 디렉터리(빈 디렉터리 포함)도 없던 것이면 기록한다.
+	while IFS= read -r p; do
+		[[ -e $p ]] && continue
+		created_dirs+=("$p")
+		while IFS= read -r d; do created_dirs+=("$d"); done < <(record_missing_parents "$p")
+	done < <(cz managed --path-style=absolute --include=dirs)
+	if ((${#existing[@]})); then
+		printf '%s\n' "${existing[@]}" | tar -C / -cpf "$BACKUP" -T -
+	fi
+
+	# 런타임 경로 중 없던 것과, 그 부모 중 없던 디렉터리를 기록한다.
+	: >"$ABSENT"
+	for p in "${RUNTIME_PATHS[@]}"; do
+		if [[ ! -e $p ]]; then
+			echo "$p" >>"$ABSENT"
+			while IFS= read -r d; do created_dirs+=("$d"); done < <(record_missing_parents "$p")
+		fi
+	done
+	if ((${#created_dirs[@]})); then
+		printf '%s\n' "${created_dirs[@]}" >>"$CREATED_DIRS"
+	fi
+	sort -u -o "$CREATED_DIRS" "$CREATED_DIRS"
+
+	log "설정 파일을 깐다 (설치 스크립트는 돌리지 않는다)"
+	cz apply --exclude=scripts --force
+
+	install_tools
+
+	# 이 스크립트를 $ROOT 에 남겨 status·uninstall 을 그 자리에서 부를 수 있게 한다.
+	cp "$SRC/jw-ephemeral" "$ROOT/jw-ephemeral"
+	chmod +x "$ROOT/jw-ephemeral"
+
+	log "끝. 새 로그인 셸을 열면 적용된다: exec \$SHELL -l"
+	log "되돌리기: $ROOT/jw-ephemeral uninstall"
+}
+
+cmd_uninstall() {
+	[[ -d $ROOT ]] || die "설치돼 있지 않다: $ROOT"
+
+	log "chezmoi 가 깐 파일을 지운다"
+	local p
+	while IFS= read -r p; do
+		[[ -n $p ]] && rm -f "$p"
+	done <"$MANAGED"
+
+	if [[ -f $BACKUP ]]; then
+		log "깔기 전 파일을 복원한다"
+		tar -C / -xpf "$BACKUP"
+	fi
+
+	log "깔기 전에 없던 런타임 상태를 지운다"
+	while IFS= read -r p; do
+		[[ -n $p ]] && rm -rf "$p"
+	done <"$ABSENT"
+
+	# $ROOT 를 지우기 전에 목록을 읽어 둔다.
+	local dirs
+	dirs="$(cat "$CREATED_DIRS")"
+	rm -rf "$ROOT"
+
+	# 새로 생긴 디렉터리를 깊은 것부터 지운다. 그 사이 사용자가 파일을 둔 디렉터리는 비어 있지 않아 남는다.
+	printf '%s\n' "$dirs" | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2- |
+		while IFS= read -r p; do
+			[[ -n $p && -d $p ]] && rmdir "$p" 2>/dev/null || true
+		done
+
+	log "끝. 지금 셸에 남은 환경(PATH 등)은 새 로그인 셸을 열면 사라진다"
+}
+
+cmd_status() {
+	if [[ ! -d $ROOT ]]; then
+		echo "설치돼 있지 않다 ($ROOT)"
+		return
+	fi
+	echo "설치 위치:   $ROOT"
+	echo "저장소:      $(git -C "$SRC" log -1 --format='%h %s' 2>/dev/null || echo '?')"
+	echo "깐 파일:     $(wc -l <"$MANAGED" | tr -d ' ')개 (백업: $([[ -f $BACKUP ]] && tar -tf "$BACKUP" | wc -l | tr -d ' ' || echo 0)개)"
+	echo "필수 도구:   $(ls "$BIN" 2>/dev/null | tr '\n' ' ')"
+}
+
+case "${1:-}" in
+install) cmd_install ;;
+uninstall) cmd_uninstall ;;
+status) cmd_status ;;
+*)
+	echo "사용법: jw-ephemeral install | uninstall | status" >&2
+	exit 2
+	;;
+esac

@@ -54,6 +54,12 @@ fi
 
 PATH="$HOME/.local/bin:$PATH"
 
+# 임시 서버 래퍼(저장소 루트의 jw-ephemeral)가 sudo 없이 설치한 필수 도구. 래퍼로 설치한 서버에만 있고,
+# jw-ephemeral uninstall 이 디렉터리째 지운다. 시스템 도구보다 앞에 둔다.
+if [ -d "${XDG_STATE_HOME:-$HOME/.local/state}/jw-ephemeral/bin" ]; then
+	PATH="${XDG_STATE_HOME:-$HOME/.local/state}/jw-ephemeral/bin:$PATH"
+fi
+
 # nvim 설정 고르기: LazyVim(~/.config/nvim)이 없고 플러그인 없는 nvim-lite 만 있으면 그것을 쓴다.
 # features.ide 를 끈 머신(임시 서버·dev container)이 그렇다. NVIM_APPNAME 은 nvim 이 읽을 설정·데이터
 # 디렉터리 이름을 정한다 (:h NVIM_APPNAME). 비대화형(git 의 EDITOR 등)에도 필요해서 profile 에 둔다.
