@@ -6,7 +6,7 @@
 
 # cd를 할 때마다 PATH를 변경하는 hook을 등록한다.
 # 이 방식은 대화형 세션에서만 사용하고,
-# 비대화형 세션에서는 shims 방식을 쓰도록 .zshenv에서 설정함
+# 비대화형 세션에서는 shims 방식을 쓰도록 profile.sh 에서 설정함
 # mise shell activation
 if command -v mise >/dev/null 2>&1; then
 	if [ -n "$ZSH_VERSION" ]; then

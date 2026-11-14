@@ -25,5 +25,10 @@
 .config/nvim/lua/plugins/treesitter.lua
 .config/nvim/lua/plugins/whichkey.lua
 
+# 쓰이지 않아 소스에서 지운 파일 (2026-11-14). 부르는 곳이 없던 zsh autoload 함수와,
+# LazyVim starter 의 예시 spec(첫 줄에서 빈 spec 을 돌려주던 파일).
+.jongwan/share/zsh/site-functions/source_zsh_variants
+.config/nvim/lua/plugins/example.lua
+
 # nvim-lock-push → nvim-extras-push (lazy-lock.json 을 머신 상태로 돌리면서 lazyvim.json 만 커밋하게 됨)
 .jongwan/bin/nvim-lock-push
