@@ -1,6 +1,6 @@
 # shellcheck shell=sh disable=SC1091,SC1090
 
-# # 로그인 쉘의 초기화 스크립트
+# # 로그인 쉘의 초기화 스크립트 (뼈대)
 # - PATH 설정 (외부 도구 찾기)
 # - FPATH 설정 (autoload 함수, 자동완성 함수 찾기)
 # - 그외 여러 가지 환경변수 설정 (여러 도구에서 사용할 변수들)
@@ -8,8 +8,13 @@
 
 # shebang을 이용한 스크립트형 실행 파일이나 외부 도구에서 zsh를 이용해 실행할 때
 # 필요에 따라 -l 옵션만 붙여서 실행하면 이 설정이 적용되도록 하기 위함이다.
-# 대화형 세션에만 유용하고 설정이 무거울 수 있는 것들은 .zshrc에서 처리한다.
+# 대화형 세션에만 유용하고 설정이 무거울 수 있는 것들은 rc.sh 에서 처리한다.
 # 패키지 매니저 설정은 그 패키지로 설치한 도구들을 찾기 위해서 필요하므로 여기서 처리한다.
+#
+# 구조: 이 파일에는 다른 것이 기대는 것만 순서대로 둔다 (기본 PATH → brew → mise → 개인 도구 PATH).
+# 도구 하나의 환경(PATH 한 줄, 환경변수)은 profile.d/<도구>.sh 에 따로 두고, 각 파일이 그 도구가
+# 깔려 있는지 스스로 확인한다. 이 머신에만 필요한 것은 관리 밖 profile.d/<이름>.local.sh 에 둔다.
+# 읽는 순서와 규칙은 load-dir.sh.
 
 # ==================================================
 # 🛠️ 기본 환경변수 설정
@@ -21,13 +26,13 @@
 #export LC_ALL=en_US.UTF-8
 
 # ==================================================
-# 🛠️ PATH 설정 및 도구 초기화 스크립트 로드
+# 🛠️ PATH 설정 (뼈대: 아래 profile.d 의 도구들이 기대는 것)
 # ==================================================
 export PATH
 
 PATH="/usr/local/bin:$PATH"
 
-# Homebrew로 설치된 도구들을 찾을 수 있게 한다.
+# Homebrew로 설치된 도구들을 찾을 수 있게 한다. ($HOMEBREW_PREFIX 도 여기서 정해진다)
 # setup for homebrew
 if [ -f /opt/homebrew/bin/brew ]; then
 	eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -36,7 +41,7 @@ elif [ -f /usr/local/bin/brew ]; then
 fi
 
 # mise로 설치한 도구들을 찾을 수 있게 한다. interactive session이라면 여기 대신
-# .zshrc에서 디렉토리 변경 hook 에서 동적으로 PATH를 처리하도록 한다.
+# rc.sh 에서 디렉토리 변경 hook 에서 동적으로 PATH를 처리하도록 한다.
 # setup for non-interactive sessions of mise
 # https://mise.en.dev/dev-tools/shims.html#how-to-add-mise-shims-to-path
 if command -v mise >/dev/null 2>&1; then
@@ -68,146 +73,19 @@ if [ ! -e "${XDG_CONFIG_HOME:-$HOME/.config}/nvim/init.lua" ] &&
 	export NVIM_APPNAME=nvim-lite
 fi
 
-# swiftly
-if [ -f "$HOME/.swiftly/env.sh" ]; then
-	. "$HOME/.swiftly/env.sh"
-fi
-
-# cargo
-if [ -f "$HOME/.cargo/env" ]; then
-	. "$HOME/.cargo/env"
-fi
-
-# go 명령어가 존재하는지 먼저 확인
-if command -v go >/dev/null 2>&1; then
-	# go env GOPATH 실행 결과를 변수에 저장
-	_target_gopath=$(go env GOPATH 2>/dev/null)
-
-elif command -v mise >/dev/null 2>&1 && mise which go >/dev/null 2>&1; then
-	_target_gopath=$(mise exec go -- go env GOPATH 2>/dev/null)
-fi
-
-# 값이 존재하고 비어있지 않은 경우
-if [ -n "$_target_gopath" ]; then
-	PATH="$_target_gopath/bin:$PATH"
-fi
-unset _target_gopath
-
-# Toolbox App
-if [ -d "$HOME/Library/Application Support/JetBrains/Toolbox/scripts" ]; then
-	PATH="$HOME/Library/Application Support/JetBrains/Toolbox/scripts:$PATH"
-fi
-
-if [ -d "$HOME/.pixi/bin" ]; then
-	PATH="$HOME/.pixi/bin:$PATH"
-fi
-
-if [ -d "$HOMEBREW_PREFIX/share/git-core/contrib/diff-highlight" ]; then
-	PATH="$HOMEBREW_PREFIX/share/git-core/contrib/diff-highlight:$PATH"
-fi
-
-# LM Studio CLI (lms)
-if [ -d "$HOME/.lmstudio/bin" ]; then
-	PATH="$HOME/.lmstudio/bin:$PATH"
-fi
-
-# mozjpeg KEG-only
-if [ -d "$HOMEBREW_PREFIX/opt/mozjpeg/bin" ]; then
-	PATH="$HOMEBREW_PREFIX/opt/mozjpeg/bin:$PATH"
-fi
-
-# Antigravity
-if [ -d "$HOME/.antigravity/antigravity/bin" ]; then
-	PATH="$HOME/.antigravity/antigravity/bin:$PATH"
-fi
-
-if [ -d "$HOME/.bun" ]; then
-	# bun global install
-	export BUN_INSTALL="$HOME/.bun"
-	PATH="$BUN_INSTALL/bin:$PATH"
-
-	# bun completions
-	if [ -s "$HOME/.bun/_bun" ]; then
-		. "$HOME/.bun/_bun"
-	fi
-fi
-
-if [ -d "$HOME/Library/Android/sdk" ]; then
-	# Android SDK tools
-	export ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
-	PATH="$ANDROID_SDK_ROOT/emulator:$PATH"
-	PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
-	PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
-fi
-
-if [ -d "$HOMEBREW_PREFIX/opt/llvm" ]; then
-	# clang, clang++ 등을 연결하기 위함. 최신 기능이 필요없다면, 다음 라인들은 주석처리할 것
-	PATH="$HOMEBREW_PREFIX/opt/llvm/bin:$PATH"
-	export LDFLAGS="-L$HOMEBREW_PREFIX/opt/llvm/lib"
-	export CPPFLAGS="-I$HOMEBREW_PREFIX/opt/llvm/include"
-	export CMAKE_PREFIX_PATH="$HOMEBREW_PREFIX/opt/llvm"
-fi
-
-# Google Cloud SDK
-# The next line updates PATH for the Google Cloud SDK.
-if [ -n "$ZSH_VERSION" ]; then
-	[ -f "$HOME/dev/toolbox/google-cloud-sdk/path.zsh.inc" ] &&
-		. "$HOME/dev/toolbox/google-cloud-sdk/path.zsh.inc"
-elif [ -n "$BASH_VERSION" ]; then
-	[ -f "$HOME/dev/toolbox/google-cloud-sdk/path.bash.inc" ] &&
-		. "$HOME/dev/toolbox/google-cloud-sdk/path.bash.inc"
-fi
-
-if [ -d "$HOME/Library/pnpm" ]; then
-	export PNPM_HOME="$HOME/Library/pnpm"
-	PATH="$PNPM_HOME/bin:$PATH"
-fi
-
 # ==================================================
-# 🛠️ 그 외 환경변수 설정
-# ==================================================
-
-# corepack 설정
-# Disable automatic package.json#packageManager field setting when using corepack
-# https://github.com/nodejs/corepack/blob/main/README.md#environment-variables
-if command -v corepack >/dev/null 2>&1; then
-	export COREPACK_ENABLE_AUTO_PIN=0
-fi
-
-if [ -d "$HOME/vcpkg" ]; then
-	export VCPKG_ROOT="$HOME/vcpkg"
-fi
-
-# ==================================================
-# 🛠️ Zsh 전용 설정 로드
+# 🛠️ Zsh 전용 설정 로드 (fpath)
 # ==================================================
 if [ -n "$ZSH_VERSION" ]; then
 	[ -f "$HOME/.config/shell/profile.zsh" ] && . "$HOME/.config/shell/profile.zsh"
 fi
 
 # ==================================================
-# 🛠️ profile.d/ 스크립트 로드
+# 🛠️ 도구별 환경: profile.d/
 # ==================================================
-
-# profile.d/ 내 파일을 lexical 순서로 순회하며, 확장자에 맞는 shell에서만 sourcing
-# (rc.sh 의 rc.d/ 와 같은 규칙. 머신별 환경변수처럼 비대화형 셸에도 필요한 것을 둔다)
-if [ -d "$HOME/.config/shell/profile.d" ]; then
-	for _profile_file in "$HOME/.config/shell/profile.d"/*; do
-		[ -e "$_profile_file" ] || continue
-		case "$_profile_file" in
-		*.zsh)
-			[ -n "$ZSH_VERSION" ] && . "$_profile_file"
-			;;
-		*.bash)
-			[ -n "$BASH_VERSION" ] && . "$_profile_file"
-			;;
-		*.sh)
-			. "$_profile_file"
-			;;
-		esac
-	done
-	unset _profile_file
-fi
+# PATH 는 나중에 넣은 것이 앞에 오므로, 나중에 읽힌 파일의 도구가 같은 이름의 명령에서 이긴다.
+_jw_dir="$HOME/.config/shell/profile.d"
+. "$HOME/.config/shell/load-dir.sh"
 
 # ==================================================
 # 🛠️ 개인 도구 PATH 설정
