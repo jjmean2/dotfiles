@@ -87,6 +87,10 @@ install_tools() {
 	# 방금 깐 ~/.config/mise 의 shared.toml(언어 런타임)도 읽지 않게 설정 위치를 바꾼다.
 	export MISE_DATA_DIR="$ROOT/mise/data" MISE_CACHE_DIR="$ROOT/mise/cache" MISE_STATE_DIR="$ROOT/mise/state"
 	export MISE_CONFIG_DIR="$ROOT/mise/config" MISE_GLOBAL_CONFIG_FILE="$ROOT/mise/config/config.toml" MISE_YES=1
+	# 서명 검증(sigstore) 캐시처럼 MISE_* 를 따르지 않고 HOME 기준으로 쓰는 것이 있어서 (macOS 에서
+	# ~/Library/Caches/dev.sigstore.sigstore-rust 가 남는 것을 확인), mise 를 돌리는 동안만 HOME 도 바꾼다.
+	local mise_home="$ROOT/mise/home"
+	mkdir -p "$mise_home"
 
 	local entry spec bin dir exe
 	for entry in "${TOOLS[@]}"; do
@@ -102,7 +106,7 @@ install_tools() {
 		fi
 		dir="$ROOT/tools/$bin"
 		log "$bin: $spec 받는 중"
-		(cd "$ROOT" && "$LIBEXEC/mise" install-into "$spec" "$dir" >/dev/null)
+		(cd "$ROOT" && HOME="$mise_home" XDG_CACHE_HOME="$mise_home/.cache" "$LIBEXEC/mise" install-into "$spec" "$dir" >/dev/null)
 		exe="$(find "$dir" -type f -name "$bin" -perm -u+x | head -n 1)"
 		[[ -n $exe ]] || die "$bin: $dir 에서 실행 파일을 찾지 못했다"
 		ln -sf "$exe" "$BIN/$bin"
