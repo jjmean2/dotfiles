@@ -1,0 +1,28 @@
+{{- /* 이 머신에서 켜진 기능 이름의 JSON 목록을 낸다. 기능 선언은 .chezmoidata/packages.yaml 의 packages.features.
+
+       쓰는 법 (설치 스크립트, .chezmoiignore):
+         {{ $on := includeTemplate "enabled-features" . | fromJson }}
+         {{ if has "ide" $on }} ... {{ end }}
+       셸에서 확인: chezmoi execute-template '{{ includeTemplate "enabled-features" . }}'
+
+       규칙
+         1. 머신의 chezmoi.toml 의 [data.features] 에 <이름> = true/false 가 있으면 그 값.
+         2. 없으면 기본값: tier 가 full 이면 minimal 이 아닌 머신에서 켜고, opt-in 이면 끈다.
+       data.minimal 이 없는 config(이 구조 이전에 init 한 머신)는 minimal 이 아닌 것으로 본다. */ -}}
+{{- $minimal := dig "minimal" false . -}}
+{{- $overrides := dig "features" dict . -}}
+{{- $on := list -}}
+{{- range $name, $def := .packages.features -}}
+{{-   $tier := dig "tier" "" $def -}}
+{{-   if not (has $tier (list "full" "opt-in")) -}}
+{{-     fail (printf "packages.features.%s: tier 는 full 또는 opt-in 이어야 한다 (지금: %q)" $name $tier) -}}
+{{-   end -}}
+{{-   $enabled := and (eq $tier "full") (not $minimal) -}}
+{{-   if hasKey $overrides $name -}}
+{{-     $enabled = index $overrides $name -}}
+{{-   end -}}
+{{-   if $enabled -}}
+{{-     $on = append $on $name -}}
+{{-   end -}}
+{{- end -}}
+{{- $on | toJson -}}
