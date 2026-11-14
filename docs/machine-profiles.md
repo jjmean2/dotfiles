@@ -68,7 +68,10 @@ exec $SHELL -l                                        # 적용
 ```
 
 - **sudo 를 쓰지 않는다.** 자기 파일(chezmoi 바이너리, 저장소 사본, chezmoi 설정·상태, 백업, 도구)은 모두 `~/.local/state/jw-ephemeral` 한곳에 둔다. `~/.config/chezmoi`, `~/.local/share/chezmoi` 를 쓰지 않는다.
-- 설정은 `chezmoi apply --exclude=scripts` 로 깐다. 설치 스크립트는 sudo·시스템 패키지를 쓰므로 돌리지 않는다.
+- 설정은 `chezmoi apply --exclude=scripts,remove` 로 깐다. 설치 스크립트는 sudo·시스템 패키지를 쓰므로 돌리지 않고,
+  `.chezmoiremove` 의 삭제(옛 이름 정리용)는 서버에 우연히 같은 경로가 있을 때 백업 없이 지우게 되므로 하지 않는다.
+- 설치가 중간에 실패하면(네트워크 등) 그때까지 한 일을 자동으로 되돌린다.
+- mise 는 실행하는 동안 `HOME` 까지 `~/.local/state/jw-ephemeral` 안으로 돌린다. 서명 검증 캐시처럼 `MISE_*` 설정을 따르지 않는 것이 있어서다.
 - 필수 도구는 `mise install-into` 로 미리 빌드된 바이너리를 받는다 (fzf, rg, fd, jq, nvim). 서버에 이미 있으면(nvim 은 0.10 이상) 그것을 쓴다. fasd 는 스크립트 하나를 받는다. git·tmux 는 서버에 있는 것을 쓴다 (tmux 는 sudo 없이 받을 바이너리가 없다).
 - 도구 디렉터리는 `shell/profile.sh`·`rc.sh` 가 있을 때만 PATH 맨 앞에 넣는다.
 
@@ -100,4 +103,6 @@ init 전에 apply 하면 새 스위치가 없어서 `ide`·`credentials` 묶음�
 - tmux 상태바의 `gitmux` 를 설치 여부로 감싸기. 지금은 서버처럼 gitmux 가 없는 곳에서 git 표시가 비거나 오류가 난다.
 - 셸이 만드는 상태 파일(`.zsh_history`, `.zcompdump`)을 `$XDG_STATE_HOME`·`$XDG_CACHE_HOME` 으로 옮기기.
 - dev container 의 dotfiles 기능이 자동으로 부르는 `install.sh` 를 저장소 루트에 두기.
-- Linux 실제 서버에서 `jw-ephemeral` 시험 (지금까지는 macOS 의 가짜 HOME 에서만 확인했다).
+- Linux 실제 서버에서 `jw-ephemeral` 시험. 지금까지는 macOS 의 가짜 HOME 에서 install → uninstall(문서대로 stdin 실행),
+  설치 중 실패 → 자동 되돌리기를 확인했고, 두 경우 모두 깔기 전과 파일 목록·내용이 같았다.
+- 서버에서 nvim 의 `"+` 복사가 OSC 52 로 로컬 클립보드에 닿는지 확인.
