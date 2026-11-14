@@ -51,13 +51,5 @@ jw_chrome_debug() {
 # 특정 저장소·회사 전용 함수는 여기가 아니라 머신 전용 functions.d/*.local.sh 에 둔다 (아래에서 읽는다).
 # 이 파일은 공개 저장소라 회사 저장소 이름·경로를 쓰지 않는다.
 
-if [ -d "$HOME/.config/shell/functions.d" ]; then
-	while IFS= read -r _fn_file <&3; do
-		case "$_fn_file" in
-		*.sh) . "$_fn_file" ;;
-		*.zsh) [ -n "$ZSH_VERSION" ] && . "$_fn_file" ;;
-		*.bash) [ -n "$BASH_VERSION" ] && . "$_fn_file" ;;
-		esac
-	done 3< <(find -L "$HOME/.config/shell/functions.d" -maxdepth 1 -type f \( -name "*.sh" -o -name "*.zsh" -o -name "*.bash" \) | sort)
-	unset _fn_file
-fi
+_jw_dir="$HOME/.config/shell/functions.d"
+. "$HOME/.config/shell/load-dir.sh"

@@ -180,6 +180,21 @@ nvim +'Lazy restore'                                         # lockfile 의 comm
   그 프로젝트의 `mise.local.toml` + `.lazy.lua` (`.git/info/exclude` 로 무시) 에 둔다. 범위별 절차와 예시는
   [`docs/tool-scope.md`](docs/tool-scope.md).
 - **로컬 오버라이드**: `*.local` 파일은 gitignore 대상이며 chezmoi 가 관리하지 않는다. 머신별 설정은 여기에 둔다.
+- **셸 설정** (`home/dot_config/shell/` → `~/.config/shell/`): `profile.sh`(로그인)와 `rc.sh`(대화형)는 다른 것이 기대는
+  뼈대만 순서대로 갖는다 (기본 PATH → brew → mise, 프롬프트·키·완성 시스템). 나머지는 파일 하나에 하나씩 둔다.
+  | 디렉터리 | 내용 | 읽히는 때 |
+  |---|---|---|
+  | `profile.d/<도구>.sh` | 도구 하나의 환경 (PATH 한 줄, 환경변수) | 로그인 셸. brew·mise 뒤, 개인 도구 PATH 앞 |
+  | `rc.d/<도구>.sh` | 도구 하나의 대화형 초기화 (fzf, fasd 등) | 대화형 셸. 프롬프트와 완성 시스템이 준비된 뒤 |
+  | `terminal/<터미널>.<셸>` | 터미널 하나의 셸 통합 (iTerm2, tmux) | 대화형 셸. 맨 나중 |
+  | `functions.d/` | 함수 모음 | 대화형 셸. 프롬프트보다 앞 |
+
+  각 파일은 자기 조건(도구가 깔렸는지, 그 터미널 안인지)을 스스로 확인하므로 없는 머신에서는 아무 일도 하지 않는다.
+  확장자가 셸을 가린다 (`.sh` 는 zsh·bash 모두, `.zsh` / `.bash` 는 그 셸만). 이 머신에만 필요한 것은 같은 디렉터리에
+  관리 밖 파일 `<이름>.local.sh` 로 둔다. 파일은 이름순으로 읽히고, 조각끼리는 순서에 기대지 않는 것이 원칙이다.
+  PATH 는 나중에 읽힌 것이 이기므로 같은 이름의 명령을 내놓는 도구끼리만 숫자 접두로 먼저 세운다 (지금은
+  `profile.d/10-swiftly.sh` 하나: swiftly 의 clang 이 llvm 의 것을 가리지 않게). 맨 끝이어야 하는 것(SDKMAN)은
+  디렉터리가 아니라 `rc.sh` 끝에 둔다. 읽는 규칙은 `load-dir.sh` 머리말.
 - **초기값만 제공하는 파일**: `create_` 접두사(빈 파일은 `create_empty_`). 대상에 파일이 없을 때만 만들고 이후에는 건드리지 않는다.
   (예: `git config --global` 이 기록하는 `~/.config/git/config`)
 - **개인 도구**: `home/dot_jongwan/bin/` → `~/.jongwan/bin/`. 저장소 밖에서 넣은 도구와 섞여 있어도 chezmoi 는 관리하는 파일만 건드린다.
