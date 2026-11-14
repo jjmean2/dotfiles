@@ -21,18 +21,18 @@
 # mise 의 머신 전용 전역 설정. 공유 기본값은 .config/mise/conf.d/shared.toml 에 있다.
 .config/mise/config.toml
 
-# 머신별 기능(.chezmoidata/packages.yaml 의 packages.<os>.features)을 끈 머신에는 그 설정도 배포하지 않는다.
-# 스위치는 ~/.config/chezmoi/chezmoi.toml 의 [data.features]. 이 파일은 모든 chezmoi 명령에서 평가되므로
-# 스위치가 아직 없는 config(init 다시 하기 전)에서도 깨지지 않게 dig 로 읽고 없으면 끈 것으로 본다.
+# 이 머신에서 꺼진 기능의 전용 설정은 배포하지 않는다. 경로는 .chezmoidata/packages.yaml 의
+# packages.features.<이름>.ignore 에 있고, 켜졌는지는 .chezmoitemplates/enabled-features 가 정한다.
 # 여기서 빠진 경로는 관리만 멈출 뿐 이미 있는 파일을 지우지는 않는다.
-# Karabiner-Elements 는 macOS 전용이라 다른 OS 에서는 스위치가 항상 false 다.
-{{ if not (dig "features" "karabiner" false .) -}}
-.config/karabiner
+# 예: ide 가 꺼진 머신에는 ~/.config/nvim(LazyVim) 없이 플러그인 없는 ~/.config/nvim-lite 만 배포되고,
+# 셸이 그것을 고른다 (shell/profile.sh 의 NVIM_APPNAME).
+{{ $on := includeTemplate "enabled-features" . | fromJson -}}
+{{ range $name, $def := .packages.features -}}
+{{ if not (has $name $on) -}}
+{{ range (dig "ignore" list $def) -}}
+{{ . }}
 {{ end -}}
-# nvim IDE 모드(LazyVim). 끈 머신에서는 플러그인 없는 ~/.config/nvim-lite 만 배포되고, 셸이 그것을 고른다
-# (shell/profile.sh 의 NVIM_APPNAME). 스위치가 없는 config 에서는 지금까지처럼 배포한다 (기본값 true).
-{{ if not (dig "features" "ide" true .) -}}
-.config/nvim
+{{ end -}}
 {{ end -}}
 
 # nvim 상태 파일 두 개.

@@ -39,14 +39,15 @@ brew {{ . | quote }}
 {{ range .packages.darwin.casks -}}
 cask {{ . | quote }}
 {{ end -}}
-{{- /* 이 머신에서 켠 기능(features.<이름>)의 묶음만 넣는다. 스위치가 없으면(init 전 config) 끈 것으로 본다.
-       스위치를 바꾸면 이 렌더링 결과가 달라져 run_onchange 가 다시 돈다. 끈 기능은 지우지 않는다. */ -}}
-{{ range $name, $group := .packages.darwin.features -}}
-{{ if dig "features" $name false $ -}}
-{{ range (dig "brews" list $group) -}}
+{{- /* 이 머신에서 켜진 기능(packages.features, .chezmoitemplates/enabled-features)의 묶음만 넣는다.
+       기능이 켜지거나 꺼지면 이 렌더링 결과가 달라져 run_onchange 가 다시 돈다. 꺼진 기능은 지우지 않는다. */ -}}
+{{ $on := includeTemplate "enabled-features" . | fromJson -}}
+{{ range $name, $def := .packages.features -}}
+{{ if has $name $on -}}
+{{ range (dig "darwin" "brews" list $def) -}}
 brew {{ . | quote }}
 {{ end -}}
-{{ range (dig "casks" list $group) -}}
+{{ range (dig "darwin" "casks" list $def) -}}
 cask {{ . | quote }}
 {{ end -}}
 {{ end -}}
