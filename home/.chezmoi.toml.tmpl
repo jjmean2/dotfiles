@@ -2,9 +2,10 @@
 {{- $email := promptStringOnce . "email" "Email address" -}}
 
 {{- /* 머신 프로필. 이 머신이 무엇인지 한 번 묻고, 아래 기능 스위치의 처음 값을 정하는 데만 쓴다.
-         personal  개인 머신. 전부 켠다
-         work      회사 머신. 개인 credential 도구는 끈다
-         ephemeral 서버·dev container 처럼 잠깐 쓰는 곳. 필수 도구와 설정만
+         personal  개인 머신
+         work      회사 머신. 지금은 기본값이 personal 과 같다 (회사 credential 에도 gh 등이 필요하다).
+                   karabiner 를 물을 때 보안 소프트웨어를 떠올리게 하는 것과 앞으로의 회사 전용 기본값 자리
+         ephemeral 서버·dev container 처럼 잠깐 쓰는 곳. 로그인하지 않으므로 필수 도구와 설정만
        질문 없이 init 하려면 chezmoi init --promptChoice profile=ephemeral 처럼 미리 답을 준다.
        --promptChoice 의 키는 경로가 아니라 질문 문구 자체라서, 문구를 짧은 "profile" 로 고정해 둔다. */ -}}
 {{- $profile := promptChoiceOnce . "profile" "profile" (list "personal" "work" "ephemeral") "personal" -}}
@@ -23,7 +24,7 @@
 {{- end -}}
 {{- $ide := dig "features" "ide" (not $ephemeral) . -}}
 {{- $dev := dig "features" "dev" (not $ephemeral) . -}}
-{{- $credentials := dig "features" "credentials" (eq $profile "personal") . -}}
+{{- $credentials := dig "features" "credentials" (not $ephemeral) . -}}
 
 {{- /* 기본 위치(~/.local/share/chezmoi)가 아닌 곳의 저장소로 init 한 경우에도 그 위치를 유지한다. */ -}}
 sourceDir = {{ .chezmoi.workingTree | quote }}
@@ -40,5 +41,5 @@ sourceDir = {{ .chezmoi.workingTree | quote }}
   ide = {{ $ide }}
   # 언어 런타임: mise 로 shared.toml 의 node·python 등을 설치한다
   dev = {{ $dev }}
-  # 인증이 필요한 개인 도구 (gh 등)
+  # 로그인이 필요한 도구 (gh 등). 회사 머신에서도 회사 계정으로 쓴다. 로그인하지 않는 임시 머신에서만 끈다
   credentials = {{ $credentials }}
