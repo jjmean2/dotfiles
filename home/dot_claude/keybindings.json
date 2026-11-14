@@ -5,7 +5,8 @@
     {
       "context": "Chat",
       "bindings": {
-        "escape": null
+        "escape": null,
+        "meta+q": "chat:cancel"
       }
     }
   ]
