@@ -1,5 +1,7 @@
 {{- /* chezmoi init 시 ~/.config/chezmoi/chezmoi.toml 을 생성하는 템플릿. 설계는 docs/machine-profiles.md */ -}}
 {{- $email := promptStringOnce . "email" "Email address" -}}
+{{- /* git 커밋에 쓰는 이름. 저장소에 개인 이름을 박아 두지 않으려고 이메일처럼 머신에서 묻는다. */ -}}
+{{- $name := promptStringOnce . "name" "Full name (git user.name)" -}}
 
 {{- /* 머신 프로필. 이 머신이 무엇인지 한 번 묻고, 아래 기능 스위치의 처음 값을 정하는 데만 쓴다.
          personal  개인 머신
@@ -31,6 +33,7 @@ sourceDir = {{ .chezmoi.workingTree | quote }}
 
 [data]
   email = {{ $email | quote }}
+  name = {{ $name | quote }}
   # personal | work | ephemeral. 아래 스위치의 처음 값을 정할 때만 쓴다.
   profile = {{ $profile | quote }}
 

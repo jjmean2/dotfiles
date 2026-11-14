@@ -26,7 +26,7 @@ PROMPT_DIRTRIM=4
 PS1=''
 if [[ -n $SSH_CLIENT || -n $SSH_TTY ]]; then
 	# 원격 접속 시에는 <user>@<host>를 추가로 표시
-	# "ljw@jwlee-macbook-air🅑 ~/dev/jwlee/dotfiles (main ✗) $ " 형태
+	# "user@host🅑 ~/dev/dotfiles (main ✗) $ " 형태
 	PS1+='\[\e[32m\]\u\[\e[35m\]@\h\[\e[0m\]'
 fi
 # "🅑 ~/dev/jwlee/dotfiles (main ✗) $ " 형태

@@ -1,5 +1,9 @@
 [user]
-	name = Jongwan Lee
+{{- /* 이름은 chezmoi init 이 묻는다 (.chezmoi.toml.tmpl). init 을 다시 하기 전의 config 에는 없으므로
+       그때는 줄을 쓰지 않는다 (git 이 시스템 계정의 이름을 대신 쓴다). */}}
+{{- with dig "name" "" . }}
+	name = {{ . }}
+{{- end }}
 	email = {{ .email }}
 [alias]
 	co = checkout

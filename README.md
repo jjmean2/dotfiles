@@ -67,7 +67,7 @@ sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --source ~/dev/jwle
 
 ```sh
 # dev container (버리는 환경, sudo 가능)
-sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptChoice profile=ephemeral --promptString "Email address=" jjmean2
+sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptChoice profile=ephemeral --promptString "Email address=" --promptString "Full name (git user.name)=" jjmean2
 # 내 계정으로 접속한 서버 (sudo 없이, 나중에 되돌린다)
 curl -fsSL https://raw.githubusercontent.com/jjmean2/dotfiles/main/jw-ephemeral | bash -s install
 ```
@@ -101,7 +101,7 @@ Stow 로 관리하던 머신은 `stow -D <패키지>` 로 링크를 먼저 걷�
 
 ### 첫 apply 에서 일어나는 일
 
-1. `.chezmoi.toml.tmpl` 이 이메일, 머신 프로필(personal / work / ephemeral), macOS 면 Karabiner 를 쓸지 묻고
+1. `.chezmoi.toml.tmpl` 이 이메일, git 이름, 머신 프로필(personal / work / ephemeral), macOS 면 Karabiner 를 쓸지 묻고
    `~/.config/chezmoi/chezmoi.toml` 을 만든다 (한 번만 묻는다). 나머지 기능 스위치는 프로필로 처음 값이 정해진다.
 2. `run_onchange_before_*`: Homebrew 설치, `packages.yaml` 의 brew/cask 설치 (macOS) 또는 배포판 패키지와 mise 본체 설치 (Linux). 몇 분 걸린다.
 3. `home/` 의 파일이 홈에 배포된다.
@@ -153,7 +153,7 @@ nvim +'Lazy restore'                                         # lockfile 의 comm
 
 ### 자주 하는 조정
 
-- 이메일을 바꾸려면: `chezmoi init --prompt` (다시 묻는다). 옵션 없이 `chezmoi init` 을 다시 실행하면 기존 값을 유지한다.
+- 이메일이나 git 이름을 바꾸려면: `chezmoi init --prompt` (다시 묻는다). 옵션 없이 `chezmoi init` 을 다시 실행하면 기존 값을 유지한다.
 - 기능 스위치를 바꾸려면: `~/.config/chezmoi/chezmoi.toml` 의 `[data.features]` 값을 고치고 `chezmoi apply`
   (또는 `chezmoi init --prompt` 로 전부 다시 답한다). 아래 "머신별 기능" 규칙 참고.
 - `config file template has changed` 경고가 나오면 `chezmoi init` 을 실행한다. 새로 생긴 질문만 묻고 기존 답은 유지한다.

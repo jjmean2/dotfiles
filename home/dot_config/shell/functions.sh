@@ -48,24 +48,8 @@ jw_chrome_debug() {
 	/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --user-data-dir=remote-profile "$@"
 }
 
-sq_prepare_k2_web() {
-	REPO_ROOT="$(basename "$(git rev-parse --show-toplevel)")"
-	if [[ "$REPO_ROOT" != *squarelab ]]; then
-		echo You\'re not in squarelab repo
-		return 1
-	fi
-	# gd k2_web:cpenv && yarn workspace web start
-	gd k2_web:cpenv && yarn --cwd client/k2_web start
-}
-
-sq_with_https() {
-	local CRT_ROOT=/Users/ljw/squarelab/.keystore/local-dev-server-cert
-
-	HTTPS=true \
-		SSL_KEY_FILE="$CRT_ROOT/key.pem" \
-		SSL_CRT_FILE="$CRT_ROOT/cert.pem" \
-		"$@"
-}
+# 특정 저장소·회사 전용 함수는 여기가 아니라 머신 전용 functions.d/*.local.sh 에 둔다 (아래에서 읽는다).
+# 이 파일은 공개 저장소라 회사 저장소 이름·경로를 쓰지 않는다.
 
 if [ -d "$HOME/.config/shell/functions.d" ]; then
 	while IFS= read -r _fn_file <&3; do
