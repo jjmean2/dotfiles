@@ -166,6 +166,9 @@ Mason 이 까는 LSP 서버, pacman(Arch)은 돌려 보지 못했다.
 
 - tree-sitter 의 최신 바이너리는 glibc 2.39 이상이 필요하다. 그보다 오래된 배포판(Debian 12, Ubuntu 22.04)에서는 0.25.10 을
   받는다. nvim-treesitter 가 더 새 tree-sitter 를 요구하게 되면 그 배포판들에서는 파서를 빌드하지 못하게 된다.
+- `ide` 의 파서 빌드에는 C 컴파일러가 필요하다. 컨테이너 이미지에 없고 sudo 도 쓸 수 없으면(gcc 를 깔 수 없으면) 파서를 빌드하지 못한다.
+- dev container 에서 git 신원이 어디서 오는지는 확인하지 못했다. `install.sh` 가 도는 시점에 컨테이너에 git 설정이 없으면 신원이
+  비고, 첫 커밋 때 git 이 정하라고 알려 준다.
 - Alpine 에서 sudo 도 root 도 없으면 nvim 과 bash 를 깔 수 없다. bash 가 없으면 이 저장소의 bash 스크립트
   (`40-reload-tmux` 등)가 실패해서 `chezmoi apply` 가 실패로 끝난다 (설정 파일은 깔린 뒤다).
 - 패키지 매니저로 대신 깐 도구는 배포판의 버전이라 오래됐을 수 있다 (nvim-lite 는 nvim 0.10 이상이 필요하다).

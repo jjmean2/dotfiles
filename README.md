@@ -96,7 +96,8 @@ git clone https://github.com/jjmean2/dotfiles.git ~/dotfiles
 - 처음 한 번만 쓴다. 이미 chezmoi 로 init 한 곳에서는 아무것도 하지 않는다. 그 뒤로는 `chezmoi apply`, `chezmoi update` 를 쓴다.
 - 이름과 이메일은 묻지 않는다. 컨테이너에 git 설정이 이미 있으면 그 값을 쓰고, 없으면 첫 커밋 때 git 이 정하라고 알려 준다
   (`git config --global user.name …`, `user.email …`).
-- sudo 가 되면 패키지 매니저도 쓴다 (gcc 등). 안 되면 그 몇 가지만 빠진다.
+- sudo 가 되면 패키지 매니저도 쓴다 (gcc 등). 안 되면 그 몇 가지만 빠진다. 다만 컨테이너에 C 컴파일러가 없는데 sudo 도 안 되면
+  nvim 이 treesitter 파서를 빌드하지 못한다.
 
 ### 경우 5. 내 계정으로 접속한 서버
 
