@@ -17,7 +17,7 @@ set -euo pipefail
 # 그 파일의 해시를 박아 둔다.
 # source hash: {{ include "dot_config/mise/conf.d/shared.toml" | sha256sum }}
 
-# mise 본체는 before 스크립트가 설치한다 (macOS: brew, Linux: ~/.local/bin). PATH 에 아직
+# mise 본체는 10-install-packages 스크립트가 설치한다 (macOS: brew, Linux: ~/.local/bin). PATH 에 아직
 # 없을 수 있으므로 알려진 위치를 직접 찾는다.
 find_mise() {
 	if command -v mise &>/dev/null; then

@@ -1,0 +1,11 @@
+# 저장소 밖에서 받아 오는 파일. chezmoi apply 가 URL 에서 받아 대상 경로에 둔다.
+# 받은 것은 chezmoi 캐시(~/.cache/chezmoi)에 남아서 다음 apply 부터는 네트워크를 쓰지 않는다.
+#
+# fasd: 자주 간 디렉터리·파일로 건너뛰기 (shell/rc.d/fasd.sh). 셸 스크립트 파일 하나다.
+# 저장소가 보관(archive) 상태라 패키지 매니저들에서 빠져서, 마지막 커밋의 파일을 직접 받는다.
+# 커밋과 체크섬을 고정해 두었다. 받은 내용이 다르면 apply 가 실패한다.
+[".jongwan/bin/fasd"]
+    type = "file"
+    url = "https://raw.githubusercontent.com/clvv/fasd/90b531a5daaa545c74c7d98974b54cbdb92659fc/fasd"
+    executable = true
+    checksum.sha256 = "7ceb0974f93d52abc9867b4bf411e824c674028e1702c75d98c2f55b66dfb35c"

@@ -22,7 +22,7 @@
 ### 사전 준비
 
 - macOS: `xcode-select --install` (git). Homebrew 는 설치 스크립트가 없으면 깔아 준다.
-- Linux: `curl`, `git`, `sudo`.
+- Linux: `curl`, `git`. sudo 는 있으면 쓴다 (없으면 패키지 매니저로 까는 몇 가지만 빠진다. [`docs/machines.md`](docs/machines.md) 의 "Linux").
 - 저장소는 공개라 읽기에는 인증이 필요 없다. 나중에 push 하려면 SSH 키를 등록하고 원격을
   `git@github.com:jjmean2/dotfiles.git` 으로 바꾼다 (`git remote set-url origin ...`).
 
@@ -103,9 +103,9 @@ Stow 로 관리하던 머신은 `stow -D <패키지>` 로 링크를 먼저 걷�
 
 1. `.chezmoi.toml.tmpl` 이 이메일, git 이름, 머신 등급(minimal 인지), macOS 면 Karabiner 를 쓸지 묻고
    `~/.config/chezmoi/chezmoi.toml` 을 만든다 (한 번만 묻는다). 나머지 기능은 등급에 따라 저장소의 선언대로 켜진다.
-2. `run_onchange_before_*`: Homebrew 설치, `packages.yaml` 의 brew/cask 설치 (macOS) 또는 배포판 패키지와 mise 본체 설치 (Linux). 몇 분 걸린다.
-3. `home/` 의 파일이 홈에 배포된다.
-4. `run_onchange_after_*`: `mise install` 로 `conf.d/shared.toml` 의 런타임 설치, fasd, (macOS) tmux/ghostty terminfo.
+2. `run_onchange_before_*` (macOS): Homebrew 설치, `packages.yaml` 의 brew/cask 설치. 몇 분 걸린다.
+3. `home/` 의 파일이 홈에 배포된다. fasd 스크립트도 이때 받는다 (`home/.chezmoiexternal.toml`).
+4. `run_onchange_after_*`: (Linux) mise 로 필수 도구를 `~/.local` 에 받고 나머지는 배포판 패키지로 설치, `mise install` 로 `conf.d/shared.toml` 의 런타임 설치, (macOS) tmux/ghostty terminfo.
 5. 이후 `chezmoi apply` 는 바뀐 파일만 다시 쓰고, 스크립트는 내용이 바뀐 것만 다시 돈다.
 
 ### 설치 후 확인

@@ -59,6 +59,27 @@
 | 묶음 (회사 머신에만 까는 도구 등) | `tier: opt-in` 기능. 그 머신의 `[data.features]` 에 `true` |
 | 한 머신 안에서 저장소마다 다른 git 신원 | 관리 밖 `~/.config/git/config` 에 `includeIf "gitdir:~/work/"` 로 머신 전용 파일을 include |
 
+## Linux: 도구는 사용자 영역에 받는다
+
+Linux 는 dev container 나 서버라서 배포판과 권한을 고를 수 없을 때가 많다. 그래서 필수 도구를 배포판 패키지가 아니라
+미리 빌드된 바이너리로 받는다. 목록은 `packages.yaml` 의 `packages.linux` 와 기능의 `linux:` 묶음이다.
+
+| 종류 | 무엇 | 어떻게 |
+|---|---|---|
+| `tools` | tmux, fzf, rg, fd, jq, nvim (기능: gh, tree-sitter) | mise 가 `~/.local/opt/<이름>` 에 받고 `~/.local/bin/<이름>` 으로 링크한다. sudo 가 필요 없다 |
+| `pkgs` | bash, bash-completion, gettext (기능 `ide`: gcc, libc6-dev) | 패키지 매니저(apt, apk, dnf, pacman). root 이거나 sudo 를 쓸 수 있을 때만 |
+| fasd | 셸 스크립트 파일 하나 | `home/.chezmoiexternal.toml` 이 받아 `~/.jongwan/bin/fasd` 에 둔다 (macOS 도 같다) |
+
+- **배포판과 상관없이 같은 최신 버전**이 깔린다. 시스템에 같은 도구가 있어도 받고, `~/.local/bin` 이 PATH 앞이라 받은 것이 쓰인다.
+- **받은 바이너리가 실행되지 않는 시스템**(Alpine 의 musl, 오래된 glibc)에서는 그 도구만 `pkg` 이름으로 패키지 매니저에 넘긴다.
+  Alpine arm64 에서는 rg 와 nvim 이 이렇게 apk 로 깔린다. 이때는 배포판의 버전이 깔리므로 오래된 것일 수 있다.
+- **sudo 를 쓸 수 없으면** `pkgs` 와 위 대체 설치만 빠진다. 무엇이 빠졌는지 알리고 apply 는 끝까지 간다.
+- **mise 로 받기에 실패하면**(네트워크 등) 설치 스크립트가 실패로 끝난다. 설정 파일은 그 전에 이미 깔려 있다 (Linux 의 설치
+  스크립트는 파일 적용 뒤에 돈다). `chezmoi apply` 를 다시 실행하면 그 스크립트가 다시 돌고, 이미 받은 도구는 건너뛴다.
+- `pkgs` 의 이름은 apt 기준이다. 다른 배포판에서 이름이 다른 패키지(`libc6-dev`)는 건너뛴다.
+- 받아 둔 도구를 새 버전으로 바꾸려면 `~/.local/bin/<이름>` 을 지우고 `mise install-into <mise 이름>@latest ~/.local/opt/<이름>`.
+- 서버용 `jw-ephemeral` 도 같은 `tools` 목록을 읽어 자기 디렉터리 안에 받는다 (아래 "임시 머신").
+
 ## nvim 두 모드
 
 | | 설정 위치 | 플러그인 | 언제 |
@@ -104,12 +125,14 @@ exec $SHELL -l                                        # 적용
 ~/.local/state/jw-ephemeral/jw-ephemeral uninstall    # 되돌리기
 ```
 
-- **sudo 를 쓰지 않는다.** 자기 파일(chezmoi 바이너리, 저장소 사본, chezmoi 설정·상태, 백업, 도구)은 모두 `~/.local/state/jw-ephemeral` 한곳에 둔다. `~/.config/chezmoi`, `~/.local/share/chezmoi` 를 쓰지 않는다.
-- 설정은 `chezmoi apply --exclude=scripts,remove` 로 깐다. 설치 스크립트는 sudo·시스템 패키지를 쓰므로 돌리지 않고,
+- **sudo 를 쓰지 않는다.** 자기 파일(chezmoi 바이너리, 저장소 사본, chezmoi 설정·상태·캐시, 백업, 도구)은 모두 `~/.local/state/jw-ephemeral` 한곳에 둔다. `~/.config/chezmoi`, `~/.local/share/chezmoi`, `~/.cache/chezmoi` 를 쓰지 않는다.
+- 설정은 `chezmoi apply --exclude=scripts,remove` 로 깐다. 설치 스크립트는 `~/.local` 에 도구를 깔고 시스템 패키지를 건드리므로 돌리지 않고,
   `.chezmoiremove` 의 삭제(옛 이름 정리용)는 서버에 우연히 같은 경로가 있을 때 백업 없이 지우게 되므로 하지 않는다.
 - 설치가 중간에 실패하면(네트워크 등) 그때까지 한 일을 자동으로 되돌린다.
 - mise 는 실행하는 동안 `HOME` 까지 `~/.local/state/jw-ephemeral` 안으로 돌린다. 서명 검증 캐시처럼 `MISE_*` 설정을 따르지 않는 것이 있어서다.
-- 필수 도구는 `mise install-into` 로 미리 빌드된 바이너리를 받는다 (fzf, rg, fd, jq, nvim). 서버에 이미 있으면(nvim 은 0.10 이상) 그것을 쓴다. fasd 는 스크립트 하나를 받는다. git·tmux 는 서버에 있는 것을 쓴다 (tmux 는 sudo 없이 받을 바이너리가 없다).
+- 필수 도구는 `mise install-into` 로 미리 빌드된 바이너리를 받는다. 목록은 일반 Linux 설치와 같은 `packages.yaml` 의 `packages.linux.tools`
+  (tmux, fzf, rg, fd, jq, nvim)다. 서버에 이미 있으면(nvim 은 0.10 이상) 받지 않고 그것을 쓴다. 받은 것이 그 서버에서 실행되지
+  않으면(musl 등) 그 도구 없이 쓴다. fasd 는 chezmoi 가 까는 파일이라 다른 설정 파일과 같이 깔리고 지워진다. git 은 서버에 있는 것을 쓴다.
 - 도구 디렉터리는 `shell/profile.sh`·`rc.sh` 가 있을 때만 PATH 맨 앞에 넣는다.
 
 **되돌리기의 범위**
