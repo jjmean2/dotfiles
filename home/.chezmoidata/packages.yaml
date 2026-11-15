@@ -1,4 +1,4 @@
-# .chezmoiscripts/run_onchange_before_10-install-packages-*.sh.tmpl 에서 읽는 설치 목록.
+# .chezmoiscripts 의 설치 스크립트(10-install-packages-darwin, 10-install-packages-linux)가 읽는 설치 목록.
 # 목록이 바뀌면 스크립트 내용도 바뀌므로, 다음 chezmoi apply 때 설치 스크립트가 다시 실행된다.
 #
 # 두 층으로 나뉜다. 설계는 docs/machines.md.
