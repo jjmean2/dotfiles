@@ -12,8 +12,9 @@ set -eu
 #   pkgs   받을 바이너리가 없는 것만 패키지 매니저(apt, apk, dnf, pacman)로 깐다. root 이거나 sudo 를 쓸 수
 #          있을 때만 하고, 못 깔면 알리고 넘어간다.
 #
-# 받은 바이너리가 이 시스템에서 실행되지 않으면(Alpine 의 musl, 오래된 glibc) 지우고, 시스템에 그 도구가 없을 때만
-# 그 도구의 pkg 이름을 패키지 매니저로 넘긴다.
+# 받은 바이너리가 이 시스템에서 실행되지 않으면(Alpine 의 musl, 오래된 glibc) 지운다. 그 도구에 compat 버전이
+# 적혀 있으면 그 버전을 한 번 더 받아 보고(오래된 glibc 에서 도는 마지막 버전), 그래도 안 되면 시스템에 그 도구가
+# 없을 때만 pkg 이름을 패키지 매니저로 넘긴다.
 #
 # 끝나는 코드: mise 로 받기에 실패한 도구(네트워크 등)가 있을 때만 실패로 끝난다. chezmoi 는 실패한 스크립트를
 # 다음 apply 때 다시 돌리고, 이미 받은 도구는 건너뛴다. 그 밖의 문제(sudo 없음, 배포판에 없는 패키지 이름)는
@@ -43,10 +44,10 @@ export MISE_YES=1
 {{-   end }}
 {{- end }}
 
-# 한 줄에 "실행 파일 이름, mise 도구 이름, 대체 패키지 이름"
+# 한 줄에 "실행 파일 이름, mise 도구 이름, 대체 패키지 이름, compat 버전(없으면 -)"
 tools='
 {{- range $tools }}
-{{ .bin }} {{ dig "mise" .bin . }} {{ dig "pkg" .bin . }}
+{{ .bin }} {{ dig "mise" .bin . }} {{ dig "pkg" .bin . }} {{ dig "compat" "-" . }}
 {{- end }}
 '
 pkgs='{{ $pkgs | join " " }}'
@@ -87,23 +88,35 @@ out="$(mktemp)"
 trap 'rm -f "$out"' EXIT
 failed=""   # 받기에 실패한 도구. 있으면 실패로 끝내 다음 apply 가 다시 시도하게 한다
 fallback="" # 받은 바이너리가 실행되지 않아 패키지 매니저로 넘길 패키지
-while read -r bin spec pkg; do
+while read -r bin spec pkg compat; do
 	[ -n "$bin" ] || continue
 	[ -x "$BIN/$bin" ] && continue
 	dir="$OPT/$bin"
-	rm -rf "$dir"
-	if ! mise install-into "$spec@latest" "$dir" >"$out" 2>&1; then
-		log "$bin: $spec 을 받지 못했다: $(grep -v '^[[:space:]]*$' "$out" | tail -n 1)"
+	state="" # ok: 받아서 링크했다, failed: 받기에 실패했다, 빈 값: 받았지만 실행되지 않는다
+	for ver in latest "$compat"; do
+		[ "$ver" != - ] || continue
 		rm -rf "$dir"
-		failed="$failed $bin"
-		continue
-	fi
-	exe="$(find -L "$dir" -type f -name "$bin" -perm -u+x | head -n 1)"
-	if [ -n "$exe" ] && runs "$exe"; then
-		ln -sf "$exe" "$BIN/$bin"
-		log "$bin: $spec → $BIN/$bin"
-	else
+		if ! mise install-into "$spec@$ver" "$dir" >"$out" 2>&1; then
+			log "$bin: $spec@$ver 을 받지 못했다: $(grep -v '^[[:space:]]*$' "$out" | tail -n 1)"
+			rm -rf "$dir"
+			failed="$failed $bin"
+			state=failed
+			break
+		fi
+		exe="$(find -L "$dir" -type f -name "$bin" -perm -u+x | head -n 1)"
+		if [ -n "$exe" ] && runs "$exe"; then
+			ln -sf "$exe" "$BIN/$bin"
+			if [ "$ver" = latest ]; then
+				log "$bin: $spec → $BIN/$bin"
+			else
+				log "$bin: 최신 바이너리가 이 시스템에서 실행되지 않아 $spec@$ver 을 받았다 → $BIN/$bin"
+			fi
+			state=ok
+			break
+		fi
 		rm -rf "$dir"
+	done
+	if [ -z "$state" ]; then
 		if has "$bin"; then
 			log "$bin: 받은 바이너리가 이 시스템에서 실행되지 않는다. 시스템의 $(command -v "$bin") 을 쓴다"
 		else

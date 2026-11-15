@@ -39,6 +39,8 @@ packages:
     #   mise  mise 도구 이름 (mise registry 로 찾는다). 생략하면 bin 과 같다
     #   pkg   받은 바이너리가 이 시스템에서 실행되지 않을 때(Alpine 의 musl, 오래된 glibc) 대신 패키지 매니저로
     #         깔 패키지 이름. 생략하면 bin 과 같다
+    #   compat  (선택) 최신 바이너리가 실행되지 않을 때 pkg 보다 먼저 받아 볼 버전. 최신 릴리스가 새 glibc 를
+    #         요구하는 도구에만 적는다
     tools:
       - bin: tmux
         mise: aqua:tmux/tmux-builds
@@ -104,6 +106,9 @@ packages:
         tools:
           - bin: tree-sitter
             pkg: tree-sitter-cli
+            # 0.26 부터의 바이너리는 glibc 2.39 이상이 필요하다 (Debian 12 는 2.36, Ubuntu 22.04 는 2.35).
+            # 0.25.10 은 거기서도 실행되고 nvim-treesitter 가 이것으로 파서를 빌드한다 (2026-11-15 확인)
+            compat: 0.25.10
         pkgs:
           # nvim-treesitter 가 파서를 빌드할 때 C 컴파일러와 libc 헤더를 쓴다
           - gcc
