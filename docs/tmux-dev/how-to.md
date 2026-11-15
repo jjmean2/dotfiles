@@ -409,7 +409,9 @@ tmux 밖에서 `tmux-dev worktree <브랜치>` 를 실행하면 윈도우 없이
 
 ## 다른 tmux 설정에 설치하기
 
-tmux-dev 는 tmux 플러그인 API 가 아니라 `run-shell` 한 줄로 동작한다. 이 dotfiles 없이 쓰려면:
+tmux-dev 는 tmux 플러그인 API 가 아니라 `run-shell` 한 줄로 동작한다. "플러그인" 의 실체는 tmux.conf 의 `run-shell` 한 줄이
+진입 스크립트 `tmux-dev.tmux` 를 돌리고 그 스크립트가 `bind-key` 를 부르는 것이다 (TPM 은 그 위의 설치기일 뿐).
+이 dotfiles 없이 쓰려면:
 
 1. `home/dot_config/tmux/plugins/tmux-dev/` 를 `~/.config/tmux/plugins/tmux-dev/` 로 복사한다.
    chezmoi 접두어를 직접 벗긴다: `executable_` 로 시작하는 파일은 접두어를 떼고 실행 권한을 준다.

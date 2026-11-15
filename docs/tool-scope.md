@@ -64,7 +64,7 @@ nvim-extras-push "chore(nvim): lang.python extra 켜기"   # lazyvim.json 만 �
 ```
 
 다른 머신: `chezmoi git -- pull --ff-only` → `nvim` (새 extra 의 플러그인이 설치된다). 플러그인 버전(lockfile)은
-머신마다 따로라 맞추지 않는다 (README 의 nvim 절).
+머신마다 따로라 맞추지 않는다 ([`nvim.md`](nvim.md)).
 
 ### 예 A-2. 모든 머신에 런타임 추가
 
