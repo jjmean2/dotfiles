@@ -88,6 +88,10 @@ sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptBool minimal=false 
 minimal 이면 필수 도구만 apt 등으로 설치되고, LazyVim·언어 런타임·gh 는 빠진다. 기능 하나만 더하려면 init 뒤에
 `chezmoi edit-config` 로 `[data.features]` 에 `ide = true` 처럼 적고 `chezmoi apply`.
 
+미검증 (2026-11-15): 두 명령 모두 Linux 에서 실제로 돌려 보지 않았다. macOS 에서 질문 없이 init 되는 것과 등급별로 켜지는
+기능·렌더링되는 설치 목록만 확인했다. 특히 `minimal=false` 는 Linux 에서 `ide`·`credentials` 묶음(tree-sitter-cli, gh)을
+배포판 패키지로 설치하려 하는데, 그 이름이 모든 배포판에 있는지는 확인하지 않았다.
+
 ### 내 계정으로 접속하는 서버 — 되돌려야 하는 환경
 
 chezmoi 에는 깔기 전으로 되돌리는 기능이 없다 (`chezmoi purge` 는 chezmoi 자신만 지우고 깐 파일은 남긴다). 그래서 저장소
