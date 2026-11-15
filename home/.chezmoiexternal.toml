@@ -1,5 +1,7 @@
 # 저장소 밖에서 받아 오는 파일. chezmoi apply 가 URL 에서 받아 대상 경로에 둔다.
 # 받은 것은 chezmoi 캐시(~/.cache/chezmoi)에 남아서 다음 apply 부터는 네트워크를 쓰지 않는다.
+# 처음에 받지 못하면(네트워크, 차단된 주소) apply 전체가 멈춘다. 그때는 `chezmoi apply --exclude=externals` 로
+# 나머지를 먼저 적용할 수 있다.
 #
 # fasd: 자주 간 디렉터리·파일로 건너뛰기 (shell/rc.d/fasd.sh). 셸 스크립트 파일 하나다.
 # 저장소가 보관(archive) 상태라 패키지 매니저들에서 빠져서, 마지막 커밋의 파일을 직접 받는다.

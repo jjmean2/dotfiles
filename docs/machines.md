@@ -77,7 +77,8 @@ Linux 는 dev container 나 서버라서 배포판과 권한을 고를 수 없�
 - **mise 로 받기에 실패하면**(네트워크 등) 설치 스크립트가 실패로 끝난다. 설정 파일은 그 전에 이미 깔려 있다 (Linux 의 설치
   스크립트는 파일 적용 뒤에 돈다). `chezmoi apply` 를 다시 실행하면 그 스크립트가 다시 돌고, 이미 받은 도구는 건너뛴다.
 - `pkgs` 의 이름은 apt 기준이다. 다른 배포판에서 이름이 다른 패키지(`libc6-dev`)는 건너뛴다.
-- 받아 둔 도구를 새 버전으로 바꾸려면 `~/.local/bin/<이름>` 을 지우고 `mise install-into <mise 이름>@latest ~/.local/opt/<이름>`.
+- 받아 둔 도구를 새 버전으로 바꾸려면 `~/.local/bin/<이름>` 을 지우고 설치 스크립트를 다시 돌린다:
+  `chezmoi state delete-bucket --bucket=entryState && chezmoi apply`. `~/.local/bin` 에 없는 도구만 다시 받는다.
 - 서버용 `jw-ephemeral` 도 같은 `tools` 목록을 읽어 자기 디렉터리 안에 받는다 (아래 "임시 머신").
 
 ## nvim 두 모드
@@ -106,12 +107,28 @@ sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptBool minimal=true -
 sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptBool minimal=false --promptString "Email address=" --promptString "Full name (git user.name)=" jjmean2
 ```
 
-minimal 이면 필수 도구만 apt 등으로 설치되고, LazyVim·언어 런타임·gh 는 빠진다. 기능 하나만 더하려면 init 뒤에
-`chezmoi edit-config` 로 `[data.features]` 에 `ide = true` 처럼 적고 `chezmoi apply`.
+minimal 이면 필수 도구만 깔리고(위 "Linux: 도구는 사용자 영역에 받는다"), LazyVim·언어 런타임·gh 는 빠진다. 기능 하나만 더하려면
+init 뒤에 `chezmoi edit-config` 로 `[data.features]` 에 `ide = true` 처럼 적고 `chezmoi apply`.
 
-미검증 (2026-11-15): 두 명령 모두 Linux 에서 실제로 돌려 보지 않았다. macOS 에서 질문 없이 init 되는 것과 등급별로 켜지는
-기능·렌더링되는 설치 목록만 확인했다. 특히 `minimal=false` 는 Linux 에서 `ide`·`credentials` 묶음(tree-sitter-cli, gh)을
-배포판 패키지로 설치하려 하는데, 그 이름이 모든 배포판에 있는지는 확인하지 않았다.
+**컨테이너에서 확인한 것** (2026-11-15, Docker. 저장소를 `--source` 로 준 것만 다르고 나머지는 위 명령과 같다)
+
+| 환경 | 결과 |
+|---|---|
+| Debian 13, Ubuntu 24.04, Fedora (minimal) | 필수 도구 전부 `~/.local` 에. 로그인 셸에서 찾히고, tmux 가 이 저장소의 `tmux.conf` 로 붙고, nvim-lite 가 오류 없이 뜬다 |
+| Alpine 3.22 (minimal, root) | nvim 은 apk 로 (arm64 는 rg 도). bash 가 없는 이미지라 apk 로 깐다 |
+| sudo 없는 사용자 (Debian 12, minimal) | 도구는 전부 깔리고 `pkgs`(bash-completion, gettext)만 빠진다 |
+| Debian 13 (full 에서 `dev` 만 끈 것) | gh·tree-sitter 는 `~/.local` 에, gcc·libc6-dev 는 apt. LazyVim 이 플러그인을 받고 nvim-treesitter 가 파서를 빌드한다 |
+
+`dev`(언어 런타임)는 Debian 13 에서 go·node·python·ruby 가 깔리는 것까지 보았다. deno 는 내려받기가 느려 끝까지 기다리지 않았다.
+Mason 이 까는 LSP 서버, pacman(Arch)은 돌려 보지 못했다.
+
+**알려진 한계**
+
+- tree-sitter 바이너리는 glibc 2.39 이상이 필요하다. Debian 12(glibc 2.36)에서는 실행되지 않고 배포판 패키지도 없어서,
+  `ide` 를 켜도 nvim-treesitter 가 파서를 빌드하지 못한다. 다른 도구는 Debian 12 에서도 된다.
+- Alpine 에서 sudo 도 root 도 없으면 nvim 과 bash 를 깔 수 없다. bash 가 없으면 이 저장소의 bash 스크립트
+  (`40-reload-tmux` 등)가 실패해서 `chezmoi apply` 가 실패로 끝난다 (설정 파일은 깔린 뒤다).
+- 패키지 매니저로 대신 깐 도구는 배포판의 버전이라 오래됐을 수 있다 (nvim-lite 는 nvim 0.10 이상이 필요하다).
 
 ### 내 계정으로 접속하는 서버 — 되돌려야 하는 환경
 
@@ -165,6 +182,7 @@ chezmoi apply
 - tmux 상태바의 `gitmux` 를 설치 여부로 감싸기. 지금은 서버처럼 gitmux 가 없는 곳에서 git 표시가 비거나 오류가 난다.
 - 셸이 만드는 상태 파일(`.zsh_history`, `.zcompdump`)을 `$XDG_STATE_HOME`·`$XDG_CACHE_HOME` 으로 옮기기.
 - dev container 의 dotfiles 기능이 자동으로 부르는 `install.sh` 를 저장소 루트에 두기.
-- Linux 실제 서버에서 `jw-ephemeral` 시험. 지금까지는 macOS 의 가짜 HOME 에서 install → uninstall(문서대로 stdin 실행),
-  설치 중 실패 → 자동 되돌리기를 확인했고, 두 경우 모두 깔기 전과 파일 목록·내용이 같았다.
+- 실제 서버에서 `jw-ephemeral` 시험. 지금까지는 Docker 컨테이너(Debian 13, Alpine 3.22)의 sudo 없는 사용자로
+  install → uninstall 을 돌려 깔기 전과 홈의 파일 내용·디렉터리 목록이 같은 것을 확인했다 (2026-11-15). 그 전에는 macOS 의
+  가짜 HOME 에서 설치 중 실패 → 자동 되돌리기도 확인했다. 오래된 배포판의 서버, 서버에 있는 tmux 가 오래된 경우는 아직이다.
 - 서버에서 nvim 의 `"+` 복사가 OSC 52 로 로컬 클립보드에 닿는지 확인.
