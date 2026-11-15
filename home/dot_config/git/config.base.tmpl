@@ -1,10 +1,15 @@
 [user]
-{{- /* 이름은 chezmoi init 이 묻는다 (.chezmoi.toml.tmpl). init 을 다시 하기 전의 config 에는 없으므로
-       그때는 줄을 쓰지 않는다 (git 이 시스템 계정의 이름을 대신 쓴다). */}}
+{{- /* 이름과 이메일은 chezmoi init 이 묻는다 (.chezmoi.toml.tmpl). 값이 비어 있으면 그 줄을 쓰지 않는다.
+       - 이름: init 을 다시 하기 전의 config 에는 없다. 그때는 git 이 시스템 계정의 이름을 대신 쓴다.
+       - 이메일: 질문 없이 깐 곳(dev container 의 install.sh, 서버의 jw-ephemeral)에서는 빈 값일 수 있다.
+         `email =` 처럼 빈 줄을 쓰면 git 이 빈 이메일을 정해진 값으로 받아들여 그대로 커밋에 넣는다.
+         줄이 없으면 다른 git 설정(~/.gitconfig 등)의 값을 쓰고, 그것도 없으면 git 의 기본 동작을 따른다. */}}
 {{- with dig "name" "" . }}
 	name = {{ . }}
 {{- end }}
-	email = {{ .email }}
+{{- with dig "email" "" . }}
+	email = {{ . }}
+{{- end }}
 [alias]
 	co = checkout
 	lg = log --graph --pretty=compact
