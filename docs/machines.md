@@ -73,6 +73,8 @@ Linux 는 dev container 나 서버라서 배포판과 권한을 고를 수 없�
 - **배포판과 상관없이 같은 최신 버전**이 깔린다. 시스템에 같은 도구가 있어도 받고, `~/.local/bin` 이 PATH 앞이라 받은 것이 쓰인다.
 - **받은 바이너리가 실행되지 않는 시스템**(Alpine 의 musl, 오래된 glibc)에서는 그 도구만 `pkg` 이름으로 패키지 매니저에 넘긴다.
   Alpine arm64 에서는 rg 와 nvim 이 이렇게 apk 로 깔린다. 이때는 배포판의 버전이 깔리므로 오래된 것일 수 있다.
+- 목록에 `compat` 버전이 적힌 도구는 패키지 매니저로 넘기기 전에 그 버전을 한 번 더 받아 본다. 지금은 tree-sitter 하나다:
+  0.26 부터의 바이너리는 glibc 2.39 이상이 필요해서, Debian 12 나 Ubuntu 22.04 에서는 0.25.10 을 받는다.
 - **sudo 를 쓸 수 없으면** `pkgs` 와 위 대체 설치만 빠진다. 무엇이 빠졌는지 알리고 apply 는 끝까지 간다.
 - **mise 로 받기에 실패하면**(네트워크 등) 설치 스크립트가 실패로 끝난다. 설정 파일은 그 전에 이미 깔려 있다 (Linux 의 설치
   스크립트는 파일 적용 뒤에 돈다). `chezmoi apply` 를 다시 실행하면 그 스크립트가 다시 돌고, 이미 받은 도구는 건너뛴다.
@@ -98,19 +100,46 @@ Linux 는 dev container 나 서버라서 배포판과 권한을 고를 수 없�
 
 ### dev container — 버리는 환경
 
-sudo 를 써도 되고 되돌릴 필요가 없다. 평소처럼 init 하되 질문 없이 답을 준다.
+sudo 를 써도 되고 되돌릴 필요가 없다. 저장소 루트의 `install.sh` 가 묻지 않고 깐다.
 
-```sh
-# 필수 도구와 설정만
-sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptBool minimal=true --promptString "Email address=" --promptString "Full name (git user.name)=" jjmean2
-# nvim IDE·언어 런타임·gh 까지 (Mac 의 full 머신과 같은 기능)
-sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptBool minimal=false --promptString "Email address=" --promptString "Full name (git user.name)=" jjmean2
-```
+| 방법 | 하는 것 |
+|---|---|
+| VS Code 가 자동으로 | VS Code 사용자 설정에 `"dotfiles.repository": "jjmean2/dotfiles"` 를 넣어 둔다. dev container 를 만들 때 VS Code 가 저장소를 컨테이너 안에 clone 하고 `install.sh` 를 인자 없이 실행한다 |
+| 손으로 | 컨테이너 안에서 `git clone https://github.com/jjmean2/dotfiles.git ~/dotfiles && ~/dotfiles/install.sh` |
 
-minimal 이면 필수 도구만 깔리고(위 "Linux: 도구는 사용자 영역에 받는다"), LazyVim·언어 런타임·gh 는 빠진다. 기능 하나만 더하려면
-init 뒤에 `chezmoi edit-config` 로 `[data.features]` 에 `ide = true` 처럼 적고 `chezmoi apply`.
+`install.sh` 는 인자로 무엇을 깔지 고른다. 인자가 없으면 `ide` 다.
 
-**컨테이너에서 확인한 것** (2026-11-15, Docker. 저장소를 `--source` 로 준 것만 다르고 나머지는 위 명령과 같다)
+| 인자 | 깔리는 것 | 머신 설정에 적히는 것 |
+|---|---|---|
+| `ide` | 필수 도구와 설정 + nvim IDE (LazyVim, tree-sitter, gcc) | `minimal = true`, `[data.features]` 에 `ide = true` |
+| `minimal` | 필수 도구와 설정만. nvim 은 플러그인 없는 nvim-lite | `minimal = true` |
+| `full` | Mac 의 full 머신과 같은 기능 (`ide`, `dev`, `credentials`). 언어 런타임을 받느라 몇 분 걸린다 | `minimal = false` |
+
+- **하는 일**은 `chezmoi init --apply --source <clone 한 곳>` 에 답을 미리 주는 것이 전부다. chezmoi 가 없으면 `~/.local/bin` 에 받는다.
+  기본이 `ide` 인 이유: dev container 에서는 nvim IDE 가 필요하고, 언어 런타임은 보통 프로젝트의 컨테이너 이미지가 갖고 있다.
+- **처음 한 번만 쓴다.** 이미 chezmoi 로 init 한 곳에서는 아무것도 하지 않는다. 깐 뒤에 기능을 바꾸려면 `chezmoi edit-config` 로
+  `[data.features]` 에 `dev = true` 처럼 적고 `chezmoi apply`.
+- **이름과 이메일은 묻지 않는다.** 컨테이너에 git 설정이 이미 있으면 그 값을 쓰고, 없으면 비워 둔다. 비어 있으면 dotfiles 의 git 설정에
+  신원 줄이 들어가지 않아서, 첫 커밋 때 git 이 정하라고 알려 준다 (`git config --global user.email …`).
+- Linux 전용이다. Mac 에서 실행하면 README 를 가리키고 멈춘다 (Mac 은 이메일·이름·Karabiner 를 물어야 한다).
+- `install.sh` 를 쓰지 않고 chezmoi 를 직접 불러도 된다:
+  `chezmoi init --apply --promptBool minimal=true --promptString "Email address=" --promptString "Full name (git user.name)=" jjmean2`.
+  `--promptBool` / `--promptString` 의 키는 `.chezmoi.toml.tmpl` 의 질문 문구 그대로다.
+
+**VS Code 쪽 동작의 근거.** Dev Containers CLI(`devcontainers/cli` 의 `dotfiles.ts`)의 소스로 확인했다. VS Code 확장이나
+Codespaces 에서 실제로 돌려 본 것은 아니다.
+
+- clone 한 뒤 루트에서 `install.sh`, `install`, `bootstrap.sh`, `bootstrap`, `script/bootstrap`, `setup.sh`, `setup`, `script/setup` 을
+  차례로 찾아 처음 있는 것을 인자 없이 실행한다.
+- 하나도 없으면 루트의 `.` 으로 시작하는 항목을 홈에 심볼릭 링크한다. 이 저장소에 `install.sh` 가 없었다면 `.chezmoiroot`,
+  `.gitignore` 등이 홈에 걸렸을 것이다.
+- `dotfiles.installCommand` 설정은 명령이 아니라 저장소 안의 파일 경로다. 그래서 스크립트 파일이 꼭 있어야 한다.
+- 컨테이너마다 한 번만 실행되고, 실패해도 컨테이너 생성은 계속된다.
+
+**컨테이너에서 확인한 것** (2026-11-15, Docker)
+
+아래 표는 `install.sh` 가 생기기 전에 `chezmoi init --apply --source <저장소> --promptBool minimal=… --promptString …` 를 직접
+실행해 확인한 것이다. `install.sh` 가 chezmoi 에 넘기는 것과 같은 명령이다.
 
 | 환경 | 결과 |
 |---|---|
@@ -124,8 +153,8 @@ Mason 이 까는 LSP 서버, pacman(Arch)은 돌려 보지 못했다.
 
 **알려진 한계**
 
-- tree-sitter 바이너리는 glibc 2.39 이상이 필요하다. Debian 12(glibc 2.36)에서는 실행되지 않고 배포판 패키지도 없어서,
-  `ide` 를 켜도 nvim-treesitter 가 파서를 빌드하지 못한다. 다른 도구는 Debian 12 에서도 된다.
+- tree-sitter 의 최신 바이너리는 glibc 2.39 이상이 필요하다. 그보다 오래된 배포판(Debian 12, Ubuntu 22.04)에서는 0.25.10 을
+  받는다. nvim-treesitter 가 더 새 tree-sitter 를 요구하게 되면 그 배포판들에서는 파서를 빌드하지 못하게 된다.
 - Alpine 에서 sudo 도 root 도 없으면 nvim 과 bash 를 깔 수 없다. bash 가 없으면 이 저장소의 bash 스크립트
   (`40-reload-tmux` 등)가 실패해서 `chezmoi apply` 가 실패로 끝난다 (설정 파일은 깔린 뒤다).
 - 패키지 매니저로 대신 깐 도구는 배포판의 버전이라 오래됐을 수 있다 (nvim-lite 는 nvim 0.10 이상이 필요하다).
@@ -181,7 +210,7 @@ chezmoi apply
 
 - tmux 상태바의 `gitmux` 를 설치 여부로 감싸기. 지금은 서버처럼 gitmux 가 없는 곳에서 git 표시가 비거나 오류가 난다.
 - 셸이 만드는 상태 파일(`.zsh_history`, `.zcompdump`)을 `$XDG_STATE_HOME`·`$XDG_CACHE_HOME` 으로 옮기기.
-- dev container 의 dotfiles 기능이 자동으로 부르는 `install.sh` 를 저장소 루트에 두기.
+- 실제 VS Code Dev Containers 와 Codespaces 에서 dotfiles 자동 설치(`install.sh`)를 돌려 보기.
 - 실제 서버에서 `jw-ephemeral` 시험. 지금까지는 Docker 컨테이너(Debian 13, Alpine 3.22)의 sudo 없는 사용자로
   install → uninstall 을 돌려 깔기 전과 홈의 파일 내용·디렉터리 목록이 같은 것을 확인했다 (2026-11-15). 그 전에는 macOS 의
   가짜 HOME 에서 설치 중 실패 → 자동 되돌리기도 확인했다. 오래된 배포판의 서버, 서버에 있는 tmux 가 오래된 경우는 아직이다.
