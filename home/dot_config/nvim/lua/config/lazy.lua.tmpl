@@ -16,7 +16,7 @@ vim.g.lazyvim_json = source .. "/lazyvim.json"
 -- lockfile 백업: lazy.nvim 은 :Lazy update / sync / restore 가 끝나면 lockfile 을 새 commit 으로
 -- 덮어쓰므로, 그 상태로는 :Lazy restore 로 업데이트 전으로 돌아갈 수 없다. 시작 직전(…Pre 이벤트)에
 -- stdpath("state")/lazy-lock-backups/ 에 시각을 붙여 복사하고 최근 10개만 남긴다.
--- 되돌리기: 백업을 ~/.config/nvim/lazy-lock.json 으로 복사한 뒤 :Lazy restore (README 의 nvim 절).
+-- 되돌리기: 백업을 ~/.config/nvim/lazy-lock.json 으로 복사한 뒤 :Lazy restore (저장소의 docs/nvim.md).
 vim.api.nvim_create_autocmd("User", {
   pattern = { "LazyUpdatePre", "LazyRestorePre" }, -- sync 도 update 를 거치므로 LazyUpdatePre 가 온다
   callback = function()
