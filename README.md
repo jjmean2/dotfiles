@@ -13,8 +13,8 @@
 | `snippets/` | 기억해 두고 싶은 코드 스니펫 |
 | `claude-plugins/` | 개인 Claude Code 플러그인. 루트의 `.claude-plugin/marketplace.json` 이 이 저장소를 마켓플레이스로 만든다 (`claude plugin marketplace add jjmean2/dotfiles`, 마켓플레이스 이름 `justwonder`). 지금은 작업 스킬 모음 `jw` 하나 |
 | `docs/` | 설계·운영 문서. [`docs/tool-scope.md`](docs/tool-scope.md): 개발 도구를 모든 머신 / 일부 머신 / 이 머신 / 이 프로젝트 중 어디에 둘지. [`docs/machines.md`](docs/machines.md): 머신마다 무엇을 까나 (등급 minimal / full 과 기능), 임시 서버 설치·되돌리기 |
-| `install.sh` | dev container 에 묻지 않고 까는 진입점. VS Code 의 dotfiles 기능이 실행한다 ([`docs/machines.md`](docs/machines.md)) |
 | `jw-ephemeral` | 내 계정으로 접속한 서버에 sudo 없이 깔았다가 되돌리는 래퍼 ([`docs/machines.md`](docs/machines.md)) |
+| `install.sh` | dev container 에 묻지 않고 까는 진입점. VS Code 의 dotfiles 기능이 실행한다 ([`docs/machines.md`](docs/machines.md)) |
 
 `home/` 밖의 파일은 chezmoi 가 배포하지 않는다.
 
