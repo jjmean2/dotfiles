@@ -13,11 +13,22 @@
 | `snippets/` | 기억해 두고 싶은 코드 스니펫 |
 | `claude-plugins/` | 개인 Claude Code 플러그인. 루트의 `.claude-plugin/marketplace.json` 이 이 저장소를 마켓플레이스로 만든다 (`claude plugin marketplace add jjmean2/dotfiles`, 마켓플레이스 이름 `justwonder`). 지금은 작업 스킬 모음 `jw` 하나 |
 | `docs/` | 설계·운영 문서. [`docs/tool-scope.md`](docs/tool-scope.md): 개발 도구를 모든 머신 / 일부 머신 / 이 머신 / 이 프로젝트 중 어디에 둘지. [`docs/machines.md`](docs/machines.md): 머신마다 무엇을 까나 (등급 minimal / full 과 기능), 임시 서버 설치·되돌리기 |
+| `install.sh` | dev container 에 묻지 않고 까는 진입점. VS Code 의 dotfiles 기능이 실행한다 ([`docs/machines.md`](docs/machines.md)) |
 | `jw-ephemeral` | 내 계정으로 접속한 서버에 sudo 없이 깔았다가 되돌리는 래퍼 ([`docs/machines.md`](docs/machines.md)) |
 
 `home/` 밖의 파일은 chezmoi 가 배포하지 않는다.
 
 ## 설치
+
+환경에 따라 처음 실행하는 것이 다르다. 설명은 아래 각 경우에 있다.
+
+| 환경 | 처음 실행하는 것 | 깔리는 것 |
+|---|---|---|
+| 새 Mac | `sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --apply jjmean2` (경우 1) | 이메일·이름·등급·Karabiner 를 묻고 깐다. 등급의 기본은 full |
+| Mac, 저장소를 원하는 위치에 | `chezmoi init --source <저장소 경로> --apply` (경우 2·3) | 위와 같다 |
+| dev container, VS Code 가 자동으로 | VS Code 사용자 설정에 `"dotfiles.repository": "jjmean2/dotfiles"` (경우 4) | 필수 도구와 설정 + nvim IDE. 묻지 않는다 |
+| dev container, 손으로 | `git clone https://github.com/jjmean2/dotfiles.git ~/dotfiles && ~/dotfiles/install.sh` (경우 4) | 위와 같다. `install.sh minimal` 은 필수만, `install.sh full` 은 Mac 과 같은 기능 |
+| 내 계정으로 접속한 서버 | `curl -fsSL https://raw.githubusercontent.com/jjmean2/dotfiles/main/jw-ephemeral \| bash -s install` (경우 5) | 필수 도구와 설정만. sudo 를 쓰지 않고, `uninstall` 로 되돌린다 |
 
 ### 사전 준비
 
@@ -61,15 +72,40 @@ sh -c "$(curl -fsLS get.chezmoi.io)" -- -b ~/.local/bin init --source ~/dev/jwle
 경우 1 과 2 를 합친 것이다. chezmoi 가 이미 있으면 둘째 줄 대신 `chezmoi init --source ~/dev/jwlee/dotfiles --apply`.
 다른 브랜치로 시작하려면 클론할 때 `-b <브랜치>` 를 준다.
 
-### 경우 4. 잠깐 쓰는 서버·dev container
+### 경우 4. dev container
 
-필수 도구와 설정만 깐다 (등급 `minimal`). 자세한 내용은 [`docs/machines.md`](docs/machines.md).
+저장소 루트의 `install.sh` 가 묻지 않고 깐다. 기본으로 깔리는 것은 필수 도구와 설정에 nvim IDE(LazyVim)를 더한 것이다
+(등급 `minimal` 에 기능 `ide` 만 켠다). 자세한 내용과 확인한 범위는 [`docs/machines.md`](docs/machines.md).
+
+**VS Code 가 자동으로.** VS Code 사용자 설정(`settings.json`)에 한 줄을 넣어 둔다. dev container 를 만들 때 VS Code 가 이 저장소를
+컨테이너 안에 clone 하고 루트의 `install.sh` 를 실행한다.
+
+```json
+"dotfiles.repository": "jjmean2/dotfiles"
+```
+
+**손으로.** 컨테이너 안에서 clone 한 뒤 실행한다. 인자로 무엇을 깔지 고른다.
 
 ```sh
-# dev container (버리는 환경, sudo 가능). nvim IDE·언어 런타임까지 깔려면 minimal=false
-sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply --promptBool minimal=true --promptString "Email address=" --promptString "Full name (git user.name)=" jjmean2
-# 내 계정으로 접속한 서버 (sudo 없이, 나중에 되돌린다)
+git clone https://github.com/jjmean2/dotfiles.git ~/dotfiles
+~/dotfiles/install.sh            # 필수 도구와 설정 + nvim IDE (인자 없이 실행한 것과 같다. VS Code 가 실행하는 꼴)
+~/dotfiles/install.sh minimal    # 필수 도구와 설정만. nvim 은 플러그인 없는 nvim-lite
+~/dotfiles/install.sh full       # Mac 의 full 머신과 같은 기능 (ide, dev, credentials). 언어 런타임을 받느라 몇 분 걸린다
+```
+
+- 처음 한 번만 쓴다. 이미 chezmoi 로 init 한 곳에서는 아무것도 하지 않는다. 그 뒤로는 `chezmoi apply`, `chezmoi update` 를 쓴다.
+- 이름과 이메일은 묻지 않는다. 컨테이너에 git 설정이 이미 있으면 그 값을 쓰고, 없으면 첫 커밋 때 git 이 정하라고 알려 준다
+  (`git config --global user.name …`, `user.email …`).
+- sudo 가 되면 패키지 매니저도 쓴다 (gcc 등). 안 되면 그 몇 가지만 빠진다.
+
+### 경우 5. 내 계정으로 접속한 서버
+
+sudo 를 쓰지 않고 필수 도구와 설정만 깔았다가, 끝나면 깔기 전으로 되돌린다. 자세한 내용은 [`docs/machines.md`](docs/machines.md).
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/jjmean2/dotfiles/main/jw-ephemeral | bash -s install
+exec $SHELL -l                                        # 적용
+~/.local/state/jw-ephemeral/jw-ephemeral uninstall    # 되돌리기
 ```
 
 ### 이미 설정 파일이 있는 머신이라면
