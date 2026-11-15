@@ -24,8 +24,9 @@ set -eu
 # 20-install-mise-tools 보다 먼저 돈다. run_onchange_ 라서 목록이 바뀌어 이 스크립트 내용이 달라질 때만 다시 실행된다.
 # sh 로 쓴 이유: Alpine 처럼 bash 가 없는 이미지에서도 돌아야 한다 (bash 는 아래 pkgs 로 깐다).
 #
-# 받아 둔 도구를 새 버전으로 바꾸려면 ~/.local/bin/<이름> 을 지우고
-# `mise install-into <mise 이름>@latest ~/.local/opt/<이름>` 을 직접 돌린 뒤 다시 링크한다.
+# 받아 둔 도구를 새 버전으로 바꾸려면 ~/.local/bin/<이름> 을 지우고 이 스크립트를 다시 돌린다:
+#   chezmoi state delete-bucket --bucket=entryState && chezmoi apply
+# (run_onchange 스크립트 전부가 다시 돈다. 이 스크립트는 ~/.local/bin 에 없는 도구만 다시 받는다.)
 
 BIN="$HOME/.local/bin"
 OPT="$HOME/.local/opt"
