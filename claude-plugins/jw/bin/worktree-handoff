@@ -223,7 +223,7 @@ fi
 if [ "$mode" = path ]; then
   echo "worktree: $wt"
   echo "branch:   $branch${stack_cur:+ (스택 워크트리, 체크아웃: $stack_cur)}"
-  echo "move:     /cd $(sq "$wt")"
+  echo "move:     /cd $wt"   # /cd 는 셸이 아니라 따옴표를 경로로 읽는다. 인용하지 않는다
   exit 0
 fi
 

@@ -55,7 +55,7 @@ resume:   cd '…/feat-x' && claude --resume 'feat/x@1111-1530'
 
 ## 옮기기: handoff-move
 
-`worktree-handoff path <브랜치>` 가 워크트리를 확보하고 `move: /cd '<경로>'` 를 출력한다. 사용자가 그 `/cd` 를 입력하면
+`worktree-handoff path <브랜치>` 가 워크트리를 확보하고 `move: /cd <경로>` 를 출력한다. 사용자가 그 `/cd` 를 입력하면
 세션 기록(`~/.claude/projects/` 아래)·설정·훅·스킬·CLAUDE.md 가 새 디렉토리 기준으로 바뀐다. 세션 ID 는 그대로이고,
 이후 `claude --resume` 목록에는 그 워크트리에서 보인다. 모델은 `/cd` 를 부를 수 없다. EnterWorktree 도구도 기록을
 옮기지만 설정·스킬을 다시 읽지 않고 저장소 밖 경로면 승인을 묻기 때문에 쓰지 않는다.
