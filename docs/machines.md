@@ -138,6 +138,17 @@ Codespaces 에서 실제로 돌려 본 것은 아니다.
 
 **컨테이너에서 확인한 것** (2026-11-15, Docker)
 
+`install.sh` 를 인자 없이 돌린 결과다. VS Code 가 하는 순서를 손으로 흉내 냈다: dev container 기본 이미지
+(`mcr.microsoft.com/devcontainers/base`)의 사용자 `vscode`(비밀번호 없는 sudo)로 저장소를 `~/dotfiles` 에 두고 터미널 없이 실행했다.
+
+| 이미지 | 결과 |
+|---|---|
+| `:debian` (Debian 13), `:ubuntu` (Ubuntu 26.04), `:noble` (Ubuntu 24.04) | 약 20초. 켜진 기능 `["ide"]`, tree-sitter 0.27.2. nvim 을 띄우면 LazyVim 이 플러그인을 받고 nvim-treesitter 가 파서를 빌드한다 |
+| `:bookworm` (Debian 12), `:jammy` (Ubuntu 22.04) | 같다. tree-sitter 만 0.25.10 이 깔린다 (`compat`) |
+
+`install.sh minimal` 과 `install.sh full` 은 Debian 13 에서 설정 파일과 켜진 기능이 위 표대로 나오는 것을 보았다. 다시 실행하면
+아무것도 하지 않고, init 이 설정 파일을 만들기 전에 실패한 뒤에는 다시 실행할 수 있다.
+
 아래 표는 `install.sh` 가 생기기 전에 `chezmoi init --apply --source <저장소> --promptBool minimal=… --promptString …` 를 직접
 실행해 확인한 것이다. `install.sh` 가 chezmoi 에 넘기는 것과 같은 명령이다.
 
