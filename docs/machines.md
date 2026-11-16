@@ -8,7 +8,7 @@
 
 | 층 | 내용 | 어디에 |
 |---|---|---|
-| 필수 | 터미널 작업에 늘 쓰는 것. git, tmux, nvim, fzf, ripgrep, fd, jq, fasd 와 그 설정 | `packages.yaml` 의 `packages.<os>`, 모든 설정 파일 |
+| 필수 | 터미널 작업에 늘 쓰는 것. git, tmux, nvim, fzf, ripgrep, fd, jq, fasd, zsh 플러그인과 그 설정 | `packages.yaml` 의 `packages.<os>`, 모든 설정 파일 |
 | 기능 | 머신에 따라 켜고 끄는 묶음 (아래 표). 기능 하나 = 패키지 + 전용 설정 파일 + 후처리 | `packages.yaml` 의 `packages.features.<이름>` |
 | 머신 로컬 | 이 머신만의 덮어쓰기. dotfiles 가 관리하지 않는다 | mise `config.toml`, ghostty 테마, nvim `local-*.lua` 등 ([tool-scope.md](tool-scope.md)) |
 
@@ -69,6 +69,7 @@ Linux 는 dev container 나 서버라서 배포판과 권한을 고를 수 없�
 | `tools` | tmux, fzf, rg, fd, jq, nvim (기능: gh, tree-sitter) | mise 가 `~/.local/opt/<이름>` 에 받고 `~/.local/bin/<이름>` 으로 링크한다. sudo 가 필요 없다 |
 | `pkgs` | bash, bash-completion, gettext (기능 `ide`: gcc, libc6-dev) | 패키지 매니저(apt, apk, dnf, pacman). root 이거나 sudo 를 쓸 수 있을 때만 |
 | fasd | 셸 스크립트 파일 하나 | `home/.chezmoiexternal.toml` 이 받아 `~/.jongwan/bin/fasd` 에 둔다 (macOS 도 같다) |
+| zsh 플러그인 | 스크립트 묶음 (fzf-tab 등) | `home/.chezmoiexternal.toml` 이 받아 `~/.local/share/zsh/plugins/` 에 푼다 (macOS 도 같다. [zsh-plugins.md](zsh-plugins.md)) |
 
 - **배포판과 상관없이 같은 최신 버전**이 깔린다. 시스템에 같은 도구가 있어도 받고, `~/.local/bin` 이 PATH 앞이라 받은 것이 쓰인다.
 - **받은 바이너리가 실행되지 않는 시스템**(Alpine 의 musl, 오래된 glibc)에서는 그 도구만 `pkg` 이름으로 패키지 매니저에 넘긴다.
@@ -192,7 +193,7 @@ exec $SHELL -l                                        # 적용
 - mise 는 실행하는 동안 `HOME` 까지 `~/.local/state/jw-ephemeral` 안으로 돌린다. 서명 검증 캐시처럼 `MISE_*` 설정을 따르지 않는 것이 있어서다.
 - 필수 도구는 `mise install-into` 로 미리 빌드된 바이너리를 받는다. 목록은 일반 Linux 설치와 같은 `packages.yaml` 의 `packages.linux.tools`
   (tmux, fzf, rg, fd, jq, nvim)다. 서버에 이미 있으면(nvim 은 0.10 이상) 받지 않고 그것을 쓴다. 받은 것이 그 서버에서 실행되지
-  않으면(musl 등) 그 도구 없이 쓴다. fasd 는 chezmoi 가 까는 파일이라 다른 설정 파일과 같이 깔리고 지워진다. git 은 서버에 있는 것을 쓴다.
+  않으면(musl 등) 그 도구 없이 쓴다. fasd 와 zsh 플러그인은 chezmoi 가 까는 파일이라 다른 설정 파일과 같이 깔리고 지워진다. git 은 서버에 있는 것을 쓴다.
 - 도구 디렉터리는 `shell/profile.sh`·`rc.sh` 가 있을 때만 PATH 맨 앞에 넣는다.
 
 **되돌리기의 범위**
