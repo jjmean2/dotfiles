@@ -13,13 +13,13 @@
 #     remove:  .chezmoiremove 의 경로(옛 이름 정리용)를 서버에서 백업 없이 지우지 않게 한다.
 #   - 설치가 중간에 실패하면 그때까지 한 일을 uninstall 로 되돌린다.
 #   - 필수 도구는 mise install-into 로 받아 $ROOT/bin 에 둔다. 목록은 저장소의
-#     .chezmoidata/packages.yaml 의 packages.linux.tools (tmux fzf rg fd jq nvim) 로, 일반 Linux 설치와 같다.
+#     .chezmoidata/packages.yaml 의 packages.linux.tools (tmux fzf rg fd jq zoxide nvim) 로, 일반 Linux 설치와 같다.
 #     서버에 이미 있는 도구는 받지 않는다. 셸 설정(shell/profile.sh)이 $ROOT/bin 이 있으면 PATH 앞에 넣는다.
 #     git 은 서버에 있는 것을 쓴다.
 #
 # 되돌리기의 범위
 #   - chezmoi 가 깐 파일: 깔기 전에 있던 것은 백업에서 복원하고, 없던 것은 지운다.
-#   - 런타임 상태: RUNTIME_PATHS 중 깔기 전에 없던 것만 지운다 (nvim-lite 데이터, fasd 캐시 등).
+#   - 런타임 상태: RUNTIME_PATHS 중 깔기 전에 없던 것만 지운다 (nvim-lite 데이터, zoxide 기록 등).
 #   - 디렉터리: 깔면서 새로 생긴 빈 디렉터리를 지운다.
 #   - 그 밖에 쓰는 동안 사용자가 만든 파일은 건드리지 않는다.
 #
@@ -44,7 +44,7 @@ CREATED_DIRS="$ROOT/created-dirs.txt" # 깔면서 새로 생긴 디렉터리
 # chezmoi 가 모르는, 쓰는 동안 도구가 만드는 상태. 깔기 전에 없던 것만 uninstall 이 지운다.
 RUNTIME_PATHS=(
 	"$HOME/.local/share/nvim-lite" "$HOME/.local/state/nvim-lite" "$HOME/.cache/nvim-lite"
-	"$HOME/.fasd" "$HOME/.fasd-init-zsh" "$HOME/.fasd-init-bash" "$HOME/.fasd-init-posix-shell"
+	"$HOME/.local/share/zoxide"
 	"$HOME/.local/share/tmux-dev" "$HOME/.local/state/tmux-dev" "$HOME/.cache/tmux-dev"
 	"$HOME/.zcompdump" "$HOME/.zsh_history"
 )
@@ -89,7 +89,7 @@ install_tools() {
 	mkdir -p "$mise_home"
 
 	# 필수 도구 목록은 저장소의 packages.yaml 에서 읽는다 (일반 Linux 설치와 같은 목록). 한 줄에 "mise 도구 이름, 실행 파일 이름".
-	# fasd 는 여기 없다. .chezmoiexternal 이 받아 ~/.jongwan/bin 에 두는 관리 대상 파일이라 apply 가 깔고 uninstall 이 지운다.
+	# zsh 플러그인은 여기 없다. .chezmoiexternal 이 받아 두는 관리 대상 파일이라 apply 가 깔고 uninstall 이 지운다.
 	local tools
 	tools="$(cz execute-template '{{ range .packages.linux.tools }}{{ dig "mise" .bin . }} {{ .bin }}{{ "\n" }}{{ end }}')"
 	[[ -n $tools ]] || die "packages.yaml 에서 필수 도구 목록을 읽지 못했다"

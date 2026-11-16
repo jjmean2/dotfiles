@@ -18,6 +18,8 @@ packages:
       - ripgrep
       - fzf
       - fd
+      # 자주 간 디렉터리로 건너뛰기 (shell/rc.d/zoxide.sh)
+      - zoxide
       - neovim
       - mise
       - coreutils
@@ -51,6 +53,8 @@ packages:
         pkg: ripgrep
       - bin: fd
       - bin: jq
+      # 자주 간 디렉터리로 건너뛰기 (shell/rc.d/zoxide.sh)
+      - bin: zoxide
       # neovim 은 mise 의 기본 백엔드(vfox)가 아니라 aqua 로 받는다 (GitHub 릴리스의 바이너리)
       - bin: nvim
         mise: aqua:neovim/neovim
