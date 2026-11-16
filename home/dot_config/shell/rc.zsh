@@ -75,8 +75,47 @@ RPROMPT="%(?..%F{red}%?🚫%f)"
 # RPROMPT="%(?..%F{red}%?🚫%f)"
 # endregion
 
+# ==================================================
+# 🕹️ 셸 옵션
+# ==================================================
+# 켜 둔 옵션 목록: `setopt` (기본값과 다른 것만 나온다). 옵션 설명: `man zshoptions`
+
 # cd 명령어 없이 디렉터리 이름만 입력해도 해당 디렉터리로 이동
 setopt auto_cd
+
+# cd 할 때마다 떠난 디렉터리를 디렉터리 스택에 쌓는다. `cd -<Tab>` 으로 최근 디렉터리 목록에서 고르고,
+# `dirs -v` 로 스택을 본다. 같은 디렉터리는 한 번만 쌓고, pushd 가 스택을 출력하지 않게 한다.
+setopt auto_pushd pushd_ignore_dups pushd_silent
+
+# 대화형 셸에서도 # 뒤를 주석으로 읽는다 (예: 붙여 넣은 명령의 주석, `ls # 나중에 지우기`)
+setopt interactive_comments
+
+# extended_glob 은 전역으로 켜지 않는다. 켜면 ^ # ~ 가 glob 문자가 되어 `git reset HEAD^` 가
+# "no matches found" 로 멈춘다. 필요한 함수 안에서만 `setopt localoptions extended_glob` 으로 켠다 (아래 compinit 부분).
+
+# ==================================================
+# 🕹️ 히스토리
+# ==================================================
+# 직전 명령 검색(↑, Ctrl-R) 과 입력 제안(zsh-autosuggestions) 이 모두 이 파일을 데이터로 쓴다.
+#
+# 파일 위치를 직접 정하는 이유: macOS 는 /etc/zshrc 가 ~/.zsh_history 로 정해 주지만(크기는 1000 줄),
+# Linux 배포판의 기본 설정은 대개 HISTFILE 을 정하지 않아서 히스토리가 셸을 닫으면 사라진다.
+HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
+# 메모리에 둘 줄 수와 파일에 남길 줄 수. 중복을 지우므로(아래) 실제로는 서로 다른 명령 5만 개다.
+HISTSIZE=50000
+SAVEHIST=50000
+
+# 명령마다 시작 시각과 걸린 시간을 같이 적는다 (`: 1763300000:3;make` 꼴). `history -i` 로 시각과 함께 본다.
+setopt extended_history
+# 명령을 실행할 때마다 파일에 바로 쓰고, 다른 셸이 쓴 줄도 읽어 온다. 그래서 tmux 의 다른 pane 에서
+# 방금 친 명령이 이 pane 의 Ctrl-R 과 ↑ 에도 나온다 (셸을 닫을 때 한꺼번에 쓰는 기본 동작 대신).
+setopt share_history
+# 같은 명령을 다시 치면 옛 줄을 지우고 새 줄만 남긴다 (`git status` 가 수십 줄 쌓이지 않게)
+setopt hist_ignore_all_dups
+# 공백으로 시작한 명령은 기록하지 않는다 (토큰이 든 명령 등. 바로 직전 줄로는 잠깐 남는다)
+setopt hist_ignore_space
+# 기록할 때 명령 안의 불필요한 공백을 줄인다 (같은 명령이 공백 차이로 따로 남지 않게)
+setopt hist_reduce_blanks
 
 # ==================================================
 # 🕹️ 함수 autoload
@@ -177,8 +216,11 @@ zstyle ':completion:*' matcher-list 'm:{[:lower:][:upper:]}={[:upper:][:lower:]}
 zstyle ':completion:*' list-suffixes
 zstyle ':completion:*' expand prefix suffix
 
-# ls 명령어를 치고 탭을 눌렀을 때도 방향키로 이동하며 파일을 선택할 수 있는 메뉴를 띄워줌
-zstyle ':completion:ls:*' menu select
+# 탭을 눌러 후보가 여러 개면 방향키로 고르는 메뉴를 띄운다 (모든 명령에서)
+zstyle ':completion:*' menu select
+# 후보를 종류(파일, 옵션, 브랜치 …)별로 묶고 묶음마다 [종류] 제목을 붙인다
+zstyle ':completion:*' group-name ''
+zstyle ':completion:*:descriptions' format '%F{yellow}[%d]%f'
 
 # 탭을 눌러 자동 완성 후보 메뉴가 떴을 때, 항목의 종류에 따라 글자 색상을 다르게 표현해 주는 설정
 # di=34(디렉터리는 파란색), ex=31(실행 파일은 빨간색)처럼 일반적인 리눅스/macOS 터미널의 LS_COLORS 규격을 따름
