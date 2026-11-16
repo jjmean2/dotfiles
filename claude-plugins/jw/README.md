@@ -1,6 +1,6 @@
 # jw
 
-작업할 때 쓰는 개인 스킬 모음 Claude Code 플러그인. 마켓플레이스 `justwonder` 에 있다.
+작업할 때 쓰는 개인 스킬 모음 Claude Code 플러그인. 마켓플레이스 `justwonder` 에 있다. Cursor 도 이 플러그인을 읽는다 (아래 "Cursor 에서 쓰기").
 
 | 스킬 | 하는 일 |
 |---|---|
@@ -128,11 +128,42 @@ claude plugin install jw@justwonder
 세션 안에서는 `/plugin marketplace add ...`, `/plugin install jw@justwonder`. 개발 중에는 설치 없이
 `claude --plugin-dir claude-plugins/jw`.
 
-플러그인의 `bin/` 은 Claude 의 Bash 도구 PATH 에만 붙는다. 터미널에서도 쓰려면 링크를 둔다.
+플러그인의 `bin/` 은 Claude 의 Bash 도구 PATH 에만 붙는다. 그래서 chezmoi 가 `~/.jongwan/bin/` 에 두 스크립트의 링크를
+둔다 (`home/dot_jongwan/bin/symlink_*.tmpl`, 대상은 chezmoi 소스 저장소의 이 디렉토리). 터미널과 Cursor 에서는 이 링크로
+불린다. Claude 안에서는 PATH 앞쪽에 있는 쪽이 불린다. 링크는 적용된 main 체크아웃을, 플러그인 `bin/` 은 설치된 버전을
+가리키므로 둘이 다를 수 있다. 스크립트는 예전 호출 형식도 받는다.
 
-```sh
-ln -s "$(pwd)/claude-plugins/jw/bin/worktree-handoff" "$(pwd)/claude-plugins/jw/bin/pr-review-fetch" ~/.local/bin/
-```
+## Cursor 에서 쓰기
+
+Cursor(3.30.8 데스크톱에서 확인)는 `~/.claude/plugins/installed_plugins.json` 과 `~/.claude/settings.json` 의
+`enabledPlugins` 를 읽어 설치된 Claude 플러그인의 스킬을 그대로 불러온다. 따로 설치할 것은 없다. 다만 Claude 와 다른 점이 있다.
+
+| | Claude Code | Cursor |
+|---|---|---|
+| 부르는 이름 | `/jw:pr-review-handle` | `/pr-review-handle` (이름에 `:` 를 쓸 수 없다) |
+| 플러그인 `bin/` | Bash 도구 PATH 에 붙는다 | 붙지 않는다. chezmoi 링크(`~/.jongwan/bin`)로 찾는다. 없으면 스킬이 `../../bin/` 경로로 부른다 |
+| 위치 인자 `$0`·`$1` | 0부터 센다 (`$0` = 첫 인자) | 1부터 센다 (`$0` 은 빈 문자열) |
+| `$ARGUMENTS` | 입력한 원문 | 입력한 원문 |
+| `${CLAUDE_SESSION_ID}`·`${CLAUDE_SKILL_DIR}` | 치환된다 | 치환되지 않는다 (글자 그대로) |
+| `allowed-tools` | 사전 승인 | 무시된다 (실행할 때 묻는다) |
+| 읽는 사본 | 설치된 캐시 | 같은 캐시. 고친 뒤에는 `claude plugin update jw@justwonder` |
+
+| 스킬 | Cursor 에서 |
+|---|---|
+| pr-review-handle | 그대로 된다 |
+| handoff-fresh | 된다. 새 세션은 Claude Code 세션이다 (`claude` 필요) |
+| handoff | 안 된다. Claude 대화 기록을 포크한다. `${CLAUDE_SESSION_ID}` 가 치환되지 않은 것을 보고 멈춘다 |
+| handoff-move | 안 된다. Claude 의 `/cd` 로 세션을 옮긴다. `${CLAUDE_SKILL_DIR}` 가 치환되지 않은 것을 보고 멈춘다 |
+
+### 인자를 넘기는 방식
+
+위치 인자는 두 도구가 세는 법이 달라 한 글로 맞출 수 없다. 그래서 스킬은 `$ARGUMENTS`(원문)만 쓰고, 그 원문을
+따옴표 heredoc 으로 스크립트에 넘겨 브랜치·옵션을 스크립트가 읽는다 (`worktree-handoff --args-file`). 모델은 원문을
+옮겨 적기만 하고 해석하지 않으며, 셸은 heredoc 안의 `$`·따옴표를 해석하지 않는다. 브랜치 뒤의 추가 지시는 스크립트가
+첫 메시지 끝에 원문 그대로 붙이므로 모델이 옮겨 적다 빠뜨릴 일이 없다. 브랜치 이름이 문장처럼 보이면 묻는 것만
+모델이 판단한다.
+
+스킬 본문에 `$` 뒤에 숫자가 오는 글(예: awk 의 `$1`)을 쓰지 않는다. 두 도구 모두 그것을 인자로 치환한다.
 
 ## 스크립트를 직접 쓰기
 
@@ -141,7 +172,21 @@ worktree-handoff fork  --session <세션 ID> [--prompt-file <파일|->] [--base 
 worktree-handoff fresh --prompt-file <파일|->                     [--base <ref>] [--open <방식>] [<스택>] <브랜치>
 worktree-handoff path                                             [--base <ref>]                 [<스택>] <브랜치>
 # <스택> = --in-stack | --new-worktree
+# <브랜치>·<스택> 대신 --args-file <파일|-> 로 스킬 인자 원문을 줄 수 있다:
+#   원문 = [옵션…] <브랜치> [옵션…] [추가 지시…]   옵션 = --in-stack | --new-worktree | --open <방식> | --base <ref>
+#   --args-file - 와 --prompt-file - 를 함께 쓰면 표준 입력을 WORKTREE_HANDOFF_PROMPT 줄에서 나눈다 (앞: 원문, 뒤: 첫 메시지)
 ```
+
+```sh
+worktree-handoff fresh --args-file - --prompt-file - <<'EOF'
+feat/x --in-stack 테스트도 같이 고쳐 줘
+WORKTREE_HANDOFF_PROMPT
+# 작업 지시서 …
+EOF
+```
+
+원문은 공백으로 나눈 낱말을 앞에서부터 읽는다. 브랜치 뒤에서 옵션이 아닌 낱말이 나오면 거기부터 끝까지가 추가 지시다
+(fork·fresh 는 첫 메시지 끝에 붙이고, path 는 `ignored:` 줄로 알린다). 모르는 `--옵션` 은 오타로 보고 멈춘다.
 
 세션 ID 는 Claude 안의 `/status` 에서 확인한다. fork 에서 `--prompt-file` 이 없으면 기본 첫 메시지를 쓴다.
 fresh 는 첫 메시지가 꼭 있어야 하고, 비어 있으면(공백뿐이어도) 워크트리를 만들기 전에 멈춘다.

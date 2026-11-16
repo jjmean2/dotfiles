@@ -18,6 +18,8 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 `pr-review-fetch $ARGUMENTS` 를 한 번 실행한다 (인자가 없으면 지금 브랜치의 PR). 실패하면 오류를 그대로 보여 주고 멈춘다.
 지금 브랜치에 PR 이 없어서 실패하면 (스택 맨 위의 작업 중 브랜치) 오류에 그 아래 쌓인 PR 목록이 있다. 그것을 보여 주고
 특정 PR 인지 스택 전체(`--stack`)인지 묻는다.
+`pr-review-fetch` 를 찾지 못하면(command not found) 이 플러그인의 `bin/pr-review-fetch` 를 절대 경로로 부른다.
+이 SKILL.md 가 있는 디렉토리에서 두 단계 위(`../../bin/`)다.
 출력의 `warnings` 는 결과 맨 위에 그대로 옮긴다. `threads` 가 비어 있고 `reviews`·`comments` 에도 다룰 것이 없으면
 "다룰 리뷰가 없다"고 한 줄로 끝낸다.
 
@@ -135,6 +137,9 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 | `stack` | 예 | "적용할 항목 번호를 알려 주면 고친다." 고치는 방법(아래 **스택에서 고치기**)도 함께 적는다 |
 | `stack` | 아니오 | `/jw:handoff-move <PR 브랜치> --in-stack` 으로 이 세션을 스택 워크트리로 옮기거나 `/jw:handoff-fresh <PR 브랜치> --in-stack` 으로 넘긴다. `--in-stack` 없이 부르면 스크립트가 멈춘다 (새 워크트리를 만들면 스택이 갈라진다) |
 | `none` | | 위 handoff 명령이 그 브랜치의 워크트리를 만든다고 안내한다 |
+
+명령 앞의 `jw:` 는 Claude Code 의 플러그인 이름공간이다. Claude Code 가 아닌 에이전트(Cursor 등)에서는 앞을 빼고
+`/handoff-fresh <PR 브랜치>` 로 안내하고, Claude Code 전용인 handoff-move 대신 그 워크트리 폴더를 따로 열어 작업하라고 한다.
 
 **스택에서 고치기** — 스택 워크트리의 체크아웃(`worktree_branch`)은 바꾸지 않는다:
 
