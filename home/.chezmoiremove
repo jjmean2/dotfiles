@@ -40,3 +40,12 @@
 # 셸 설정을 도구별·터미널별 파일로 나누면서 옮긴 것 (2026-11-15):
 # shell/tmux/tmux_shell_integration.zsh → shell/terminal/tmux.zsh
 .config/shell/tmux
+
+# fasd → zoxide (2026-11-17). fasd 는 저장소가 보관 상태라 더 고쳐지지 않는다. 받아 둔 스크립트와 rc.d 조각,
+# fasd 가 만든 init 캐시를 지운다 (남아 있으면 rc.d 가 fasd 를 계속 읽고 z 가 zoxide 와 부딪친다).
+# 기록 파일 ~/.fasd 는 남긴다: zoxide import fasd --merge 로 옮길 수 있다.
+.jongwan/bin/fasd
+.config/shell/rc.d/fasd.sh
+.fasd-init-zsh
+.fasd-init-bash
+.fasd-init-posix-shell

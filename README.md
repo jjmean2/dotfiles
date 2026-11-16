@@ -141,7 +141,7 @@ Stow 로 관리하던 머신은 `stow -D <패키지>` 로 링크를 먼저 걷�
 1. `.chezmoi.toml.tmpl` 이 이메일, git 이름, 머신 등급(minimal 인지), macOS 면 Karabiner 를 쓸지 묻고
    `~/.config/chezmoi/chezmoi.toml` 을 만든다 (한 번만 묻는다). 나머지 기능은 등급에 따라 저장소의 선언대로 켜진다.
 2. `run_onchange_before_*` (macOS): Homebrew 설치, `packages.yaml` 의 brew/cask 설치. 몇 분 걸린다.
-3. `home/` 의 파일이 홈에 배포된다. fasd 스크립트와 zsh 플러그인도 이때 받는다 (`home/.chezmoiexternal.toml`).
+3. `home/` 의 파일이 홈에 배포된다. zsh 플러그인도 이때 받는다 (`home/.chezmoiexternal.toml`).
 4. `run_onchange_after_*`: (Linux) mise 로 필수 도구를 `~/.local` 에 받고 나머지는 배포판 패키지로 설치, `mise install` 로 `conf.d/shared.toml` 의 런타임 설치, (macOS) tmux/ghostty terminfo.
 5. 이후 `chezmoi apply` 는 바뀐 파일만 다시 쓰고, 스크립트는 내용이 바뀐 것만 다시 돈다.
 
