@@ -141,7 +141,7 @@ Stow 로 관리하던 머신은 `stow -D <패키지>` 로 링크를 먼저 걷�
 1. `.chezmoi.toml.tmpl` 이 이메일, git 이름, 머신 등급(minimal 인지), macOS 면 Karabiner 를 쓸지 묻고
    `~/.config/chezmoi/chezmoi.toml` 을 만든다 (한 번만 묻는다). 나머지 기능은 등급에 따라 저장소의 선언대로 켜진다.
 2. `run_onchange_before_*` (macOS): Homebrew 설치, `packages.yaml` 의 brew/cask 설치. 몇 분 걸린다.
-3. `home/` 의 파일이 홈에 배포된다. fasd 스크립트도 이때 받는다 (`home/.chezmoiexternal.toml`).
+3. `home/` 의 파일이 홈에 배포된다. fasd 스크립트와 zsh 플러그인도 이때 받는다 (`home/.chezmoiexternal.toml`).
 4. `run_onchange_after_*`: (Linux) mise 로 필수 도구를 `~/.local` 에 받고 나머지는 배포판 패키지로 설치, `mise install` 로 `conf.d/shared.toml` 의 런타임 설치, (macOS) tmux/ghostty terminfo.
 5. 이후 `chezmoi apply` 는 바뀐 파일만 다시 쓰고, 스크립트는 내용이 바뀐 것만 다시 돈다.
 
@@ -171,9 +171,10 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
 
 | 문서 | 내용 |
 |---|---|
-| [`docs/conventions.md`](docs/conventions.md) | 저장소 규칙: 플랫폼 전용 파일, 머신별 기능, 도구의 범위, 로컬 오버라이드, 셸 설정의 구조(`profile.d` · `rc.d` · `terminal/`), `create_` 파일, 개인 도구 |
+| [`docs/conventions.md`](docs/conventions.md) | 저장소 규칙: 플랫폼 전용 파일, 머신별 기능, 도구의 범위, 로컬 오버라이드, 셸 설정의 구조(`profile.d` · `rc.d` · `plugins.zsh` · `terminal/`), `create_` 파일, 개인 도구 |
 | [`docs/machines.md`](docs/machines.md) | 머신마다 무엇을 까나 (등급 minimal / full 과 기능), 임시 서버 설치·되돌리기 |
 | [`docs/tool-scope.md`](docs/tool-scope.md) | 개발 도구를 모든 머신 / 일부 머신 / 이 머신 / 이 프로젝트 중 어디에 둘지 |
+| [`docs/zsh-plugins.md`](docs/zsh-plugins.md) | zsh 플러그인(fzf-tab, 입력 제안, 문법 색칠)을 관리자 없이 받고 읽는 구조, 더하기·올리기·빼기 |
 | [`docs/nvim.md`](docs/nvim.md) | nvim (LazyVim) 설정의 구조, 상태 파일 `lazyvim.json` 과 `lazy-lock.json`, 업데이트와 되돌리기 |
 | [`docs/karabiner.md`](docs/karabiner.md) | 한글 입력 상태에서 tmux prefix 와 Esc 가 듣게 하는 Karabiner 규칙 (macOS) |
 | [`docs/tmux-dev/`](docs/tmux-dev/README.md) | tmux-dev 사용 가이드 (세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할. `prefix S`, `prefix W`). 설계 결정의 기록은 [`docs/tmux-dev/design/`](docs/tmux-dev/design/) |
