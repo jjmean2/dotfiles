@@ -135,8 +135,14 @@ claude plugin install jw@justwonder
 
 ## Cursor 에서 쓰기
 
-Cursor(3.30.8 데스크톱에서 확인)는 `~/.claude/plugins/installed_plugins.json` 과 `~/.claude/settings.json` 의
-`enabledPlugins` 를 읽어 설치된 Claude 플러그인의 스킬을 그대로 불러온다. 따로 설치할 것은 없다. 다만 Claude 와 다른 점이 있다.
+Cursor 는 `~/.claude/plugins/installed_plugins.json` 과 `~/.claude/settings.json` 의 `enabledPlugins` 를 읽어
+설치된 Claude 플러그인의 스킬을 그대로 불러온다. 따로 설치할 것은 없다. 다만 Claude 와 다른 점이 있다.
+
+아래 Cursor 쪽 내용은 Cursor 3.30.8 데스크톱 앱의 번들 코드와 로그를 읽고 정리한 것이다. Cursor 에서 스킬을 실제로
+돌려 본 것은 아니다 (Claude Code 쪽은 `claude -p` 로 세 handoff 스킬을 돌려 확인했다). 특히 다음은 확인하지 않았다:
+Claude 플러그인 스킬에도 `$ARGUMENTS` 가 치환되는지(안 되면 두 스크립트가 "치환되지 않았다"며 멈춘다), Cursor 에이전트의
+셸 PATH 에 `~/.jongwan/bin` 이 있는지, Cursor CLI(`cursor-agent`). 확인하려면 Cursor 채팅에서 `/pr-review-handle <PR 번호>`
+처럼 인자를 주고 불러 본다.
 
 | | Claude Code | Cursor |
 |---|---|---|
@@ -150,8 +156,8 @@ Cursor(3.30.8 데스크톱에서 확인)는 `~/.claude/plugins/installed_plugins
 
 | 스킬 | Cursor 에서 |
 |---|---|
-| pr-review-handle | 그대로 된다 |
-| handoff-fresh | 된다. 새 세션은 Claude Code 세션이다 (`claude` 필요) |
+| pr-review-handle | 될 것이다 (git·gh·jq 만 쓴다) |
+| handoff-fresh | 될 것이다. 새 세션은 Claude Code 세션이다 (`claude` 필요) |
 | handoff | 안 된다. Claude 대화 기록을 포크한다. `${CLAUDE_SESSION_ID}` 가 치환되지 않은 것을 보고 멈춘다 |
 | handoff-move | 안 된다. Claude 의 `/cd` 로 세션을 옮긴다. `${CLAUDE_SKILL_DIR}` 가 치환되지 않은 것을 보고 멈춘다 |
 

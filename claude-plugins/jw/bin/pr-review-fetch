@@ -44,6 +44,10 @@
 set -euo pipefail
 
 die() { echo "pr-review-fetch: $*" >&2; exit 1; }
+# 스킬의 $ARGUMENTS 가 치환되지 않은 채 오면(에이전트가 자리표시자를 모름) 인자 없이 도는 대신 멈춘다
+for a in "$@"; do
+  [ "$a" != '$ARGUMENTS' ] || die "인자 자리표시자 \$ARGUMENTS 가 치환되지 않았습니다. 사용자가 입력한 인자로 바꿔 다시 실행하세요"
+done
 
 all=false; stack=false; pr=""; thread_ids=()
 while [ $# -gt 0 ]; do
