@@ -1,0 +1,19 @@
+#!/bin/sh
+# Claude Code 가 응답을 끝냈거나(Stop) 허락·질문을 기다릴 때(Notification) 자기 tmux 패널에 벨(BEL)을 울린다.
+#
+# 왜: Claude Code 를 여러 윈도우에 띄워 두면 어느 쪽이 끝났는지 돌아다니며 봐야 한다. 패널에 벨이 울리면 tmux 가
+#     그 윈도우에 벨 플래그(!)를 세우고 상태바 탭 색을 바꾼다(tmux.conf 의 window-status-bell-style). 그 윈도우로
+#     가면 플래그는 저절로 꺼진다. 지금 보고 있는 윈도우의 벨은 tmux 가 무시한다(bell-action other).
+#
+# 방법: 훅의 stdout 은 Claude Code 가 읽어 가므로 거기 \a 를 써도 화면에 닿지 않는다. 대신 패널의 tty
+#       (#{pane_tty}, 예: /dev/ttys012)에 직접 쓴다. 그 tty 에 쓴 바이트는 패널 안 프로그램의 출력과 똑같이
+#       tmux 로 가므로, tmux 는 그 패널이 벨을 울린 것으로 본다.
+# tmux 밖(TMUX_PANE 없음, claude --bg 등)에서는 아무것도 하지 않는다.
+
+cat >/dev/null   # 훅 입력(JSON)은 쓰지 않지만 파이프를 비워 둔다
+
+[ -n "${TMUX_PANE-}" ] || exit 0
+command -v tmux >/dev/null 2>&1 || exit 0
+tty=$(tmux display-message -p -t "$TMUX_PANE" '#{pane_tty}' 2>/dev/null) || exit 0
+[ -w "$tty" ] && printf '\a' >"$tty" 2>/dev/null
+exit 0
