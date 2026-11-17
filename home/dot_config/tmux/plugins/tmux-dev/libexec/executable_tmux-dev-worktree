@@ -326,10 +326,12 @@ state_marks() {
   [ "${2:-0}" -gt 0 ] 2>/dev/null && parts+=("${Y}dirty $2${R}")
   return 0
 }
-# 판정 방법 → TAG (merged 뒤에 붙는 흐린 글자). ancestor 는 글자 없음 (가장 흔하고 확실하다). $1 은 ":<방법>" 이나 "<방법>".
+# 판정 방법 → TAG (merged 뒤에 붙는 글자). ancestor 는 글자 없음 (가장 흔하고 확실하다). $1 은 ":<방법>" 이나 "<방법>".
+# 색: 로컬 git 내용으로 증명한 r·s·t 는 흐린 초록(merged 와 한 덩어리로 읽힌다), GitHub 정보가 근거인 p 는
+# 마젠타(GitHub 의 머지된 PR 색). 노랑(살펴볼 것)·빨강(위험)은 쓰지 않는다: merged 는 모두 지워도 안전하다.
 # 행마다 부르므로 $(...) 없이 전역에 둔다
 how_tag() {
-  case ${1#:} in rebase) TAG="${D}·r${R}" ;; squash) TAG="${D}·s${R}" ;; tree) TAG="${D}·t${R}" ;; pr) TAG="${D}·p${R}" ;; *) TAG="" ;; esac
+  case ${1#:} in rebase) TAG="${DG}·r${R}" ;; squash) TAG="${DG}·s${R}" ;; tree) TAG="${DG}·t${R}" ;; pr) TAG="${M}·p${R}" ;; *) TAG="" ;; esac
 }
 how_text() {  # 미리보기용 설명
   case $1 in
@@ -594,10 +596,10 @@ ${B}worktree list${R}
 merged = all changes are in $(base) (or its upstream if $(base) is behind)
   the suffix tells how it was found:
   (none) ancestor: fast-forward or merge commit
-  ·r     rebase: each commit's patch is in $(base)
-  ·s     squash: the whole diff's patch is in $(base)
-  ·t     tree: merging it into $(base) would change nothing
-  ·p     pr: its GitHub PR was merged (needs gh, refreshed on fetch)
+  ${DG}·r${R}     rebase: each commit's patch is in $(base)
+  ${DG}·s${R}     squash: the whole diff's patch is in $(base)
+  ${DG}·t${R}     tree: merging it into $(base) would change nothing
+  ${M}·p${R}     pr: its GitHub PR was merged (needs gh, refreshed on fetch)
 new = no commits yet · +N = commits not in $(base) · dirty N = uncommitted
 missing = worktree directory is gone · claude:x = .claude/worktrees/x
 5m 3h 2d 3w 4mo 2y = age of the last commit. The preview shows the full

@@ -15,7 +15,7 @@ TMUX_DEV_CACHE="${TMUX_DEV_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/tmux-dev}"
 TMUX_DEV_LAYOUT="${TMUX_DEV_LAYOUT:-plain}"
 
 # 색 (fzf --ansi 용)
-B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[0m'
+B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; M=$'\033[35m'; DG=$'\033[2;32m'; R=$'\033[0m'
 
 # 오류: stderr 와 (tmux 안이면) 상태줄 메시지에 함께 적는다. 피커 창은 명령이 끝나면 바로 닫혀 stderr 만으로는 못 본다.
 # 피커가 패널이면(prefix S) 키를 누른 클라이언트에 띄운다 (TMUX_DEV_CLIENT, libexec/tmux-dev-open).
