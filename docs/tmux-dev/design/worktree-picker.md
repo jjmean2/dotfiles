@@ -51,7 +51,7 @@ tmux 세션 (세션 디렉토리 = @tmux-dev-path, 없으면 session_path)
 │ │ origin/pr-12  4d (remote) fix: ...                            │  ← 원격 (같은 이름 로컬 있으면 숨김)
 │ ╰──────────────────────────────────╯  │                          │
 │ ─────────────────────────────────────│                          │
-│     enter open · alt-enter new branch · alt-l layout · ctrl-x …  │  ← 푸터: 안내 · 확인 · 결과
+│     enter open · alt-enter new branch · alt-l layout · ctrl-x …  │  ← 푸터: 안내 · 판정 · 진행 · 결과 (묻지 않는다)
 ╰──────────────────────────────────────────────────────────────────╯
 ```
 
@@ -73,14 +73,27 @@ tmux 세션 (세션 디렉토리 = @tmux-dev-path, 없으면 session_path)
 | 워크트리, 창 열림 | 그 창으로 | 그 창으로 | 정리: 창 → 워크트리 → 백업 → 브랜치 |
 | 워크트리, 창 없음 | 창 만들기 | 레이아웃 골라 창 만들기 | 정리 (창 단계 없음) |
 | 메인 체크아웃 | 메인 창으로 (없으면 만들기) | 레이아웃 골라 | 하지 않음 |
-| missing | **묻고** prune 후 다시 만들기 | (묻는 중 alt-l) | prune → 백업 → 브랜치 |
-| 로컬 브랜치 | **묻고** 워크트리 + 창 | (묻는 중 alt-l) | 백업 → 브랜치 |
-| 원격 브랜치 | **묻고** 추적 브랜치 + 워크트리 + 창 | (묻는 중 alt-l) | 하지 않음 |
-| alt-enter (친 이름) | **묻고** 베이스에서 새 브랜치 + 워크트리 + 창 | (묻는 중 alt-l) | – |
+| missing | **만들기 목록** → prune 후 다시 만들기 | 만들기 목록 (커서는 with layout) | prune → 백업 → 브랜치 |
+| 로컬 브랜치 | **만들기 목록** → 워크트리 + 창 | 만들기 목록 (커서는 with layout) | 백업 → 브랜치 |
+| 원격 브랜치 | **만들기 목록** → 추적 브랜치 + 워크트리 + 창 | 만들기 목록 (커서는 with layout) | 하지 않음 |
+| alt-enter (친 이름) | **만들기 목록** → 베이스에서 새 브랜치 + 워크트리 + 창 | – | – |
 
-**만들기는 언제나 푸터에서 먼저 묻는다** (S 의 "질문은 목록을 유지한 채 푸터에서"). 상태 `target`(무엇을)·`confirm`(묻는 중)·
-`op`(create | clean | clean2). 묻는 동안 enter 는 실행, alt-l 은 레이아웃 고른 뒤 실행(create 일 때만), esc 는 취소.
-커서를 옮기거나(묻는 동안만 `focus` 이벤트를 묶는다) 글자를 쳐도 취소된다.
+**만들기는 언제나 겹쳐 뜬 만들기 목록에서 고른다** (session-picker.md 의 "고르는 것은 겹쳐 뜨는 목록에서, 푸터는 묻지 않는다").
+
+```
+메인 목록 ──enter / alt-enter──▶ ┌ new branch 'foo' ──────┐   미리보기: branch ← base, worktree 경로,
+                                 │ > create from main     │            layout(기본값), setup, (있는 브랜치면) 커밋
+                                 │   create with layout…  │──enter / alt-l──▶ 레이아웃 목록
+                                 └ esc back ──────────────┘                      │ esc → 만들기 목록 (커서 그대로)
+                                   │ esc → 메인 목록 (검색어·커서·선택 그대로)
+```
+
+- `execute(--choose-create)` → 상태 `create_choice` → 메인 목록의 `transform(--on after-create)` 가 `decide`. 대상은 상태 `target`,
+  처음 커서 행은 `create_start`(`load:pos(N)`. 메인 목록의 alt-l 이면 2). 레이아웃은 만들기 목록 위에 한 번 더 `execute` 로
+  겹쳐 띄우므로 거기서 esc 면 만들기 목록에 남는다(위치 피커 → 레이아웃과 같은 구조).
+- 제목이 할 일을 말한다: `new branch 'x'` · `worktree for 'x'` · `track origin/x` · `recreate worktree 'x'`.
+- 메인 목록의 alt-l 은 만들어야 하는 행에서 따로 지름길을 두지 않는다. 만들기 목록에 with layout 행이 있으니 같은 목록을
+  띄우고 커서만 그 행에 둔다.
 
 **여는 동작은 "피커는 결정만"** 이다. 결정 `"<종류>US<경로>US<브랜치>US<레이아웃>US<save>US<만들기>US<부모>"` 를 적고
 fzf 를 끝낸 뒤 `apply_decision` 이 만들고 연다(`CONFIRMED=1` 이라 셸 호출용 질문을 건너뛴다). 정리는 반대로 피커 안에서 끝난다
@@ -101,14 +114,17 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
                 ├─ dirty ─▶ 변경 수와 함께 실패
                 └─ 통과 ─▶ 정리 목록이 겹쳐 뜬다 (커서로 고르고 enter, esc 는 돌아가기)
                              ├─ clean up      창 → 워크트리 → 백업 → 브랜치 삭제
-                             │                 └─ 머지 안 됨 ─▶ 푸터 "feat-x has 2 commit(s) not in origin/main · clean up anyway?"
                              └─ keep branch   창 → 워크트리 제거까지 (브랜치는 남는다. 그 행에서 enter 로 다시 만든다)
                            → 실행 → 목록 다시 읽기 → 푸터에 결과 (백업 ref, 또는 "kept branch …")
 ```
 
 - 정리 목록은 레이아웃·위치 목록과 같은 겹쳐 뜨는 fzf 다(`execute(--choose-cleanup)` → 상태 `cleanup_choice` →
   `transform(--on after-cleanup)`). 미리보기가 고른 항목이 할 일을 보여 준다: 닫을 창, 지울 경로, 쓸 백업 ref 이름
-  (`next_archive_ref`), 복구 명령, 머지 안 된 커밋 수. 브랜치만 있는 행은 keep 이 할 일이 없어 clean up 하나만 보인다.
+  (`next_archive_ref`), 복구 명령, 머지 안 된 커밋 수. 브랜치만 있는 행은 keep 이 할 일이 없어 clean up 만 있다.
+- **머지 안 됨은 다시 묻지 않고 행 순서로 막는다 (2026-11-17).** 안전한 행(keep branch, 없으면 `back · do nothing`)을 맨 위
+  (커서 자리)에 두고 clean up 에 `(+N not in origin/main) · branch archived` 를 붙인다. enter 를 연달아 눌러도 안전한 쪽만
+  일어나고, 지우려면 커서를 내린다. 머지됐으면 clean up 이 맨 위다. 예전에는 clean up 을 고른 뒤 푸터에서 한 번 더 물었는데,
+  그때는 정리 목록이 이미 닫혀 있어 esc 가 정리 목록이 아니라 메인 목록으로 물러났다.
 - 처음엔 푸터 확인(enter · esc)이었다가 "브랜치는 두고 워크트리만" 이 필요해져 고르는 목록으로 바꿨다 (2026-11-09).
   푸터 키(alt-k)를 더하는 안도 있었지만 커서로 고르는 쪽이 자연스럽고, 우회 없이 피커의 기존 구조를 쓴다.
   tmux `display-menu` 는 고른 결과를 fzf 로 돌려받을 길이 없어(--listen 등 우회) 택하지 않았다.
@@ -146,7 +162,7 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
 - **ctrl-x 에 선택이 있으면**(`FZF_SELECT_COUNT`) fzf 의 `{+f}`(선택한 행들의 파일)로 받아 정리할 수 있는 것만 모으고, 같은 정리
   목록에 개수로 띄운다: `clean up 12` / `keep branches · remove 9 worktree(s) only`. 미리보기에 항목별 할 일과 건너뛸 것
   (`skipping 3 (2 dirty, 1 main)`, keep 이면 워크트리 없는 브랜치 행도)이 나온다. clean up 에 머지 안 된 것이 섞이면
-  `4 of them have commits not in origin/main · clean up anyway?` 로 한 번 더. 하나가 실패해도 나머지는 계속하고 결과를 개수로
+  같은 규칙으로 `keep branches`(워크트리가 없으면 `back`)가 맨 위에 오고 `clean up N (4 not merged)` 로 경고한다. 하나가 실패해도 나머지는 계속하고 결과를 개수로
   (`cleaned up 12 · archived 12 branch(es) under refs/archive/<날짜>/ · 1 failed: …`, keep 이면 `removed 9 worktree(s) · branches kept`).
   규칙은 하나씩 정리와 같은 `cleanable` / `clean_one` 이다.
 
@@ -175,7 +191,7 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
 - **기준 ref (`judge_ref`).** 로컬 베이스가 업스트림의 조상(같거나 뒤처짐)이면 `origin/<베이스>` 로, 아니면 로컬로. 업스트림이
   둘을 다 담으므로 "로컬 main 또는 origin/main 에 들어 있으면 머지됨" 을 계산 한 번으로 얻는다. 그래서 PR 로 머지한 뒤 pull
   하지 않아도 `merged` 로 보이고, 예전의 "main 을 origin 에 맞출까요?" 질문이 필요 없어졌다.
-- 피커가 뜰 때 백그라운드에서 `git fetch --prune origin`(`start:bg-transform`). 원격 ref 가 바뀌었고 아직 worktree 모드이며 묻는
+- 피커가 뜰 때 백그라운드에서 `git fetch --prune origin`(`start:bg-transform`). 원격 ref 가 바뀌었고 아직 worktree 모드이며 정리
   중이 아니면 목록을 다시 읽는다. 실패(오프라인 등)는 조용히 넘긴다.
 
 ## 워크트리 위치와 만들기
@@ -204,8 +220,8 @@ prefix S 와 같다 (session-picker.md "띄우기" 절): `run-shell -b "tmux-dev
 3. **목록 순서**: 열린 창 → 최근 → 진행 중 워크트리 → 끝난 워크트리(merged, 흐리게) → 로컬 브랜치(진행 중 → 끝남) →
    `origin/*`, 묶음 안은 최근 커밋 순. 메인 체크아웃도 워크트리 행이다. 끝난 것이 아래로 가는 것은 마커를 읽은 뒤다
    (2026-11-09: 실제 dotfiles 에서 59행 중 48행이 끝난 에이전트 워크트리라 진행 중인 작업이 묻혔다).
-4. **만들기는 푸터에서 먼저 묻는다.** enter / alt-l(레이아웃) / esc. 예전 "후보가 없으면 Enter = 새 브랜치" 는 없앴다
-   (S 의 "enter 는 열기만, 만들기는 alt-enter" 와 같은 방향).
+4. **만들기는 먼저 확인한다.** 처음엔 푸터에서 물었고(enter / alt-l / esc), 2026-11-17 부터 겹쳐 뜬 만들기 목록이다(결정 14).
+   예전 "후보가 없으면 Enter = 새 브랜치" 는 없앴다 (S 의 "enter 는 열기만, 만들기는 alt-enter" 와 같은 방향).
 5. **백업 이름은 날짜 경로 + 충돌 시 -2, -3** (사용자 결정).
 6. **머지 판정은 로컬 main 또는 origin/main + 백그라운드 fetch** (사용자 결정). main 동기화 질문은 없앴다.
 7. **정리는 피커 안에서, 피커 유지.** 피커가 정리할 창 안에 있으면 다른 패널만 닫는다(modal pane 은 옮길 수 없다).
@@ -218,10 +234,16 @@ prefix S 와 같다 (session-picker.md "띄우기" 절): `run-shell -b "tmux-dev
     사용자 요청으로 손이 편한 alt-n·alt-s 로 (키보드에서 m·a 바로 왼쪽·오른쪽 = 짝).
     이후 사용자 요청으로 alt-a·alt-s 를 ctrl-t 토글 하나로 합쳤다(alt-a 가 누르기 불편. ctrl-a 는 tmux prefix2 이자 fzf 기본이라 제외,
     ctrl-s 는 흐름 제어, ctrl-space 는 macOS 입력 소스 전환과 겹친다).
-12. **정리는 고르는 목록으로 (2026-11-09)**: clean up / keep branch. 미머지 2차 확인은 clean up 에만 남긴다. 여러 개를 골랐으면
+12. **정리는 고르는 목록으로 (2026-11-09)**: clean up / keep branch. 미머지 2차 확인은 clean up 에만 남긴다(결정 14 에서 없앰). 여러 개를 골랐으면
     같은 목록에 clean up N / keep branches(워크트리만, 브랜치 행은 건너뜀).
 13. **빠른 제거 + 진행 표시 (2026-11-09)**: 휴지통(`.trash/`, 워크트리 모음 디렉토리 안)으로 `git worktree move` 한 뒤 백그라운드 삭제,
     정리는 tmux 서버 작업으로 돌리고 피커는 `every` 틱으로 진행을 보인다 (사용자 결정: "둘다").
+14. **푸터는 묻지 않는다 (2026-11-17)**: 사용자 요구 "모든 선택이 끝날 때까지는 되돌아올 수 있어야 한다". 겹친 목록 뒤에
+    푸터 확인이 오면(정리 → 미머지 확인) esc 가 겹친 목록을 건너뛰어 메인 목록으로 물러났다. 그래서 만들기 확인을 겹친 목록으로
+    옮기고(alt-l 은 그 목록의 with layout 행으로 대체), 미머지 2차 확인은 "안전한 행을 맨 위에" 로 바꿨다(사용자: 권장대로).
+    상태 `confirm`·`op`, 묻는 동안만 묶던 `focus`, 처리기마다의 "묻는 중인가" 분기가 모두 없어졌다.
+    같이 고친 것: 마커 판정(`ctrl-t`, 한꺼번에 정리의 미머지 수)이 표시 칸을 `*merged*` 로 맞춰 경로·제목의 "unmerged" 에도
+    걸렸다. 색까지(`${G}merged${R}`) 맞춘다.
 
 ## 구현 구조와 시험
 

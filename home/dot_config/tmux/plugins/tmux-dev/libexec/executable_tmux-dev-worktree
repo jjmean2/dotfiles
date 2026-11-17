@@ -29,20 +29,24 @@
 #   tab / shift-tab   선택 토글 (fzf 순정, worktree 모드에서만). 선택은 정리(ctrl-x)에만 쓴다. enter 는 늘 커서 항목을 연다
 #   ctrl-t            토글: 선택이 없으면 merged 인 워크트리·브랜치를 모두 선택, 있으면 모두 풀기 (t = toggle)
 #   enter             커서 항목으로. 열린 윈도우가 있으면 그리로, 없으면 만든다
-#                     worktree 모드에서 만들어야 하는 것(브랜치, 원격 브랜치, 사라진 워크트리)은 푸터에서 먼저 묻는다:
-#                       enter 만들기 · alt-l 레이아웃 골라 만들기 · esc 취소 (커서를 옮기거나 글자를 치면 취소)
-#   alt-enter         worktree: 친 이름으로 새 브랜치 + 워크트리 (베이스에서 분기, 푸터에서 묻는다)
+#                     worktree 모드에서 만들어야 하는 것(브랜치, 원격 브랜치, 사라진 워크트리)은 만들기 확인 목록이 겹쳐 뜬다:
+#                       create · create with layout… (미리보기에 만들 브랜치·경로·레이아웃). esc 는 메인 목록으로
+#   alt-enter         worktree: 친 이름으로 새 브랜치 + 워크트리 (베이스에서 분기, 같은 확인 목록)
 #                     subdirectory / directory: 친 이름으로 새 디렉토리 (prefix S 와 같은 위치 피커. 경로를 치면 그 자리에)
-#   alt-l             레이아웃을 골라서 열기 (이번만. 레이아웃 목록의 alt-enter 는 worktree 모드에서 저장소 기본으로도 저장)
+#   alt-l             레이아웃을 골라서 열기 (이번만. 레이아웃 목록의 alt-enter 는 worktree 모드에서 저장소 기본으로도 저장).
+#                     만들어야 하는 행이면 확인 목록이 뜨고 커서가 create with layout… 에 놓인다
 #   ctrl-x            worktree 모드에서 커서 항목 정리 (워크트리, 로컬 브랜치). 정리 목록이 겹쳐 뜬다: clean up(창 → 워크트리 →
-#                     백업 → 브랜치 삭제, 머지 안 됐으면 푸터에서 한 번 더) / keep branch(창 → 워크트리 제거까지). 미리보기가 할 일을
-#                     보여 준다. 선택이 있으면 선택 전체(clean up N / keep branches. 못 하는 것은 건너뛰고 이유별 개수를 결과에). 푸터에서 묻고(enter · esc), 브랜치가 머지 안 됐으면
-#                     한 번 더 묻는다. 창 닫기 → 워크트리 제거 → refs/archive/<날짜>/<브랜치> 백업(-2, -3) → 브랜치 삭제.
+#                     백업 → 브랜치 삭제) / keep branch(창 → 워크트리 제거까지). 미리보기가 할 일을 보여 준다.
+#                     머지 안 된 브랜치가 있으면 안전한 행(keep branch, 없으면 back)이 먼저 오고 clean up 에 경고가 붙는다.
+#                     다시 묻지 않는다: 위험한 쪽은 커서를 내려야 고를 수 있다. 선택이 있으면 선택 전체(clean up N / keep branches.
+#                     못 하는 것은 건너뛰고 이유별 개수를 결과에). 창 닫기 → 워크트리 제거 → refs/archive/<날짜>/<브랜치> 백업(-2, -3) → 브랜치 삭제.
 #                     메인 체크아웃·베이스 브랜치·원격 브랜치·locked 는 하지 않고, dirty 면 실패한다. 피커는 열린 채로 남는다.
 #                     워크트리는 .trash/ 로 옮겨 바로 비우고 실제 삭제는 뒤에서 한다. 정리하는 동안 푸터에 스피너와 진행이 돈다
 #   alt-p             미리보기 오른쪽 → 아래 → 숨김
 #   alt-h             키 안내를 미리보기 자리에
-#   esc               닫기 (확인 중이면 취소). ctrl-c 는 언제나 닫기
+#   esc               닫기. ctrl-c 도 닫기
+# 겹쳐 뜨는 목록(만들기 확인, 정리, 레이아웃, 위치)에서 esc 는 한 단계 뒤로 간다. 실제로 일을 하는 것은 마지막에 고를 때뿐이고,
+# 그 전에는 몇 단계를 들어갔든 esc 로 되돌아올 수 있다 (메인 목록의 검색어·커서·선택은 그대로). 푸터는 묻지 않는다: 안내·판정·진행·결과만
 #
 # worktree 모드 목록: 워크트리(열린 윈도우 ●N → 최근 고른 것 ◷ → 나머지, 메인 체크아웃 포함) → 로컬 브랜치(최근 커밋 순)
 #   → 원격 브랜치(origin/*, 같은 이름의 로컬 브랜치가 있으면 숨긴다). 마커: dirty · merged(·r ·s ·t ·p) · [ahead n, behind m] · missing · locked
@@ -572,23 +576,27 @@ alt-m / alt-n mode: next / previous (or click a mode name)
 ctrl-]        put the item's path into the query (directory modes)
 alt-p         preview right → bottom → hidden
 alt-h         toggle this help
-esc           close (while asking: cancel)
+esc           close
 ctrl-c        close
 
-${B}asking first${R}
+${B}lists on top${R}
+Create, clean up, layout and location open a list on top.
+esc goes back one step; nothing happens until the last choice.
+
+${B}create${R}
 Creating a worktree (from a branch, a remote branch or a new name)
-asks in the footer first:
-  enter       create and open
-  alt-l       create with a chosen layout
-  esc         cancel (moving the cursor or typing also cancels)
+opens a list first: "create" or "create with layout…".
+The preview shows the branch, the path and the layout.
 
 ${B}clean up (ctrl-x)${R}
 A menu opens: "clean up" closes the worktree's window, removes the
 worktree, archives the branch to refs/archive/<date>/<branch> and
-deletes it (asks again if not merged); "keep branch" only closes the
-window and removes the worktree. The preview shows exactly what will
-happen. Refused for the main checkout, the base branch, remote branches
-and locked worktrees; fails if dirty.
+deletes it; "keep branch" only closes the window and removes the
+worktree. If the branch is not merged, the safe row comes first
+("keep branch", or "back") and "clean up" carries a warning.
+The preview shows exactly what will happen. Refused for the main
+checkout, the base branch, remote branches and locked worktrees;
+fails if dirty.
 
 ${B}worktree list${R}
 ● open window · ◷ recently opened · then worktrees in progress, finished
@@ -608,8 +616,9 @@ EOF
 }
 
 # --- 콜백 (fzf 가 이벤트마다 부른다. 액션 한 줄을 출력한다) -----------------------------
-# 상태 키: mode, root(세션 디렉토리), target("<종류>US<경로>US<브랜치>" 지금 다룰 대상), confirm(1 이면 푸터에서 묻는 중),
-#   help, 그리고 lib 의 name, near, loc, pending, near_pick, layout. decision 은 fzf 를 끝낼 때의 결정.
+# 상태 키: mode, root(세션 디렉토리), target("<종류>US<경로>US<브랜치>" 지금 다룰 대상), help,
+#   create_start·create_choice(만들기 확인 목록), 그리고 lib 의 name, near, loc, pending, near_pick, layout.
+#   decision 은 fzf 를 끝낼 때의 결정.
 footer_now() {  # 지금 모드의 푸터 (검색어에 따라)
   local q=${FZF_QUERY:-}; cur_mode
   if [ -z "$q" ]; then hint "$MODE"
@@ -618,31 +627,22 @@ footer_now() {  # 지금 모드의 푸터 (검색어에 따라)
     else printf '%s' "enter open the item ${D}· alt-enter create at the typed path${R}"; fi
   else create_hint "$q" "$MODE"; fi
 }
-# 푸터에서 묻기. 상태 op 가 무엇을 묻는지 정한다: create(만들기. alt-l 로 레이아웃), clean(정리), clean2(머지 안 된 브랜치 정리).
-# 커서를 옮기면(focus) 취소되도록 묻는 동안만 focus 를 묶는다.
-key_hint() { printf '%s' "${B}$1${R}${D} $2${R}"; }
-ask() {  # $1 종류 $2 경로 $3 브랜치 $4 질문 [$5 op, 기본 create]
-  local op=${5:-create} keys
-  st_set target "$1$US$2$US$3"; st_set confirm 1; st_set op "$op"
-  if [ "$op" = create ]; then keys="$(key_hint enter create) ${D}·${R} $(key_hint alt-l 'with layout') ${D}·${R} $(key_hint esc cancel)"
-  else keys="$(key_hint enter 'clean up') ${D}·${R} $(key_hint esc cancel)"; fi
-  printf 'rebind(focus)+%s' "$(act change-footer "$4 ${D}·${R} $keys")"
-}
-cancel_ask() { st_del confirm target op; printf 'unbind(focus)+%s' "$(act change-footer "$(footer_now)")"; }
 decide() {  # $1 종류 $2 경로 $3 브랜치 [$4 만들기 dir] [$5 위치 피커에서 고른 부모] → 결정 파일을 쓰고 fzf 를 끝낸다
   local l="" s=""; st_get layout; [ -n "$ST" ] && IFS=$'\t' read -r l s <<< "$ST"
   st_set decision "$1$US$2$US$3$US$l$US$s$US${4:-}$US${5:-}"
   printf 'accept'
 }
-# worktree 모드의 행을 대상으로: 바로 열 것이면 결정, 만들어야 하면 묻는다
-worktree_target() {  # $1 종류 $2 경로 $3 브랜치 $4 now(바로) | ask
-  local kind=$1 path=$2 branch=$3
-  case $kind in
-    worktree) decide worktree "$path" "$branch" ;;
-    prunable) ask prunable "$path" "$branch" "${Y}worktree directory is gone${R}: $(home_disp "$path") · recreate ${B}$branch${R}?" ;;
-    branch)   ask branch "" "$branch" "create worktree for ${B}$branch${R} → $(home_disp "$(wt_dir "$branch")")" ;;
-    remote)   ask remote "$path" "$branch" "create ${B}$branch${R} tracking $path → $(home_disp "$(wt_dir "$branch")")" ;;
-    *)        printf 'bell' ;;
+# 만들어야 하는 것은 만들기 확인 목록을 겹쳐 띄운다. 거기서 고르면 after-create 가 결정하고, esc 면 메인 목록이 그대로 남는다
+confirm_create() {  # $1 종류 $2 경로 $3 브랜치 [$4 커서를 둘 행: 1 create, 2 create with layout]
+  st_set target "$1$US$2$US$3"; st_set create_start "${4:-1}"; st_del layout create_choice
+  printf 'execute(%s --choose-create)+transform(%s --on after-create)' "$SELF" "$SELF"
+}
+# worktree 모드의 행을 대상으로: 바로 열 것이면 결정, 만들어야 하면 확인 목록
+worktree_target() {  # $1 종류 $2 경로 $3 브랜치 [$4 확인 목록의 커서 행]
+  case $1 in
+    worktree) decide worktree "$2" "$3" ;;
+    prunable|branch|remote) confirm_create "$1" "$2" "$3" "${4:-1}" ;;
+    *) printf 'bell' ;;
   esac
 }
 # 디렉토리 모드의 열 대상: 커서 항목, 아니면 경로 모양 검색어가 가리키는 있는 디렉토리. 없으면 안내 액션을 출력하고 1
@@ -659,16 +659,6 @@ dir_target() {  # $1 커서 항목의 경로
 }
 on_enter() {  # $1 종류 $2 경로 $3 브랜치
   busy && return
-  st_get confirm
-  if [ "$ST" = 1 ]; then
-    local k p b op; st_get target; IFS=$US read -r k p b <<< "$ST"; st_get op; op=${ST:-create}
-    case $op in
-      clean2) start_job one ;;    # 정리 목록에서 clean up 을 고른 뒤 머지 안 된 브랜치를 한 번 더 확인 (대상은 상태 target)
-      bulk2)  start_job many ;;
-      *)      st_del layout; decide "$k" "$p" "$b" ;;
-    esac
-    return
-  fi
   cur_mode; st_del layout
   if [ "$MODE" = worktree ]; then
     [ -n "${1:-}" ] || { local q=${FZF_QUERY:-}; if [ -n "$q" ]; then nope "${Y}no match${R} · $(create_hint "$q" worktree)"; else nope "$(hint worktree)"; fi; return; }
@@ -678,31 +668,25 @@ on_enter() {  # $1 종류 $2 경로 $3 브랜치
     decide dir "$J_PATH" ""
   fi
 }
-on_layout() {  # alt-l: 대상을 정하고 레이아웃 목록을 겹쳐 띄운다. 만들어야 하는 행은 먼저 묻는다 (거기서 alt-l)
+on_layout() {  # alt-l: 대상을 정하고 레이아웃 목록을 겹쳐 띄운다. 만들어야 하는 행은 확인 목록을 띄우고 커서를 with layout 에
   local k p b
   busy && return
-  st_get confirm
-  if [ "$ST" = 1 ]; then
-    st_get op; [ "${ST:-create}" = create ] || { printf 'bell'; return; }   # 정리를 묻는 중에는 레이아웃이 없다
-    st_get target; IFS=$US read -r k p b <<< "$ST"
-  else
-    cur_mode
-    if [ "$MODE" = worktree ]; then
-      [ -n "${1:-}" ] || { printf 'bell'; return; }
-      case $1 in worktree) k=worktree p=$2 b=$3 ;; *) worktree_target "$1" "${2:-}" "${3:-}"; return ;; esac
-    else dir_target "${2:-}" || return 0; k=dir p=$J_PATH b=""; fi
-    st_set target "$k$US$p$US$b"
-  fi
+  cur_mode
+  if [ "$MODE" = worktree ]; then
+    [ -n "${1:-}" ] || { printf 'bell'; return; }
+    case $1 in worktree) k=worktree p=$2 b=$3 ;; *) worktree_target "$1" "${2:-}" "${3:-}" 2; return ;; esac
+  else dir_target "${2:-}" || return 0; k=dir p=$J_PATH b=""; fi
+  st_set target "$k$US$p$US$b"
   st_del layout
-  st_set pending "none"$'\t'"${p:-$(wt_dir "$b")}"
+  st_set pending "none"$'\t'"$p"
   printf 'execute(%s --choose-layout)+transform(%s --on after-layout)' "$SELF" "$SELF"
 }
-on_after_layout() {  # 레이아웃에서 esc 면 그대로(묻던 중이면 계속 묻는다), 골랐으면 대상을 실행
+on_after_layout() {  # 레이아웃에서 esc 면 그대로, 골랐으면 대상을 실행
   local k p b; st_get layout; [ -n "$ST" ] || return 0
   st_get target; IFS=$US read -r k p b <<< "$ST"
   decide "$k" "$p" "$b"
 }
-on_create() {  # alt-enter. worktree: 친 이름으로 새 브랜치(묻는다). 디렉토리: 경로면 그 자리에, 이름이면 위치 피커
+on_create() {  # alt-enter. worktree: 친 이름으로 새 브랜치(확인 목록). 디렉토리: 경로면 그 자리에, 이름이면 위치 피커
   local q=${FZF_QUERY:-} path branch flags
   busy && return
   cur_mode; st_del layout loc
@@ -716,7 +700,7 @@ on_create() {  # alt-enter. worktree: 친 이름으로 새 브랜치(묻는다).
     done <<< "$WT_LIST"
     if git show-ref -q --verify "refs/heads/$q"; then worktree_target branch "" "$q"; return; fi
     if git show-ref -q --verify "refs/remotes/origin/$q"; then worktree_target remote "origin/$q" "$q"; return; fi
-    ask new "" "$q" "create branch ${B}$q${R} from $(base) → $(home_disp "$(wt_dir "$q")")"
+    confirm_create new "" "$q"
     return
   fi
   if pathish "$q"; then
@@ -743,10 +727,9 @@ on_after_location() {  # 위치 피커에서 esc 면 그대로, 골랐으면 만
     *) nope "$J_SAY" ;;
   esac
 }
-on_change() {  # 글자를 치면 묻던 것은 취소. 디렉토리 모드의 경로 모양 검색어는 접두 일치로
+on_change() {  # 디렉토리 모드의 경로 모양 검색어는 접두 일치로
   local out="bg-cancel+"
   st_get select_merged; [ "$ST" = 1 ] && { printf 'rebind(result)'; return 0; }   # ctrl-t 가 검색어를 지운 것: result 를 기다린다
-  st_get confirm; [ "$ST" = 1 ] && { st_del confirm target op; out+="unbind(focus)+"; }
   cur_mode
   if [ "$MODE" != worktree ] && pathish "${FZF_QUERY:-}"; then printf '%srebind(result)+first+%s' "$out" "$(search_action "$FZF_QUERY")"
   else printf '%sunbind(result)+first+%s' "$out" "$(act change-footer "$(footer_now)")"; fi
@@ -755,13 +738,11 @@ on_result() {
   st_get select_merged; if [ "$ST" = 1 ]; then st_del select_merged; printf 'unbind(result)+'; select_merged_actions; return 0; fi
   cur_mode; [ "$MODE" != worktree ] && pathish "${FZF_QUERY:-}" && act change-footer "$(footer_now)"; return 0
 }
-on_esc() { st_get confirm; if [ "$ST" = 1 ]; then cancel_ask; else printf 'abort'; fi; }
-on_focus() { st_get confirm; if [ "$ST" = 1 ]; then cancel_ask; else printf 'unbind(focus)'; fi; }
 to_mode() {  # $1 새 모드 → 목록·탭·푸터를 바꾸는 액션. worktree 는 마커를 다시 계산하도록 load 를 다시 묶는다
-  local load=""; st_set mode "$1"; st_del confirm target op
+  local load=""; st_set mode "$1"
   # 다중 선택(tab)은 worktree 모드의 정리에만 쓴다. 다른 모드로 가면 선택을 비우고 tab 을 푼다
   if [ "$1" = worktree ]; then load="rebind(load)+rebind(tab,shift-tab)+"; else load="deselect-all+unbind(tab,shift-tab)+"; fi
-  printf 'unbind(focus)+%sreload(%s --list %s)+%s+first+%s' "$load" "$SELF" "$1" "$(act change-header "$(tabs "$1")")" "$(act change-footer "$(footer_now)")"
+  printf '%sreload(%s --list %s)+%s+first+%s' "$load" "$SELF" "$1" "$(act change-header "$(tabs "$1")")" "$(act change-footer "$(footer_now)")"
 }
 on_mode() {  # $1 next | prev
   busy && return
@@ -796,7 +777,7 @@ select_merged_actions() {
   while IFS=$US read -r _name disp kind _rest; do   # 탭을 US 로 (on_cleanup_many 와 같은 이유)
     i=$((i + 1))
     case $kind in worktree|prunable|branch) ;; *) continue ;; esac
-    case $disp in *merged*) out+="pos($i)+select+"; n=$((n + 1)) ;; esac
+    case $disp in *"${G}merged${R}"*) out+="pos($i)+select+"; n=$((n + 1)) ;; esac   # 색까지 맞춘다: 경로·제목의 "unmerged" 같은 글자에 걸리지 않게
   done < <(tr '\t' '\037' < "$TMUX_DEV_STATE/rows")
   [ "$n" -gt 0 ] || { nope "${Y}nothing merged${R}"; return; }
   printf 'deselect-all+%sfirst+%s' "$out" "$(act change-footer "${G}selected $n merged${R} ${D}· ctrl-x clean up · tab toggle · ctrl-t deselect all${R}")"
@@ -817,7 +798,6 @@ on_fetch() {
   after=$(git for-each-ref refs/remotes/origin --format='%(objectname) %(refname)' | cksum; { cat "$PR_FILE" 2>/dev/null || true; } | cksum)
   [ "$before" = "$after" ] && return 0
   cur_mode; [ "$MODE" = worktree ] || return 0
-  st_get confirm; [ "$ST" = 1 ] && return 0          # 묻는 중에는 목록을 바꾸지 않는다
   st_get busy; [ "$ST" = 1 ] && return 0             # 정리 중이면 끝날 때 다시 읽는다
   printf 'rebind(load)+reload(%s --list worktree)' "$SELF"
 }
@@ -909,17 +889,16 @@ pick() {
       "${STYLE[@]}" --border-label " open window · ${SESSION} " --header "$(tabs "$MODE")" --header-first --prompt '> ' \
       --footer "$(hint "$MODE")" --footer-border line \
       --preview "$SELF --preview {3} {4} {5}" --preview-window 'right,45%,border-left' \
-      --multi --bind "start:unbind(result)+unbind(focus)+unbind($EVERY)+${start_tab}bg-transform($SELF --on fetch)" \
+      --multi --bind "start:unbind(result)+unbind($EVERY)+${start_tab}bg-transform($SELF --on fetch)" \
       --bind "$EVERY:transform($SELF --cleanup-tick)" \
       --bind "load:unbind(load)+transform($SELF --on marks)" \
       --bind "change:transform($SELF --on change)" \
       --bind "result:bg-transform($SELF --on result)" \
-      --bind "focus:transform($SELF --on focus)" \
       --bind "enter:transform($SELF --on enter {3} {4} {5})" \
       --bind "double-click:transform($SELF --on enter {3} {4} {5})" \
       --bind "alt-enter:transform($SELF --on create {4})" \
       --bind "alt-l:transform($SELF --on layout {3} {4} {5})" \
-      --bind "esc:transform($SELF --on esc)" \
+      --bind 'esc:abort' \
       --bind "alt-m:transform($SELF --on mode next)" --bind "alt-n:transform($SELF --on mode prev)" \
       --bind "ctrl-t:transform($SELF --on toggle-merged)" \
       --bind "click-header:transform($SELF --on tab-click)" \
@@ -1042,10 +1021,77 @@ apply_decision() {
   hist_record "$TMUX_DEV_WINDOWS" "$TARGET" "$HISTORY_MAX"   # 피커로 연 것만 기록한다 (셸 호출은 기록하지 않는다)
 }
 
+# --- 만들기 확인 목록 (만들어야 하는 행의 enter·alt-l, worktree 모드의 alt-enter 로 겹쳐 뜬다) ------------------
+# 행: create(기본 레이아웃) / create with layout…(레이아웃 목록을 그 위에 하나 더 띄운다). 미리보기가 만들 것을 보여 준다.
+# esc 는 한 단계 뒤로: 레이아웃 목록 → 이 목록 → 메인 목록. 고르면 상태 create_choice 를 남기고 끝나며, 메인 목록의
+# after-create 가 결정한다 (만드는 것은 피커가 끝난 뒤 apply_decision). 대상은 상태 target, 처음 커서 행은 create_start.
+choose_create_step() {
+  local kind path branch title first start
+  st_get target; IFS=$US read -r kind path branch <<< "$ST"
+  case $kind in
+    new)      title=" new branch '$branch' ";        first="create from $(base)" ;;
+    branch)   title=" worktree for '$branch' ";      first="create worktree" ;;
+    remote)   title=" track $path ";                 first="create $branch tracking $path" ;;
+    prunable) title=" recreate worktree '$branch' "; first="recreate worktree" ;;
+    *) return 0 ;;
+  esac
+  st_get create_start; start=${ST:-1}
+  style_opts
+  fzf --ansi --delimiter '\t' --with-nth 1 --no-sort "${STYLE[@]}" --border-label "$title" \
+      --prompt 'create> ' --footer "${D}enter choose · alt-l with layout · esc back${R}" --footer-border line \
+      --preview "$SELF --create-preview {2}" --preview-window 'right,55%,border-left' \
+      --bind "load:pos($start)" --bind 'esc:abort' \
+      --bind "enter:transform($SELF --on create-pick {2})" \
+      --bind "double-click:transform($SELF --on create-pick {2})" \
+      --bind "alt-l:transform($SELF --on create-pick layout)" \
+      --bind 'alt-p:change-preview-window(down,40%,border-top|hidden|right,55%,border-left)' \
+      < <(printf '%s\t%s\n%s\t%s\n' "$first" create "create with layout…" layout) > /dev/null || true
+}
+create_dir() {  # $1 종류 $2 경로 $3 브랜치 → 만들어질(prunable 은 다시 만들) 워크트리 경로
+  case $1 in prunable) printf '%s' "$2" ;; *) wt_dir "$3" ;; esac
+}
+create_preview() {  # $1 create | layout
+  local kind path branch setup
+  st_get target; IFS=$US read -r kind path branch <<< "$ST"
+  case $kind in
+    new)      echo "branch   ${B}$branch${R} ${D}new, from $(base) $(git log -1 --format='%h %s' "$(base)" 2>/dev/null)${R}" ;;
+    branch)   echo "branch   ${B}$branch${R} ${D}existing${R}" ;;
+    remote)   echo "branch   ${B}$branch${R} ${D}new, tracking $path${R}" ;;
+    prunable) echo "${Y}the worktree directory is gone${R} ${D}· git worktree prune first${R}"
+              echo "branch   ${B}$branch${R} ${D}existing${R}" ;;
+  esac
+  echo "worktree $(home_disp "$(create_dir "$kind" "$path" "$branch")")"
+  if [ "$1" = layout ]; then echo "layout   ${D}choose in the next list${R}"
+  else echo "layout   $(resolve_layout "" "$MAIN") ${D}(repo or global default)${R}"; fi
+  setup=$(conf setup); [ -n "$setup" ] && echo "setup    ${D}$setup${R}"
+  case $kind in
+    branch|prunable) echo; merge_summary "$branch"; upstream_summary "$branch"; echo; git log --oneline --color=always -8 "$branch" 2>/dev/null ;;
+    remote) echo; git log --oneline --color=always -8 "$path" 2>/dev/null ;;
+  esac
+  return 0
+}
+on_create_pick() {  # 확인 목록의 enter·alt-l. $1 create | layout
+  local k p b
+  case ${1:-} in
+    create) st_del layout; st_set create_choice 1; printf 'accept' ;;
+    layout)
+      st_get target; IFS=$US read -r k p b <<< "$ST"
+      st_del layout; st_set pending "none"$'\t'"$(create_dir "$k" "$p" "$b")"
+      printf 'execute(%s --choose-layout)+transform(%s --on create-after-layout)' "$SELF" "$SELF" ;;
+    *) printf 'bell' ;;
+  esac
+}
+on_create_after_layout() { st_get layout; [ -n "$ST" ] || return 0; st_set create_choice 1; printf 'accept'; }   # esc 면 확인 목록에 남는다
+on_after_create() {  # 메인 목록: 확인 목록에서 골랐으면 결정, esc 면 그대로 (검색어·커서·선택이 남아 있다)
+  local k p b; st_get create_choice; [ -n "$ST" ] || return 0; st_del create_choice
+  st_get target; IFS=$US read -r k p b <<< "$ST"
+  decide "$k" "$p" "$b"
+}
+
 # --- 정리 (ctrl-x) -------------------------------------------------------------------
 # worktree 모드에서 워크트리·로컬 브랜치를 정리한다. 피커 안에서 끝나고 피커는 열린 채로 남는다 (이어서 다른 것을 정리하거나 연다).
-#   ctrl-x → 검사 (메인 체크아웃·베이스 브랜치·원격 브랜치·locked 는 하지 않는다, dirty 면 실패) → 푸터 확인
-#          → 브랜치가 머지 안 됐으면 한 번 더 확인 → 실행 → 목록을 다시 읽고 푸터에 결과(백업 ref)
+#   ctrl-x → 검사 (메인 체크아웃·베이스 브랜치·원격 브랜치·locked 는 하지 않는다, dirty 면 실패) → 정리 목록
+#          (머지 안 됐으면 안전한 행이 먼저) → 실행 → 목록을 다시 읽고 푸터에 결과(백업 ref)
 #   실행 순서: 창 닫기 → 워크트리 제거(git worktree remove, 강제 없이. missing 이면 prune) → 브랜치 백업 → 브랜치 삭제.
 #   창을 먼저 닫는 것은 그 안의 프로세스(셸, nvim, 에이전트)를 먼저 끝내기 위해서다.
 # 피커가 그 창 안의 패널이면(prefix W 를 modal floating pane 으로 띄울 때) 창을 닫으면 피커도 같이 죽는다. modal pane 은
@@ -1086,7 +1132,7 @@ cleanable() {
 on_cleanup() {  # ctrl-x. $1 종류 $2 경로 $3 브랜치 $4 선택한 행들의 파일(fzf {+f}). 선택이 있으면 한꺼번에 정리
   local kind=${1:-} path=${2:-} branch=${3:-}
   busy && return
-  st_del confirm target op; cur_mode
+  cur_mode
   [ "$MODE" = worktree ] || { nope "${Y}nothing to clean up here${R} ${D}(ctrl-x cleans up worktrees and branches in worktree mode)${R}"; return; }
   if [ "${FZF_SELECT_COUNT:-0}" -gt 0 ] && [ -f "${4:-}" ]; then on_cleanup_many "$4"; return; fi
   [ -n "$kind" ] || { printf 'bell'; return; }
@@ -1110,7 +1156,7 @@ on_cleanup_many() {  # $1 선택한 행들 (fzf 의 {+f}: 한 줄에 한 행, �
       case $kind in worktree|prunable) wts=$((wts + 1)) ;; esac
       if real_branch "$branch"; then
         brs=$((brs + 1))
-        case $disp in *merged*|*new*) ;; *) is_merged "$branch" || unmerged=$((unmerged + 1)) ;; esac   # 마커가 있으면 그대로 쓴다
+        case $disp in *"${G}merged${R}"*|*"${D}new${R}"*) ;; *) is_merged "$branch" || unmerged=$((unmerged + 1)) ;; esac   # 마커가 있으면 그대로 쓴다 (색까지 맞춘다)
       fi
     else reasons+=("$REASON"); fi
   done < <(tr '\t' '\037' < "$1")
@@ -1128,36 +1174,40 @@ on_cleanup_many() {  # $1 선택한 행들 (fzf 의 {+f}: 한 줄에 한 행, �
 }
 # --- 정리 목록 (ctrl-x 로 겹쳐 뜬다. 레이아웃 목록과 같은 구조) ---------------------------------
 # 항목: clean up(창 → 워크트리 → 백업 → 브랜치 삭제) / keep branch(창 → 워크트리 제거까지, 브랜치는 남긴다).
-# 고른 것은 상태 cleanup_choice 에 남기고 메인 목록의 after-cleanup 이 이어받는다. esc·ctrl-c 면 아무것도 안 한다.
-# 브랜치만 있는 행은 keep 이 할 일이 없어 clean up 하나만 보인다.
+# 고른 것은 상태 cleanup_choice 에 남기고 메인 목록의 after-cleanup 이 이어받는다. esc·ctrl-c·back 이면 아무것도 안 한다.
+# 브랜치만 있는 행은 keep 이 할 일이 없어 clean up 만 있다.
+# 머지 안 된 브랜치가 있으면 다시 묻지 않는 대신 안전한 행(keep, 없으면 back)을 맨 위(커서 자리)에 두고 clean up 에 경고를 붙인다.
+# enter 를 두 번 눌러도 안전한 쪽만 일어나고, 지우려면 커서를 내려 고른다. 지운 브랜치도 refs/archive 에 남는다.
 choose_cleanup_step() {
-  local scope kind path branch title rows="" picked ok wins wts brs n warn=""
+  local scope kind path branch title rows picked ok wins wts brs n clean keep="" risky=""
+  local back="back ${D}· do nothing${R}"$'\t'"back"$'\n'
   st_get cleanup_scope; scope=$ST
   if [ "$scope" = many ]; then
     st_get bulk_counts; read -r ok wins wts brs <<< "$ST"
-    st_get bulk_unmerged; n=${ST:-0}; [ "$n" -gt 0 ] && warn=" ${Y}($n not merged)${R}"
+    st_get bulk_unmerged; n=${ST:-0}
     title=" clean up $ok selected "
-    rows+="clean up $ok$warn"$'	'"clean"$'
-'
-    [ "$wts" -gt 0 ] && rows+="keep branches ${D}· remove $wts worktree(s) only${R}"$'	'"keep"$'
-'
+    if [ "$n" -gt 0 ]; then risky=1; clean="clean up $ok ${Y}($n not merged)${R} ${D}· branches archived${R}"
+    else clean="clean up $ok"; fi
+    [ "$wts" -gt 0 ] && keep="keep branches ${D}· remove $wts worktree(s) only${R}"$'\t'"keep"$'\n'
   else
     st_get target; IFS=$US read -r kind path branch <<< "$ST"
-    if real_branch "$branch" && ! is_merged "$branch"; then
-      warn=" ${Y}(+$(git rev-list --count "$(judge_ref)..$branch" 2>/dev/null || echo '?') not in $(judge_ref))${R}"
-    fi
     title=" clean up ${branch:-$(basename "$path")} "
-    rows+="clean up$warn"$'	'"clean"$'
-'
-    case $kind in worktree|prunable) real_branch "$branch" && rows+="keep branch ${D}· remove the worktree only${R}"$'	'"keep"$'
-' ;; esac
+    clean="clean up"
+    if real_branch "$branch" && ! is_merged "$branch"; then
+      risky=1
+      clean+=" ${Y}(+$(git rev-list --count "$(judge_ref)..$branch" 2>/dev/null || echo '?') not in $(judge_ref))${R} ${D}· branch archived${R}"
+    fi
+    case $kind in worktree|prunable) real_branch "$branch" && keep="keep branch ${D}· remove the worktree only${R}"$'\t'"keep"$'\n' ;; esac
   fi
+  clean+=$'\t'"clean"$'\n'
+  if [ -n "$risky" ]; then rows="${keep:-$back}$clean"; else rows="$clean$keep"; fi
   style_opts
   picked=$(printf '%s' "$rows" | fzf --ansi --delimiter '\t' --with-nth 1 --no-sort "${STYLE[@]}" --border-label "$title" \
       --prompt 'clean up> ' --footer "${D}enter choose · esc back${R}" --footer-border line \
       --preview "$SELF --cleanup-preview {2}" --preview-window 'right,55%,border-left' \
       --bind 'alt-p:change-preview-window(down,40%,border-top|hidden|right,55%,border-left)') || return 0
-  st_set cleanup_choice "${picked##*$'\t'}"
+  picked=${picked##*$'\t'}
+  [ "$picked" = back ] || st_set cleanup_choice "$picked"
 }
 next_archive_ref() {  # archive_branch 가 쓸 이름을 미리 (만들지 않는다)
   local base ref i=2; base="refs/archive/$(date +%Y-%m-%d)/$1"; ref=$base
@@ -1175,8 +1225,9 @@ plan_lines() {  # $1 clean | keep $2 종류 $3 경로 $4 브랜치 → 할 일�
   is_merged "$4" || echo "${Y}+$(git rev-list --count "$(judge_ref)..$4" 2>/dev/null || echo '?') commits not in $(judge_ref)${R} ${D}(kept in the archive)${R}"
   echo "${D}restore: git branch $4 $ref${R}"
 }
-cleanup_preview() {  # $1 clean | keep
+cleanup_preview() {  # $1 clean | keep | back
   local scope kind path branch skipped=0
+  [ "$1" = back ] && { echo "${D}nothing happens: back to the list (esc does the same)${R}"; return 0; }
   st_get cleanup_scope; scope=$ST
   if [ "$scope" != many ]; then
     st_get target; IFS=$US read -r kind path branch <<< "$ST"
@@ -1191,26 +1242,13 @@ cleanup_preview() {  # $1 clean | keep
   [ "$skipped" -gt 0 ] && printf '%sskipping %s branch row(s): no worktree to remove%s\n' "$D" "$skipped" "$R"
   return 0
 }
-# 정리 목록에서 고른 뒤 (메인 목록의 transform). clean up 이면 머지 안 된 것이 있을 때 푸터에서 한 번 더 묻는다
+# 정리 목록에서 고른 뒤 (메인 목록의 transform). 다시 묻지 않는다 (머지 안 된 것은 정리 목록이 안전한 행을 먼저 둔다)
 on_after_cleanup() {
-  local choice scope kind path branch n
+  local choice scope
   st_get cleanup_choice; choice=$ST; st_del cleanup_choice
-  [ -n "$choice" ] || return 0
-  st_get cleanup_scope; scope=$ST
-  if [ "$scope" = many ]; then
-    if [ "$choice" = keep ]; then start_job many keep; return; fi
-    st_get bulk_unmerged; n=${ST:-0}
-    if [ "$n" -gt 0 ]; then ask "" "" "" "${Y}$n of them have commits not in $(judge_ref)${R} · clean up anyway?" bulk2; return; fi
-    start_job many; return
-  fi
-  st_get target; IFS=$US read -r kind path branch <<< "$ST"
-  if [ "$choice" = keep ]; then start_job one keep; return; fi
-  if real_branch "$branch" && ! is_merged "$branch"; then
-    n=$(git rev-list --count "$(judge_ref)..$branch" 2>/dev/null || echo '?')
-    ask "$kind" "$path" "$branch" "${Y}$branch has $n commit(s) not in $(judge_ref)${R} · clean up anyway?" clean2
-    return
-  fi
-  start_job one
+  case $choice in clean|keep) ;; *) return 0 ;; esac
+  st_get cleanup_scope; scope=$ST; [ "$scope" = many ] || scope=one
+  if [ "$choice" = keep ]; then start_job "$scope" keep; else start_job "$scope"; fi
 }
 
 # --- 정리 작업 (진행 표시) -----------------------------------------------------------------
@@ -1222,14 +1260,14 @@ EVERY='every(0.15)'
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
 busy() { st_get busy; [ "$ST" = 1 ] || return 1; printf 'bell'; }   # 정리 중이면 벨만 (푸터는 틱이 그린다)
 start_job() {  # $1 one(상태 target) | many(상태 bulk) [$2 keep]
-  st_del confirm op finished result fail progress
+  st_del finished result fail progress
   st_set job "$1$US${2:-}$US$(picker_window)"
   st_set session "$SESSION"   # 세션 이름(사용자가 정한 글자)은 셸 명령줄 대신 상태로 넘긴다
   # run-shell 의 출력은 패널에 뜨므로 버린다. 피커 패널(TMUX_PANE)은 close_windows 가 남겨야 해서 넘긴다
   tmux run-shell -b "$(printf 'TMUX_DEV_STATE=%q TMUX_PANE=%q %q --cleanup-job >/dev/null 2>&1' \
     "$TMUX_DEV_STATE" "${TMUX_PANE:-}" "$SELF")" 2>/dev/null || { st_del job; nope "${Y}could not start the clean-up${R}"; return; }
   st_set busy 1; st_set tick 0
-  printf 'unbind(focus)+%s+rebind(%s)' "$(act change-footer "${SPIN[0]} ${B}cleaning up${R}")" "$EVERY"
+  printf '%s+rebind(%s)' "$(act change-footer "${SPIN[0]} ${B}cleaning up${R}")" "$EVERY"
 }
 cleanup_tick() {  # every 이벤트: 끝났으면 결과, 아니면 스피너와 진행
   local n msg f
@@ -1452,7 +1490,9 @@ while [ $# -gt 0 ]; do
         after-layout) on_after_layout || true ;; create) on_create "${3:-}" || true ;; after-location) on_after_location || true ;;
         loc-enter) on_loc_enter "${3:-}" || true ;; loc-layout) on_loc_layout "${3:-}" || true ;;
         loc-after-layout) on_loc_after_layout || true ;;
-        esc) on_esc || true ;; change) on_change || true ;; result) on_result || true ;; focus) on_focus || true ;;
+        after-create) on_after_create || true ;; create-pick) on_create_pick "${3:-}" || true ;;
+        create-after-layout) on_create_after_layout || true ;;
+        change) on_change || true ;; result) on_result || true ;;
         mode) on_mode "${3:-next}" || true ;; tab-click) on_tab_click || true ;; marks) on_marks || true ;;
         refresh) on_refresh || true ;; cleanup) on_cleanup "${3:-}" "${4:-}" "${5:-}" "${6:-}" || true ;;
         toggle-merged) on_toggle_merged || true ;; after-cleanup) on_after_cleanup || true ;; deselect) on_deselect || true ;; fetch) on_fetch || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
@@ -1461,6 +1501,8 @@ while [ $# -gt 0 ]; do
     --cleanup-job)     st_get session; SESSION=$ST; in_session_dir; cleanup_job; exit 0 ;;
     --empty-trash)     repo_init; empty_trash; exit 0 ;;
     --choose-layout)   in_session_dir; w_choose_layout_step; exit 0 ;;
+    --choose-create)   in_session_dir; choose_create_step; exit 0 ;;
+    --create-preview)  in_session_dir; create_preview "${2:-create}"; exit 0 ;;
     --choose-cleanup)  SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; in_session_dir; choose_cleanup_step; exit 0 ;;
     --cleanup-preview) SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; in_session_dir; cleanup_preview "${2:-clean}"; exit 0 ;;
     --choose-location) in_session_dir; cur_mode; apply_scope "$MODE"; choose_location_step; exit 0 ;;
