@@ -131,10 +131,17 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
 - **커밋 안 된 변경은 지우지 않는다 (2026-11-17).** dirty 는 `git status --porcelain -unormal` 로 센다: 수정 + 추적 안 하는 새 파일,
   무시된 파일은 빼고(`git worktree remove` 와 같은 기준). `-unormal` 은 저장소의 `status.showUntrackedFiles=no` 를 덮는다(없으면
   새 파일만 있는 워크트리가 깨끗해 보였다). ctrl-x 때 한 번(`cleanable`), 실행할 때 다시 두 번(`dirty_guard`): 창을 닫기 전
-  (괜히 닫지 않게), 창을 닫고 그 패널 프로세스가 끝나기를(최대 2초) 기다린 뒤 옮기기 직전. 빠른 제거의 `git worktree move` 와
+  (괜히 닫지 않게), 창을 닫고 그 패널 프로세스가 끝나기를 기다린 뒤 옮기기 직전. 빠른 제거의 `git worktree move` 와
   뒤의 `remove --force --force` 는 dirty 를 막지 않으므로 이 검사가 유일한 안전장치다. 정리 목록을 보는 동안 에이전트가 파일을
   쓰거나, 창이 닫히며 에디터가 저장하는 경우를 시험으로 확인했다(`kill-window` 는 SIGHUP 만 보내고 바로 돌아와서 기다리지 않으면
   검사가 먼저 돈다). 걸리면 `dirty: N … · nothing removed` 로 실패하고, 한꺼번에 정리면 그 항목만 실패로 센다.
+  - 기다릴 대상은 쉘(`pane_pid`)만이 아니라 패널의 터미널(`pane_tty`)을 쓰는 프로세스 전부다(`ps -t`, 창을 닫기 전에 모은다).
+    쉘보다 늦게 끝나는 nvim·claude 와 그 자식, 백그라운드 작업이 들어간다. 5초 안에 다 끝나지 않으면 지우지 않고 실패한다
+    (`processes in its windows are still running`). 살아남은 프로세스의 cwd 는 옮긴 휴지통을 따라가서, 시간이 지났다고
+    진행하면 거기 쓴 것이 강제 삭제로 사라진다. (PR #144 리뷰)
+  - `git status` 가 실패하면(깨진 `.git`, `safe.directory` 소유자 검사, 권한) 판정 못 함 = 막는다. 파이프(`… | wc -l`)로 세면
+    실패해도 `0` 이 찍히고, `||`·`if` 안에서 불린 함수에서는 `set -e` 도 꺼져 있어 "깨끗함" 으로 읽혔다. 행 마커는 `dirty ?`,
+    ctrl-x 는 `cannot check …`, 한꺼번에 정리는 `unchecked` 로 건너뛴다. (PR #144 리뷰)
 - 순서: 창 닫기 → 워크트리 제거(missing 이면 `prune`) → 백업 → `git branch -D`. 창을 먼저 닫는 것은
   그 안의 프로세스(셸, nvim, 에이전트)를 먼저 끝내려고.
 - **빠른 제거 (2026-11-09).** `git worktree remove` 는 디렉토리를 다 지울 때까지 기다린다(무시 파일 3만 개에 1.3초). 대신
@@ -157,6 +164,9 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
   modal pane 은 `move-pane`·`join-pane` 으로 옮길 수 없다(tmux 3.8 "pane is modal", 시험). 그래서 그 창의 다른 패널만 닫고
   `@worktree` 를 지운다. 피커가 끝나면 마지막 패널이 사라지며 창도 닫히고 tmux 가 다른 창으로 옮겨 준다(시험).
   푸터에 "this window closes when you leave the picker".
+- 사라진 워크트리(missing)는 예전에 등록된 경로가 아니라 지금 규칙의 경로(`wt_dir`)에 다시 만든다(`open_target` 이 prune 뒤
+  `add_worktree`). 만들기 목록의 미리보기·레이아웃 제목도 같은 `wt_dir` 을 쓰고, 경로가 다르면 `was at <예전 경로>` 를 따로 보인다.
+  detached 였으면 다시 만들 브랜치가 없어 `prune the missing worktree` 한 행만 있다. (PR #144 리뷰)
 - 세션의 마지막 창이면 세션이 끝나지 않도록 세션 디렉토리에 창을 먼저 연다(메인이면 `@worktree`).
 
 ### 한꺼번에 정리 (2026-11-09)
