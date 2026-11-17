@@ -9,6 +9,10 @@
 | `/jw:handoff-move <브랜치> [--in-stack\|--new-worktree]` | 워크트리만 만들고, **지금 세션**을 그리로 옮기는 `/cd` 명령을 알려 준다 |
 | `/jw:pr-review-handle [PR] [--all] [--stack]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 수정안과 배경 원리를 설명한다 |
 
+| 훅 | 하는 일 |
+|---|---|
+| `hooks/tmux-bell` (Stop, Notification: 허락·질문) | tmux 안이면 자기 패널 tty 에 벨을 울린다. tmux 가 그 윈도우 탭에 `!` 와 노란 색을 남기고(보고 있는 윈도우는 무시), Ghostty 는 Dock·제목 🔔 로 알린다. tmux 쪽 설정은 `home/dot_config/tmux/tmux.conf` 의 `bell-action`·`window-status-bell-style`. tmux 밖이면 아무것도 안 한다 |
+
 ## 개념
 
 Claude 와 대화하다가 작업 방향이 정해지면 그 작업의 브랜치와 워크트리를 만들고, 그 워크트리에서 일할 세션을 준비한다.

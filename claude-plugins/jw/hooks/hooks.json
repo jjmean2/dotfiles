@@ -1,0 +1,20 @@
+{
+  "description": "tmux 안에서 응답이 끝나거나 허락·질문을 기다리면 자기 패널에 벨을 울려 상태바 탭에 표시한다",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/tmux-bell\"", "timeout": 5 }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|elicitation_dialog",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/tmux-bell\"", "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}
