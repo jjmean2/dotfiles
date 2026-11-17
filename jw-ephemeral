@@ -42,10 +42,16 @@ ABSENT="$ROOT/absent.txt"        # 깔기 전에 없던 런타임 경로
 CREATED_DIRS="$ROOT/created-dirs.txt" # 깔면서 새로 생긴 디렉터리
 
 # chezmoi 가 모르는, 쓰는 동안 도구가 만드는 상태. 깔기 전에 없던 것만 uninstall 이 지운다.
+# 경로는 각 도구가 위치를 정하는 규칙을 그대로 따른다 (기본 경로를 박아 두면 서버에 XDG_*_HOME 이 있을 때 놓친다).
+# nvim 과 tmux-dev(lib/common.sh)는 XDG 디렉터리를, zoxide 는 _ZO_DATA_DIR 을 먼저 본다.
+# install 때의 환경 변수로 계산해 absent.txt 에 적으므로, 설치한 뒤 셸에서 이 변수들을 바꾸면 어긋난다.
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 RUNTIME_PATHS=(
-	"$HOME/.local/share/nvim-lite" "$HOME/.local/state/nvim-lite" "$HOME/.cache/nvim-lite"
-	"$HOME/.local/share/zoxide"
-	"$HOME/.local/share/tmux-dev" "$HOME/.local/state/tmux-dev" "$HOME/.cache/tmux-dev"
+	"$DATA_HOME/nvim-lite" "$STATE_HOME/nvim-lite" "$CACHE_HOME/nvim-lite"
+	"${_ZO_DATA_DIR:-$DATA_HOME/zoxide}"
+	"$DATA_HOME/tmux-dev" "$STATE_HOME/tmux-dev" "$CACHE_HOME/tmux-dev"
 	"$HOME/.zcompdump" "$HOME/.zsh_history"
 )
 
