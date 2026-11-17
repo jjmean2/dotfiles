@@ -7,6 +7,7 @@
 #   - 액션 문자열을 안전하게 만드는 도구 (act, nope, search_action)
 #   - 경로 판정 (classify, name_ok)과 기록 파일 (hist_*)
 #   - 화면 모양 (picker_tabs, style_opts: tmux 의 떠 있는 창 테두리와 같은 fzf 테두리)
+#   - 실행 화면 (frame_on, frame_title, frame_hold: 피커가 끝난 뒤 같은 패널에 tmux 테두리)
 #   - 겹쳐 뜨는 두 목록: 위치 피커(choose_location_step, alt-enter 로 새로 만들 때)와 레이아웃 목록(choose_layout_step)
 # 을 둔다. 겹쳐 뜨는 목록의 콜백은 부른 쪽 스크립트($SELF)의 인자 처리로 돌아온다. 그래서 그 스크립트는 다음을 이 lib 의
 # 함수로 넘겨야 한다:
@@ -163,9 +164,46 @@ float_border() {
 }
 style_opts() {  # STYLE 배열: 피커와 겹쳐 뜨는 목록(위치, 레이아웃)이 같이 쓴다
   float_border
-  STYLE=(--border "$BORDER" --border-label-pos 3 --input-border "$BORDER" --list-border "$BORDER" --reverse --height=100%)
+  STYLE=(--border "$BORDER" --border-label-pos 4 --input-border "$BORDER" --list-border "$BORDER" --reverse --height=100%)
   [ -n "$BCOLOR" ] && STYLE+=(--color "border:$BCOLOR,label:$BCOLOR")
   return 0
+}
+
+# --- 실행 화면 (피커가 끝난 뒤, 결정을 실행하는 동안) -------------------------------------
+# 피커 창은 테두리 없이(new-pane -B none) 떠서 fzf 가 테두리를 그린다. fzf 가 끝나면 그 테두리도 사라지는데, 결정을
+# 실행하는 동안(워크트리 setup 출력 등)에도 같은 패널이 화면에 남는다. 그래서 결정 파일을 읽은 뒤 같은 패널에 tmux
+# 테두리를 켠다. 고르는 동안은 fzf, 실행하는 동안은 tmux 가 테두리 주인이고, 경계는 결정 파일이다 (session-picker.md 화면 절).
+#   - 테두리를 켜면 -x/-y/-X/-Y 가 테두리를 포함한 바깥 크기가 된다. 켜기 전의 크기·위치를 그대로 다시 주면 tmux 테두리가
+#     fzf 테두리가 있던 칸에 겹친다 (안쪽이 한 칸씩 줄고 SIGWINCH 한 번. zoom 은 풀리지 않는다. tmux 3.8 에서 확인).
+#   - 런처가 띄운 피커 패널(TMUX_DEV_PICKER_PANE, libexec/tmux-dev-open)에서만 동작한다. 셸 CLI·Claude 훅에서는 아무것도
+#     안 한다. 실패해도 열기를 막지 않는다 (모든 tmux 호출을 || 로 삼킨다).
+FRAMED=""
+frame_fmt() { local t=${1//#/##}; printf ' %s ' "$t"; }   # 제목 → pane-border-format (# 는 tmux 포맷 문자라 겹친다)
+frame_on() {  # $1 제목
+  [ -n "${TMUX_DEV_PICKER_PANE:-}" ] && [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || return 0
+  local p=$TMUX_PANE x y w h lines style fmt
+  read -r x y w h < <(tmux display-message -p -t "$p" '#{pane_left} #{pane_top} #{pane_width} #{pane_height}' 2>/dev/null) || return 0
+  [ -n "$h" ] || return 0
+  lines=$(float_opt border-lines); style=$(float_opt border-style); fmt=$(frame_fmt "$1")
+  # 한 번의 tmux 호출로 이어서 한 번에 다시 그리게 한다 (테두리만 먼저 켜지면 한 칸 바깥에 잠깐 보인다).
+  # 첫 명령(선 모양)이 tmux 가 모르는 값이면(3.8 의 rounded) 뒤 명령도 실행되지 않으므로 single 로 한 번 더.
+  local -a rest=(\; set -p -t "$p" pane-border-status top \; set -p -t "$p" pane-border-format "$fmt")
+  [ -n "$style" ] && rest+=(\; set -p -t "$p" pane-border-style "$style" \; set -p -t "$p" pane-active-border-style "$style")
+  rest+=(\; resize-pane -t "$p" -x "$w" -y "$h" \; move-pane -t "$p" -X "$x" -Y "$y")
+  tmux set -p -t "$p" pane-border-lines "${lines:-single}" "${rest[@]}" 2>/dev/null \
+    || tmux set -p -t "$p" pane-border-lines single "${rest[@]}" 2>/dev/null || return 0
+  FRAMED=1
+}
+frame_title() {  # $1 제목. 테두리를 켠 뒤에만
+  [ -n "$FRAMED" ] || return 0
+  tmux set -p -t "$TMUX_PANE" pane-border-format "$(frame_fmt "$1")" 2>/dev/null || true
+}
+frame_hold() {  # $1 제목. 테두리를 켰으면 키 하나를 누를 때까지 붙잡는다 (안 그러면 패널이 바로 닫혀 출력을 못 읽는다)
+  [ -n "$FRAMED" ] || return 0
+  frame_title "$1"
+  printf '\n%spress any key to close%s' "$D" "$R"
+  IFS= read -rsn1 _ < /dev/tty 2>/dev/null || true
+  printf '\n'
 }
 
 # --- 콜백 도구 -------------------------------------------------------------------

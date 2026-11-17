@@ -344,6 +344,8 @@ pick() {
   [ -f "$TMUX_DEV_STATE/decision" ] || exit 0     # 결정 없이 끝남 = 취소 (ctrl-c 는 130)
   local path create layout save parent
   IFS=$US read -r path create layout save parent < "$TMUX_DEV_STATE/decision"
+  # 여기부터는 실행 화면이다: fzf 테두리가 사라진 자리에 tmux 테두리를 켠다 (frame_on, lib/picker.sh)
+  if [ "$create" = none ]; then frame_on "open · $(home_disp "$path")"; else frame_on "create · $(home_disp "$path")"; fi
   apply_decision "$path" "$create" "$layout" "$save" "$parent"
 }
 
