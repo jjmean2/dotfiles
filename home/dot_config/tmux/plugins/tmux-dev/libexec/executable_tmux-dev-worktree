@@ -729,9 +729,12 @@ on_after_location() {  # 위치 피커에서 esc 면 그대로, 골랐으면 만
   esac
 }
 on_change() {  # 디렉토리 모드의 경로 모양 검색어는 접두 일치로
-  local out="bg-cancel+"
+  local out=""
   st_get select_merged; [ "$ST" = 1 ] && { printf 'rebind(result)'; return 0; }   # ctrl-t 가 검색어를 지운 것: result 를 기다린다
   cur_mode
+  # 이전 검색어로 돌던 푸터 판정(result 의 bg-transform)을 버린다. 그것은 디렉토리 모드에서만 돈다. bg-cancel 은 돌고 있는
+  # bg-transform 을 모두 끊어서 피커가 뜰 때 띄운 백그라운드 fetch 도 죽이므로, worktree 모드에서는 보내지 않는다
+  [ "$MODE" != worktree ] && out="bg-cancel+"
   if [ "$MODE" != worktree ] && pathish "${FZF_QUERY:-}"; then printf '%srebind(result)+first+%s' "$out" "$(search_action "$FZF_QUERY")"
   else printf '%sunbind(result)+first+%s' "$out" "$(act change-footer "$(footer_now)")"; fi
 }
@@ -800,7 +803,10 @@ on_fetch() {
   [ "$before" = "$after" ] && return 0
   cur_mode; [ "$MODE" = worktree ] || return 0
   st_get busy; [ "$ST" = 1 ] && return 0             # 정리 중이면 끝날 때 다시 읽는다
-  printf 'rebind(load)+reload(%s --list worktree)' "$SELF"
+  # reload-sync: 새 목록(마커까지)이 다 만들어질 때까지 지금 목록을 그대로 둔다 (그동안 검색·선택도 된다). 마커 없는 목록을
+  # 거치면 겹친 목록(정리·만들기)을 보는 동안 fetch 가 끝났을 때 돌아온 화면에서 마커가 빠져 있다가 몇 초 뒤 붙었다.
+  # 새로 생긴 행(원격의 새 브랜치)은 계산이 끝난 뒤에 나타난다
+  printf 'reload-sync(%s --list worktree --marks)' "$SELF"
 }
 on_fill() {  # ctrl-]: 디렉토리 모드에서 커서 항목의 경로를 검색어에
   cur_mode; [ "$MODE" != worktree ] && [ -n "${1:-}" ] || { printf 'bell'; return; }
