@@ -61,6 +61,11 @@ if _jw_plugin zsh-autosuggestions; then
 	# 붙여 넣은 긴 줄에는 제안을 찾지 않는다 (입력이 느려지지 않게)
 	ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=100
 	source $REPLY
+	# Option+. (jw-insert-last-word, rc.zsh) 뒤에는 제안을 찾지 않고 지운다. 찾으면 결과가 비동기로 와서 autosuggest-suggest
+	# 위젯이 한 번 더 돌고, 그러면 "직전 위젯" ($LASTWIDGET) 이 바뀌어 Option+, (copy-earlier-word, rc.zsh) 가
+	# Option+. 바로 뒤인 줄 모르고 한 칸씩 밀린다. copy-earlier-word 는 기본 목록에 이미 있다.
+	# 위젯 목록은 source 뒤에 고쳐도 된다 (위젯을 감싸는 일은 첫 프롬프트 직전에 한다, README 의 Widget Mapping)
+	ZSH_AUTOSUGGEST_CLEAR_WIDGETS+=(jw-insert-last-word)
 fi
 
 # ------------------------------------------------------------------------------

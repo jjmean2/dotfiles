@@ -131,6 +131,14 @@ autoload -Uz select-word-style
 select-word-style bash
 #endregion
 
+# zmv: 패턴으로 여러 파일의 이름을 한꺼번에 바꾼다 (zsh 동봉 함수, `man zshcontrib` 의 zmv)
+#   zmv -n '(*).jpeg' '$1.jpg'   먼저 -n 으로 무엇이 어떻게 바뀌는지만 본다 (실제로 옮기지 않는다)
+#   zmv '(*).jpeg' '$1.jpg'      괄호로 잡은 부분이 $1, $2 … 가 된다. 두 인자 모두 작은따옴표로 감싼다
+#   mmv *.jpeg *.jpg             아래 alias. 따옴표 없이 * 끼리 대응시킨다 (zmv 머리말에 있는 쓰는 법)
+# 바꾼 이름끼리 겹치거나 이미 있는 파일을 덮게 되면 아무것도 옮기지 않고 멈춘다.
+autoload -Uz zmv
+alias mmv='noglob zmv -W'
+
 # https://zsh.sourceforge.io/Doc/Release/User-Contributions.html#Recent-Directories
 # autoload -Uz chpwd_recent_dirs cdr add-zsh-hook
 # add-zsh-hook chpwd chpwd_recent_dirs
@@ -167,6 +175,42 @@ bindkey '^[[1;3C' forward-word
 autoload -Uz edit-command-line
 zle -N edit-command-line
 bindkey "^X^E" edit-command-line
+
+# ↑ / ↓: 지금 입력한 앞부분으로 시작하는 히스토리만 오간다 (zsh 동봉 위젯).
+# 예: `git ` 까지 치고 ↑ → git 으로 시작한 명령만 차례로. 빈 줄에서는 원래처럼 바로 앞 명령.
+# 앞부분은 커서 앞까지다. 첫 ↑ 뒤 커서가 줄 끝으로 가도 같은 앞부분으로 계속 찾는다.
+# 여러 줄 입력 안에서는 먼저 줄 사이를 움직인다. Ctrl-P / Ctrl-N 은 원래 동작(앞뒤 명령) 그대로 둔다.
+# 방향키는 터미널 모드에 따라 ESC[A 또는 ESCOA 로 오므로 둘 다 묶는다.
+autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
+zle -N up-line-or-beginning-search
+zle -N down-line-or-beginning-search
+bindkey '^[[A' up-line-or-beginning-search
+bindkey '^[OA' up-line-or-beginning-search
+bindkey '^[[B' down-line-or-beginning-search
+bindkey '^[OB' down-line-or-beginning-search
+
+# Option+, : Option+. (insert-last-word, 앞 명령의 마지막 단어 넣기) 다음에 누르면 그 명령의 한 단어 앞으로 바꾼다.
+# 예: `cp a.txt b.txt` 뒤에 `vi ` Option+. → b.txt, 이어서 Option+, → a.txt → cp.
+# Option+. 를 여러 번 누르면 더 앞 명령으로 가고, Option+, 는 고른 명령 안에서 움직인다.
+# (Ghostty 는 왼쪽 Option 만 Alt 로 보낸다. config.ghostty 의 macos-option-as-alt)
+autoload -Uz copy-earlier-word
+zle -N copy-earlier-word
+bindkey '^[,' copy-earlier-word
+# Option+. 를 같은 일을 하는 사용자 위젯으로 바꿔 묶는다. copy-earlier-word 는 직전 위젯($LASTWIDGET)을
+# 인자와 함께 다시 불러 단어를 고르는데, zsh-autosuggestions 가 내장 위젯을 감쌀 때는 인자를 버려서
+# (`zle .insert-last-word` 로만 부른다) 한 명령 앞으로 넘어가 버린다. 사용자 위젯은 인자를 그대로 넘긴다.
+# 이름은 copy-earlier-word 가 알아보도록 insert-last-word 로 끝나야 한다. (plugins.zsh 의 CLEAR_WIDGETS 도 짝이다)
+_jw-insert-last-word() { zle .insert-last-word -- "$@"; }
+zle -N jw-insert-last-word _jw-insert-last-word
+bindkey '^[.' jw-insert-last-word
+bindkey '^[_' jw-insert-last-word
+
+# 붙여 넣은 내용이 URL(http:// https:// ssh:// file:// …)로 시작하면 작은따옴표로 감싼다 (zsh 동봉 위젯).
+# 예: curl 뒤에 https://x.com/a?b=1&c=2 를 붙여 넣으면 ? 가 glob 으로, & 가 백그라운드 실행으로 읽혀 깨지던 것을 막는다.
+# 줄 중간에 붙여 넣어도 붙여 넣은 내용이 URL 로 시작하면 감싼다. 감싸지 않으려면 Option+2 를 누른 뒤 붙여 넣는다.
+# (Option+1 뒤 붙여 넣기는 URL 이 아니어도 감싼다)
+autoload -Uz bracketed-paste-url-magic
+zle -N bracketed-paste bracketed-paste-url-magic
 
 # 터미널별 셸 통합(iTerm2, tmux)은 여기가 아니라 terminal/ 에 있고, rc.sh 가 맨 나중에 읽는다.
 
