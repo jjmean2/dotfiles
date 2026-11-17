@@ -1,0 +1,38 @@
+#!/bin/sh
+# prefix A: 이 tmux 서버에 묶인 caffeinate 를 켜거나 끈다. tmux.conf 의 bind-key A 가 run-shell -b 로 부른다.
+#
+# 사용: caffeinate-toggle [caffeinate 플래그]   (기본 -i. tmux.conf 는 @caffeinate_flags 를 넘긴다)
+#
+# 켜기: caffeinate <플래그> -w <tmux 서버 PID> 를 뒤에서 띄운다. -w 는 그 PID 가 끝나면 같이 끝나라는 뜻이라,
+#       끄는 것을 잊어도 tmux 서버가 끝나면 사라진다. 띄운 셸이 바로 끝나므로 부모는 launchd 가 되고,
+#       상태바의 caffeinate-status 는 이것을 "사람이 띄운 것" 으로 센다 (☕).
+# 끄기: 명령줄 끝이 "-w <이 서버 PID>" 인 caffeinate 만 끈다. 이 키로 띄운 것이 그것뿐이라, 터미널에서 직접 띄운
+#       caffeinate 나 Claude Code 의 것은 건드리지 않는다.
+# 표시: @caffeinate_rev 를 바꿔 상태바의 #(caffeinate-status …) 명령 문자열을 바꾼다. tmux 는 #() 결과를 명령
+#       문자열로 캐시하므로, 문자열이 바뀌면 15초를 기다리지 않고 새로 돌린다.
+
+flags=${1:--i}
+
+if ! command -v caffeinate >/dev/null 2>&1; then
+  tmux display-message "caffeinate: not available on this machine"
+  exit 0
+fi
+
+server=$(tmux display-message -p '#{pid}') || exit 1
+mine=$(pgrep -f "^caffeinate( .*)? -w $server\$")
+
+if [ -n "$mine" ]; then
+  kill $mine
+  msg="caffeinate off"
+  # 이 키로 띄운 것은 껐지만 다른 caffeinate(터미널에서 띄운 것)가 남아 있으면 ☕ 도 남으므로 알려 준다
+  others=$("$(dirname "$0")/caffeinate-status" "$(tmux show -gqv @caffeinate_ignore)")
+  [ "$others" = on ] && msg="$msg (another caffeinate is still running)"
+else
+  # 셸이 끝나도 살아 있도록 stdin/stdout 을 끊고 배경으로. -w 가 tmux 서버에 묶는다.
+  nohup caffeinate $flags -w "$server" </dev/null >/dev/null 2>&1 &
+  msg="caffeinate on ($flags) until prefix A again or tmux exits"
+fi
+
+tmux set -g @caffeinate_rev "$(date +%s)"
+tmux refresh-client -S
+tmux display-message "$msg"
