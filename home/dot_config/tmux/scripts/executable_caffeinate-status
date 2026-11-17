@@ -1,0 +1,31 @@
+#!/bin/sh
+# 사람이 띄운 caffeinate 가 있으면 "on" 을 출력한다. 없으면 아무것도 출력하지 않는다.
+# tmux.conf 의 status-right 가 #() 로 부른다 (상태바의 ☕ 표시). 설계 설명은 그 절에 있다.
+#
+# 사용: caffeinate-status [무시할 부모 프로세스 정규식 | none]
+#   인자가 없거나 비어 있으면 Claude Code 가 띄운 것을 뺀다. Claude Code 는 세션마다(대기 중인 bg-spare 데몬 포함)
+#   `caffeinate -i -t 300` 을 5분마다 새로 띄워 늘 하나 이상 떠 있으므로, 세면 표시가 늘 켜진다.
+#   none 이면 아무것도 빼지 않는다 (caffeinate 가 하나라도 있으면 on).
+#   tmux.conf 는 @caffeinate_ignore 옵션 값을 그대로 넘긴다 (설정하지 않으면 빈 값 = 기본).
+#
+# 방법: ps -A 한 번으로 모든 프로세스의 PID·부모 PID·명령줄을 읽고 awk 가 caffeinate 의 부모 명령줄을 찾아 본다.
+#       macOS 의 ps 는 한 번에 40ms 남짓이라 호출 횟수가 곧 비용이다. pgrep 으로 먼저 거르는 방법은 Claude 의
+#       caffeinate 가 늘 있어 결국 ps 를 두 번 더 부르게 되므로(120ms 남짓) 이 방식이 낫다.
+#       부모가 이미 끝났으면(nohup, & 뒤 셸 종료) 부모는 launchd 가 되고 정규식에 걸리지 않으므로 사람이 띄운 것으로 센다.
+# macOS 가 아니거나 ps 가 없는 최소 컨테이너에서는 caffeinate 가 없으므로 아무것도 출력하지 않는다.
+
+ignore=${1:-'(^|/)claude( |$)|/claude/versions/'}
+[ "$ignore" = none ] && ignore=""
+
+ps -A -o pid=,ppid=,args= 2>/dev/null | awk -v ignore="$ignore" '
+  {
+    pid = $1; ppid = $2
+    $1 = ""; $2 = ""; sub(/^ +/, "")
+    args[pid] = $0
+    cmd = $1; sub(/.*\//, "", cmd)          # 명령의 basename (/usr/bin/caffeinate → caffeinate)
+    if (cmd == "caffeinate") parent[pid] = ppid
+  }
+  END {
+    for (p in parent)
+      if (ignore == "" || args[parent[p]] !~ ignore) { print "on"; exit }
+  }'
