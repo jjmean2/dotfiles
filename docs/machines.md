@@ -69,6 +69,7 @@ Linux 는 dev container 나 서버라서 배포판과 권한을 고를 수 없�
 | `tools` | tmux, fzf, rg, fd, jq, zoxide, nvim (기능: gh, tree-sitter) | mise 가 `~/.local/opt/<이름>` 에 받고 `~/.local/bin/<이름>` 으로 링크한다. sudo 가 필요 없다 |
 | `pkgs` | bash, bash-completion, gettext (기능 `ide`: gcc, libc6-dev) | 패키지 매니저(apt, apk, dnf, pacman). root 이거나 sudo 를 쓸 수 있을 때만 |
 | zsh 플러그인 | 스크립트 묶음 (fzf-tab 등) | `home/.chezmoiexternal.toml` 이 받아 `~/.local/share/zsh/plugins/` 에 푼다 (macOS 도 같다. [zsh-plugins.md](zsh-plugins.md)) |
+| tmux-fingers | 릴리스 실행 파일 하나 | `home/.chezmoiexternals/tmux-fingers.toml.tmpl` 이 버전·체크섬을 고정해 `~/.local/bin/tmux-fingers` 로 받는다. 릴리스가 있는 macOS arm64 와 Linux x86_64 에서만 (macOS 도 같다. 다른 머신은 tmux.conf 가 건너뛴다) |
 
 - **배포판과 상관없이 같은 최신 버전**이 깔린다. 시스템에 같은 도구가 있어도 받고, `~/.local/bin` 이 PATH 앞이라 받은 것이 쓰인다.
 - **받은 바이너리가 실행되지 않는 시스템**(Alpine 의 musl, 오래된 glibc)에서는 그 도구만 `pkg` 이름으로 패키지 매니저에 넘긴다.

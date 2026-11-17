@@ -1,0 +1,31 @@
+{{- /* tmux-fingers: 화면의 해시·경로·URL 등에 글자 힌트를 붙여 키 하나로 복사 (tmux.conf 의 "tmux-fingers" 절).
+
+       플러그인 저장소는 받지 않고 릴리스의 실행 파일 하나만 ~/.local/bin 에 둔다. 저장소의 tmux-fingers.tmux 는
+       실행 파일을 찾고(없으면 설치 마법사) `tmux-fingers load-config` 를 부르는 것이 전부라, tmux.conf 가
+       load-config 를 직접 부른다. 키 바인딩은 실행 파일이 자기 경로로 만든다.
+
+       릴리스 바이너리는 macOS arm64 와 Linux x86_64 두 가지뿐이다. 다른 머신(Intel Mac, Linux arm64 컨테이너 등)은
+       받지 않고, tmux.conf 는 파일이 없으면 조용히 건너뛴다.
+       macOS 판은 시스템 라이브러리(libSystem, libiconv)만 쓰고 Linux 판은 정적 링크라 따로 깔 것이 없다.
+
+       버전 올리기: 아래 version 과 두 checksum 을 함께 바꾼다.
+         curl -sL <url> | shasum -a 256
+       이 파일은 .chezmoiexternal.toml 과 같은 꼴이다. OS·아키텍처로 갈라야 해서 템플릿이 되는 .chezmoiexternals/
+       아래에 따로 둔다 (.chezmoiexternal.toml 을 템플릿으로 바꾸면 그 파일을 가리키는 문서가 모두 바뀌어야 한다). */ -}}
+{{- $version := "2.7.1" -}}
+{{- $asset := "" -}}
+{{- $sum := "" -}}
+{{- if and (eq .chezmoi.os "darwin") (eq .chezmoi.arch "arm64") -}}
+{{-   $asset = "macos-arm64" -}}
+{{-   $sum = "32b94499f3569d548a6dffd0d89d88e1d6a600c7a8aa891d2b0ee6cc068a720c" -}}
+{{- else if and (eq .chezmoi.os "linux") (eq .chezmoi.arch "amd64") -}}
+{{-   $asset = "linux-x86_64" -}}
+{{-   $sum = "48460fd9a9216d8a461e936b89ac6850a9022467d46ddafa24cfad0bb6cd10cf" -}}
+{{- end -}}
+{{- if $asset }}
+[".local/bin/tmux-fingers"]
+    type = "file"
+    url = "https://github.com/Morantron/tmux-fingers/releases/download/{{ $version }}/tmux-fingers-{{ $version }}-{{ $asset }}"
+    checksum.sha256 = "{{ $sum }}"
+    executable = true
+{{- end }}
