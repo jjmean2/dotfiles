@@ -24,3 +24,12 @@
     checksum.sha256 = "5981c19ebaab027e356fe1ee5284f7a021b89d4405cc53dc84b476c3aee9cc32"
     stripComponents = 1
     exact = true
+
+# fzf-git.sh: Ctrl-G 다음 키로 git 브랜치·커밋·파일 … 을 fzf 로 골라 입력 줄에 넣는다 (shell/rc.d/fzf-git.sh 가 읽는다).
+# 파일 하나짜리 스크립트이고 bash·zsh 둘 다 쓰므로 zsh 플러그인 자리가 아니라 따로 둔다.
+# 저장소에 태그가 없어서 커밋으로 고정한다. 올리려면 url 의 커밋과 checksum 을 같이 바꾼다:
+#   curl -fsSL https://raw.githubusercontent.com/junegunn/fzf-git.sh/<커밋>/fzf-git.sh | shasum -a 256
+[".local/share/fzf-git/fzf-git.sh"]
+    type = "file"
+    url = "https://raw.githubusercontent.com/junegunn/fzf-git.sh/57ef995e245923ae05721e876c42100a1896ad6c/fzf-git.sh"
+    checksum.sha256 = "a2b1502d169fefca863b51c419bfdc8d45683a8815b2c3fa1885ace0a2e173be"
