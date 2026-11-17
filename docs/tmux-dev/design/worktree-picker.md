@@ -128,6 +128,13 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
 - 처음엔 푸터 확인(enter · esc)이었다가 "브랜치는 두고 워크트리만" 이 필요해져 고르는 목록으로 바꿨다 (2026-11-09).
   푸터 키(alt-k)를 더하는 안도 있었지만 커서로 고르는 쪽이 자연스럽고, 우회 없이 피커의 기존 구조를 쓴다.
   tmux `display-menu` 는 고른 결과를 fzf 로 돌려받을 길이 없어(--listen 등 우회) 택하지 않았다.
+- **커밋 안 된 변경은 지우지 않는다 (2026-11-17).** dirty 는 `git status --porcelain -unormal` 로 센다: 수정 + 추적 안 하는 새 파일,
+  무시된 파일은 빼고(`git worktree remove` 와 같은 기준). `-unormal` 은 저장소의 `status.showUntrackedFiles=no` 를 덮는다(없으면
+  새 파일만 있는 워크트리가 깨끗해 보였다). ctrl-x 때 한 번(`cleanable`), 실행할 때 다시 두 번(`dirty_guard`): 창을 닫기 전
+  (괜히 닫지 않게), 창을 닫고 그 패널 프로세스가 끝나기를(최대 2초) 기다린 뒤 옮기기 직전. 빠른 제거의 `git worktree move` 와
+  뒤의 `remove --force --force` 는 dirty 를 막지 않으므로 이 검사가 유일한 안전장치다. 정리 목록을 보는 동안 에이전트가 파일을
+  쓰거나, 창이 닫히며 에디터가 저장하는 경우를 시험으로 확인했다(`kill-window` 는 SIGHUP 만 보내고 바로 돌아와서 기다리지 않으면
+  검사가 먼저 돈다). 걸리면 `dirty: N … · nothing removed` 로 실패하고, 한꺼번에 정리면 그 항목만 실패로 센다.
 - 순서: 창 닫기 → 워크트리 제거(missing 이면 `prune`) → 백업 → `git branch -D`. 창을 먼저 닫는 것은
   그 안의 프로세스(셸, nvim, 에이전트)를 먼저 끝내려고.
 - **빠른 제거 (2026-11-09).** `git worktree remove` 는 디렉토리를 다 지울 때까지 기다린다(무시 파일 3만 개에 1.3초). 대신

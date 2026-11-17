@@ -536,7 +536,7 @@ marks_for() {  # $1 워크트리 경로 $2 브랜치 $3 기준 ref $4 브랜치 
   # 출력 "<dirty 수>\t<상태>". 상태: new(커밋한 적 없고 고유 커밋도 없다), merged:<방법>(변경이 기준에 모두 들어 있다),
   # +N(기준에 없는 커밋 수). 베이스 브랜치 자신과 detached 는 상태가 없다. new 는 커밋한 적도 없어야 한다(never_committed).
   local dirty=0 st="" n
-  if [ -n "$1" ] && [ -d "$1" ]; then dirty=$(git -C "$1" status --porcelain 2>/dev/null | wc -l | tr -d ' '); fi
+  if [ -n "$1" ] && [ -d "$1" ]; then dirty=$(dirty_count "$1"); fi
   case $2 in "(detached "*|"$3"|"${6:-}") ;; *)
     if in_merged_set "$2" && never_committed "$2"; then st=new   # 고유 커밋이 없고(기준의 조상) 커밋한 적도 없다
     elif is_merged "$2" "$3" "${4:-}" "${5:-}"; then st="merged:$MERGED_HOW"
@@ -1109,6 +1109,9 @@ wt_flags() {  # $1 경로 → FLAGS
   return 1
 }
 real_branch() { case $1 in ""|"(detached "*) return 1 ;; esac; git show-ref -q --verify "refs/heads/$1"; }
+# 커밋 안 된 변경 수 (수정 + 추적 안 하는 새 파일. 무시된 파일은 세지 않는다 = git worktree remove 의 기준).
+# -unormal: 저장소에 status.showUntrackedFiles=no 가 있어도 새 파일을 센다 (없으면 새 파일만 있는 워크트리가 깨끗해 보인다)
+dirty_count() { git -C "$1" status --porcelain -unormal 2>/dev/null | wc -l | tr -d ' '; }
 # 정리할 수 있나: $1 종류 $2 경로 $3 브랜치. 아니면 1 과 REASON(main | base | remote | locked | dirty | dir), REASON_SAY(안내).
 # 하나씩 정리와 한꺼번에 정리가 같은 규칙을 쓴다.
 cleanable() {
@@ -1120,7 +1123,7 @@ cleanable() {
       wt_flags "$2" || true
       case " $FLAGS " in *" locked "*) REASON=locked; REASON_SAY="locked worktree ${D}(git worktree unlock $(home_disp "$2"))${R}"; return 1 ;; esac
       if [ "$1" = worktree ] && [ -d "$2" ]; then
-        n=$(git -C "$2" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        n=$(dirty_count "$2")
         [ "$n" -gt 0 ] && { REASON=dirty; REASON_SAY="dirty: $n uncommitted change(s) in $(home_disp "$2") ${D}· commit or discard first${R}"; return 1; }
       fi ;;
     branch) ;;
@@ -1330,31 +1333,56 @@ keep_session_window() {  # 세션의 마지막 창을 닫기 전에 세션 디�
   [ "$root" = "$MAIN" ] && tmux set-option -w -t "$win" @worktree "$MAIN"
   return 0
 }
+# 닫은 패널의 프로세스가 실제로 끝날 때까지 기다린다 (최대 2초). kill-pane·kill-window 는 SIGHUP 만 보내고 바로 돌아오므로,
+# 기다리지 않으면 끝나면서 파일을 쓰는 프로세스(에디터, 에이전트)보다 뒤의 dirty 검사가 먼저 돌 수 있다.
 close_windows() {  # $1 워크트리 경로 $2 피커가 속한 창(없으면 빈 값). 피커 창을 다뤘으면 SELF_CLOSING=1
   SELF_CLOSING=""
   [ -n "$SESSION" ] && [ -n "$1" ] || return 0
-  local id tag p total
+  local id tag p total pid i
+  local -a pids=()
   while IFS=$US read -r id tag; do
     [ "$tag" = "$1" ] || continue
     total=$(tmux list-windows -t "$SESSION" 2>/dev/null | wc -l | tr -d ' ')
     [ "$total" -le 1 ] && keep_session_window
     if [ -n "$2" ] && [ "$id" = "$2" ]; then
-      for p in $(tmux list-panes -t "$id" -F '#{pane_id}'); do [ "$p" = "$TMUX_PANE" ] || tmux kill-pane -t "$p"; done
+      while IFS=$US read -r p pid; do
+        [ "$p" = "$TMUX_PANE" ] && continue
+        pids+=("$pid"); tmux kill-pane -t "$p"
+      done < <(tmux list-panes -t "$id" -F "#{pane_id}${US}#{pane_pid}")
       tmux set-option -w -u -t "$id" @worktree
       SELF_CLOSING=1
     else
+      while IFS= read -r pid; do pids+=("$pid"); done < <(tmux list-panes -t "$id" -F '#{pane_pid}')
       tmux kill-window -t "$id"
     fi
   done < <(tmux list-windows -t "$SESSION" -F "#{window_id}${US}#{@worktree}" 2>/dev/null)
+  for ((i = 0; i < 20; i++)); do
+    for pid in ${pids[@]+"${pids[@]}"}; do kill -0 "$pid" 2>/dev/null && break; pid=""; done
+    [ -z "${pid:-}" ] && break
+    sleep 0.1
+  done
+  return 0
 }
 # 하나를 정리한다: 창 → 워크트리 → 백업 → 브랜치. 결과는 ONE_REF(백업 ref, 없으면 빈 값), 실패면 1 과 ONE_ERR.
 # $4 피커가 속한 창 (picker_window. 한꺼번에 정리할 때 한 번만 구한다) $5 keep 이면 브랜치는 그대로 (백업·삭제 없음)
+# 커밋 안 된 변경은 실행할 때 다시 본다. ctrl-x 의 검사(cleanable) 뒤에도 창 안의 에이전트·에디터가 파일을 쓸 수 있고,
+# 빠른 제거의 git worktree move 와 뒤의 remove --force --force 는 dirty 를 막지 않는다 (git worktree remove 만 막는다).
+# 창을 닫기 전에 한 번(괜히 창을 닫지 않게), 닫은 뒤(그 안의 프로세스가 끝난 뒤) 옮기기 직전에 한 번.
+dirty_guard() {  # $1 워크트리 경로 $2 덧붙일 안내. dirty 면 1 과 ONE_ERR
+  local n; [ -d "$1" ] || return 0
+  n=$(dirty_count "$1"); [ "$n" -gt 0 ] || return 0
+  ONE_ERR="dirty: $n uncommitted change(s) in $(home_disp "$1") · nothing removed$2"
+  return 1
+}
 clean_one() {
   local kind=$1 path=$2 branch=$3 out
   ONE_REF="" ONE_ERR=""
+  if [ "$kind" = worktree ]; then dirty_guard "$path" "" || return 1; fi
   step "closing windows"; close_windows "$path" "${4:-}"
   case $kind in
-    worktree) step "removing worktree"; trash_worktree "$path" || return 1 ;;
+    worktree)
+      dirty_guard "$path" " (its windows were closed)" || return 1
+      step "removing worktree"; trash_worktree "$path" || return 1 ;;
     prunable) git worktree prune ;;
   esac
   if [ "${5:-}" != keep ] && real_branch "$branch"; then
