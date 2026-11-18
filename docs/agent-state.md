@@ -179,6 +179,7 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
   그때도 지워질 것으로 보지만 실제로는 확인하지 않았다.
 - `waiting` 은 들어와도 지우지 않는다. 다음 훅(`PostToolUse`·`UserPromptSubmit`)이 와야 바뀐다. 승인한 도구가 오래 돌면 그동안 남는다(위 공백).
 - `prefix a`: 나를 기다리는 다음 패널로 간다(waiting → error → done 순, 오래된 것부터, 지금 패널 제외). 세션이 달라도 간다.
+  대기가 둘 이상이면 대기끼리 오가고, 대기를 다 풀어야 끝남·오류로 간다(가장 급한 것부터라서).
 - `prefix M-a`: 지금 패널의 표시를 지운다(`idle`). 위 "알려진 공백" 용.
 - 키는 `@agent-state-jump-key`, `@agent-state-clear-key` 로 바꾸고, 빈 값이면 묶지 않는다.
 
