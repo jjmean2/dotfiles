@@ -10,11 +10,15 @@
 #       caffeinate 나 Claude Code 의 것은 건드리지 않는다.
 # 표시: @caffeinate_rev 를 바꿔 상태바의 #(caffeinate-status …) 명령 문자열을 바꾼다. tmux 는 #() 결과를 명령
 #       문자열로 캐시하므로, 문자열이 바뀌면 15초를 기다리지 않고 새로 돌린다.
+# 메시지: display-message 는 상태바 자리를 노란 띠로 덮어 display-time(기본 750ms) 동안만 보여 줘 읽기 어렵다.
+#       display-time 을 늘리면 tmux 의 모든 메시지가 길어지므로, 이 메시지만 -d 로 늘린다 (tmux 3.2+).
+#       그 사이 아무 키나 누르면 바로 사라진다.
 
 flags=${1:--i}
+msg_ms=3000
 
 if ! command -v caffeinate >/dev/null 2>&1; then
-  tmux display-message "caffeinate: not available on this machine"
+  tmux display-message -d "$msg_ms" "caffeinate: not available on this machine"
   exit 0
 fi
 
@@ -35,4 +39,4 @@ fi
 
 tmux set -g @caffeinate_rev "$(date +%s)"
 tmux refresh-client -S
-tmux display-message "$msg"
+tmux display-message -d "$msg_ms" "$msg"
