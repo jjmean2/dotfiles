@@ -11,7 +11,7 @@
 | `home/.chezmoiscripts/` | 패키지/도구 설치 스크립트. `run_onchange_` 라서 내용이 바뀔 때만 다시 실행된다 |
 | `docos/<project>/docker-compose.yml` | 로컬에서 띄우는 docker compose 서비스. `doco <project> up` 으로 실행 |
 | `snippets/` | 기억해 두고 싶은 코드 스니펫 |
-| `claude-plugins/` | 개인 Claude Code 플러그인. 루트의 `.claude-plugin/marketplace.json` 이 이 저장소를 마켓플레이스로 만든다 (`claude plugin marketplace add jjmean2/dotfiles`, 마켓플레이스 이름 `justwonder`). 지금은 작업 스킬 모음 `jw` 하나 |
+| `claude-plugins/` | 개인 Claude Code 플러그인. 루트의 `.claude-plugin/marketplace.json` 이 이 저장소를 마켓플레이스로 만든다 (`claude plugin marketplace add jjmean2/dotfiles`, 마켓플레이스 이름 `justwonder`). 작업 스킬 모음 `jw`, 에이전트 진행 상태 기록·알림 `agent-state` |
 | `docs/` | 설계·운영 문서 (아래 "문서") |
 | `jw-ephemeral` | 내 계정으로 접속한 서버에 sudo 없이 깔았다가 되돌리는 래퍼 ([`docs/machines.md`](docs/machines.md)) |
 | `install.sh` | dev container 에 묻지 않고 까는 진입점. VS Code 의 dotfiles 기능이 실행한다 ([`docs/machines.md`](docs/machines.md)) |
@@ -177,6 +177,7 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
 | [`docs/zsh-plugins.md`](docs/zsh-plugins.md) | zsh 플러그인(fzf-tab, 입력 제안, 문법 색칠)을 관리자 없이 받고 읽는 구조, 더하기·올리기·빼기 |
 | [`docs/nvim.md`](docs/nvim.md) | nvim (LazyVim) 설정의 구조, 상태 파일 `lazyvim.json` 과 `lazy-lock.json`, 업데이트와 되돌리기 |
 | [`docs/karabiner.md`](docs/karabiner.md) | 한글 입력 상태에서 tmux prefix 와 Esc 가 듣게 하는 Karabiner 규칙 (macOS) |
+| [`docs/agent-state.md`](docs/agent-state.md) | 코딩 에이전트의 진행 상태(작업 중·대기·끝남)를 기록하고 tmux 탭·터미널 알림으로 보이게 하는 구조와 계약 |
 | [`docs/tmux-dev/`](docs/tmux-dev/README.md) | tmux-dev 사용 가이드 (세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할. `prefix S`, `prefix W`). 설계 결정의 기록은 [`docs/tmux-dev/design/`](docs/tmux-dev/design/) |
 
 ## 자주 쓰는 명령

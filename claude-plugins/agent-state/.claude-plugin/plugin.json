@@ -1,0 +1,25 @@
+{
+  "name": "agent-state",
+  "version": "0.1.0",
+  "description": "Claude Code 의 진행 상태(작업 중·대기·끝남·오류)를 터미널 도구가 읽을 수 있게 기록하고(파일 + tmux 패널 옵션), 사람이 필요해지면 터미널 알림을 보낸다",
+  "author": {
+    "name": "jjmean2"
+  },
+  "license": "MIT",
+  "userConfig": {
+    "notify_on": {
+      "type": "string",
+      "title": "Notify on",
+      "description": "all: waiting, done and error. attention: only waiting and error. off: never notify (state is still recorded).",
+      "options": ["all", "attention", "off"],
+      "default": "all"
+    },
+    "notify_via": {
+      "type": "string",
+      "title": "Notify via",
+      "description": "osc9: desktop notification escape (iTerm2, Ghostty, WezTerm). osc777: with a separate title (Ghostty, foot). bell: plain terminal bell.",
+      "options": ["osc9", "osc777", "bell"],
+      "default": "osc9"
+    }
+  }
+}
