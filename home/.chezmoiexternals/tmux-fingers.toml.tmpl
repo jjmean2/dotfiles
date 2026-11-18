@@ -10,6 +10,7 @@
 
        버전 올리기: 아래 version 과 두 checksum 을 함께 바꾼다.
          curl -sL <url> | shasum -a 256
+       올린 뒤에는 tmux.conf 의 "prefix J 가 한 줄 아래로 가는 문제" 우회 훅이 아직 필요한지 확인한다 (지우는 법은 거기에).
        이 파일은 .chezmoiexternal.toml 과 같은 꼴이다. OS·아키텍처로 갈라야 해서 템플릿이 되는 .chezmoiexternals/
        아래에 따로 둔다 (.chezmoiexternal.toml 을 템플릿으로 바꾸면 그 파일을 가리키는 문서가 모두 바뀌어야 한다). */ -}}
 {{- $version := "2.7.1" -}}
