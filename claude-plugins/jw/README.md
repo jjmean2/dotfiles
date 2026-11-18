@@ -9,9 +9,8 @@
 | `/jw:handoff-move <브랜치> [--in-stack\|--new-worktree]` | 워크트리만 만들고, **지금 세션**을 그리로 옮기는 `/cd` 명령을 알려 준다 |
 | `/jw:pr-review-handle [PR] [--all] [--stack]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 수정안과 배경 원리를 설명한다 |
 
-| 훅 | 하는 일 |
-|---|---|
-| `hooks/tmux-bell` (Stop, Notification: 허락·질문) | tmux 안이면 자기 패널 tty 에 벨을 울린다. tmux 가 그 윈도우 탭에 `!` 와 노란 색을 남기고(보고 있는 윈도우는 무시), Ghostty 는 Dock·제목 🔔 로 알린다. tmux 쪽 설정은 `home/dot_config/tmux/tmux.conf` 의 `bell-action`·`window-status-bell-style`. tmux 밖이면 아무것도 안 한다 |
+0.7.0 에서 끝남·허락 대기 때 벨을 울리던 `hooks/tmux-bell` 을 뺐다. 그 일은 별도 플러그인
+[`agent-state`](../agent-state/README.md)가 맡는다(상태 배지 + 데스크톱 알림. 벨을 원하면 그 플러그인의 `notify_via = bell`).
 
 ## 개념
 
