@@ -256,8 +256,15 @@ unfunction _should_skip_compinit_check
 # compinit 은 Option+, 와 Option+/ 를 히스토리 단어 완성(_history-complete-newer/older)에 묶는다. 처음 만들 때는
 # 키가 비어 있을 때만 묶지만, 그 결과를 ~/.zcompdump 에 조건 없는 `bindkey '^[,' …` 줄로 적어 두고 다음 셸부터
 # 그 덤프를 읽는다. 그래서 이 키를 비워 두던 시절에 만든 덤프가 있는 머신에서는 앞에서 묶은 것이 덮인다.
-# (Option+/ 는 그대로 둔다: 입력 중인 단어를 히스토리에 있던 단어로 완성)
 bindkey '^[,' copy-earlier-word
+
+# 히스토리 단어 완성: 입력 중인 단어를 히스토리에 나온 적 있는 단어로 완성한다 (명령 전체가 아니라 단어 하나).
+#   Option+/  더 오래된 후보로 (compinit 기본). 첫 번째는 후보 목록을 보여 주고, 다음부터 하나씩 채운다.
+#   Option+m  더 최근 후보로 되돌린다. 원래 Option+, 의 일인데 copy-earlier-word 에 내줬으므로 , 바로 왼쪽으로 옮겼다.
+#   예: `echo pay` Option+/ Option+/ → payment-service-v2, Option+/ → payload.json, Option+m → payment-service-v2
+# 아랫줄 순서로 외운다: m(되돌리기) , (앞 단어) .(마지막 단어) /(단어 완성). ^[m 은 원래 비어 있던 키다.
+# _history-complete-newer 위젯은 compinit 이 만들므로 여기(compinit 뒤)에서 묶는다.
+bindkey '^[m' _history-complete-newer
 
 # 파일이나 디렉터리 이름을 입력할 때 대소문자를 무시하고 찾아서 자동완성해주는 설정. 예를 들어 downloads라고 소문자로만 쳐도 대문자로 시작하는 Downloads/ 폴더를 찾아준다.
 # 뒤에 복잡하게 똑같은 패턴이 반복되는 부분은 Zsh 자동완성 시스템이 1단계 매칭 실패 시 2단계, 3단계로 넘어가며 '부분 일치'나 '오타 교정'까지 시도하도록 규칙을 겹겹이 쌓아두는 부분
