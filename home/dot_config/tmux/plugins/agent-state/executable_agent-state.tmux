@@ -34,15 +34,17 @@ c_err=$(optd @agent-state-color-error '#f38ba8')
 
 # 색을 입힌 아이콘. 뒤의 #[default] 는 그 포맷의 바탕 스타일(window-status-style 등)로 되돌린다.
 paint() { if [ -n "$1" ]; then printf '#[fg=%s]%s#[default]' "$1" "$2"; else printf '%s' "$2"; fi; }
+# 탭용: 벨이 울린 탭은 바탕이 노랗게(window-status-bell-style) 바뀌어 노란 ◆ 가 묻히므로, 그때는 색을 입히지 않고 탭 글자색을 쓴다.
+paint_tab() { if [ -n "$1" ]; then printf '#{?window_bell_flag,,#[fg=%s]}%s#[default]' "$1" "$2"; else printf '%s' "$2"; fi; }
 
 # 탭: #{P:…} 로 윈도우의 모든 패널을 훑는다. 그냥 #{@agent_state} 는 활성 패널 값만 읽어 다른 패널의 에이전트를 놓친다.
 # #{P:a,b} 의 쉼표는 "활성 패널용 포맷" 구분자라 구분자로 공백을 쓴다.
 all='#{P:#{@agent_state} }'
 n_wait='#{n:#{P:#{?#{==:#{@agent_state},waiting},x,}}}'
-badge="#{?#{m:*waiting*,$all}, $(paint "$c_wait" "$i_wait#{?#{e|>|:$n_wait,1},$n_wait,}"),"
-badge+="#{?#{m:*error*,$all}, $(paint "$c_err" "$i_err"),"
-badge+="#{?#{m:*done*,$all}, $(paint "$c_done" "$i_done"),"
-badge+="#{?#{m:*running*,$all}, $(paint "$c_run" "$i_run"),}}}}"
+badge="#{?#{m:*waiting*,$all}, $(paint_tab "$c_wait" "$i_wait#{?#{e|>|:$n_wait,1},$n_wait,}"),"
+badge+="#{?#{m:*error*,$all}, $(paint_tab "$c_err" "$i_err"),"
+badge+="#{?#{m:*done*,$all}, $(paint_tab "$c_done" "$i_done"),"
+badge+="#{?#{m:*running*,$all}, $(paint_tab "$c_run" "$i_run"),}}}}"
 tmux set -g @agent_badge "$badge"
 
 pane="#{?#{==:#{@agent_state},waiting},$(paint "$c_wait" "$i_wait") ,"
