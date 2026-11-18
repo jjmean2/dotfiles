@@ -263,8 +263,21 @@ bindkey '^[,' copy-earlier-word
 #   Option+m  더 최근 후보로 되돌린다. 원래 Option+, 의 일인데 copy-earlier-word 에 내줬으므로 , 바로 왼쪽으로 옮겼다.
 #   예: `echo pay` Option+/ Option+/ → payment-service-v2, Option+/ → payload.json, Option+m → payment-service-v2
 # 아랫줄 순서로 외운다: m(되돌리기) , (앞 단어) .(마지막 단어) /(단어 완성). ^[m 은 원래 비어 있던 키다.
-# _history-complete-newer 위젯은 compinit 이 만들므로 여기(compinit 뒤)에서 묶는다.
-bindkey '^[m' _history-complete-newer
+#
+# 두 키 모두 회색 입력 제안(zsh-autosuggestions)을 먼저 지우고 완성 위젯을 부르는 작은 위젯에 묶는다.
+# 왜: autosuggestions 는 이름이 _ 로 시작하는 위젯은 감싸지 않는다(무시 목록의 `_\*`). 그래서 완성 위젯
+#   _history-complete-older/newer 를 그냥 묶으면 누르는 동안 제안을 지우지도 새로 찾지도 않는다. 옛 제안이
+#   색만 잃고(흰 글씨) 남아서, 완성된 단어 뒤에 붙어 보이고 → 나 End 를 누르면 그 옛 제안까지 받아진다
+#   (예: `echo pa` 의 제안 `ris london` 이 남아 `echo paris` 완성 뒤 `echo parisris london`).
+# 위젯 이름도 _history-complete- 로 시작해야 한다. 완성 함수(_history_complete_word)가 직전 위젯 이름이
+#   `_history-complete-*` 인지로 "이어서 누름"을 알아보고, 방향은 이름이 newer 로 끝나는지로 정한다.
+#   ${WIDGET/-jw/} 로 원래 위젯 이름을 되찾아 부른다.
+# 두 위젯은 compinit 이 만들므로 여기(compinit 뒤)에서 묶는다.
+_jw-history-complete() { POSTDISPLAY=; zle ${WIDGET/-jw/} -- "$@"; }
+zle -N _history-complete-jw-older _jw-history-complete
+zle -N _history-complete-jw-newer _jw-history-complete
+bindkey '^[/' _history-complete-jw-older
+bindkey '^[m' _history-complete-jw-newer
 
 # 파일이나 디렉터리 이름을 입력할 때 대소문자를 무시하고 찾아서 자동완성해주는 설정. 예를 들어 downloads라고 소문자로만 쳐도 대문자로 시작하는 Downloads/ 폴더를 찾아준다.
 # 뒤에 복잡하게 똑같은 패턴이 반복되는 부분은 Zsh 자동완성 시스템이 1단계 매칭 실패 시 2단계, 3단계로 넘어가며 '부분 일치'나 '오타 교정'까지 시도하도록 규칙을 겹겹이 쌓아두는 부분
