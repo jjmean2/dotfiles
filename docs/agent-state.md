@@ -6,7 +6,7 @@ agent-state 는 에이전트의 상태를 **한 번 기록하고**, 그것을 **
 - 만드는 쪽: Claude Code 플러그인 [`claude-plugins/agent-state`](../claude-plugins/agent-state/README.md) (훅 + `bin/agent-state`)
 - 받는 쪽: tmux 어댑터 `home/dot_config/tmux/plugins/agent-state` (탭·패널 테두리 표시, 키), 터미널 알림, 그 밖에 레코드를 읽는 아무 도구
 
-2026-11-19 에 정한 설계다. 근거가 된 실측은 Claude Code 2.1.327, tmux 3.8, Ghostty 1.3 기준.
+2026-11-19 에 정한 설계다. 근거가 된 실측은 Claude Code 2.1.327, tmux 3.8 기준 (Ghostty 1.4.0 은 문서만 확인).
 
 ## 정한 것과 기본값
 
@@ -98,7 +98,7 @@ tmux 안이면 레코드와 같은 내용을 **그 에이전트가 떠 있는 �
 | `SessionStart` (compact) | 그대로 | `/compact`·자동 압축 때 온다. 작업 도중일 수 있어 초기화하면 안 된다 |
 | `UserPromptSubmit` | `running` | |
 | `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `running` | 허락·질문에 답한 뒤 다시 작업 중으로 돌아오는 길 |
-| `PermissionRequest` | `waiting` (`tool_name` 이 AskUserQuestion → `question`, ExitPlanMode → `plan`, 그 밖 → `permission`) | 창이 뜨는 즉시 온다. 질문 도구도 이 훅으로 온다. auto 모드에서 자동 승인되면 오지 않는다 |
+| `PermissionRequest` | `waiting` (`tool_name` 이 AskUserQuestion → `question`, ExitPlanMode → `plan`, 그 밖 → `permission`) | 창이 뜨는 즉시 온다. 질문 도구도 이 훅으로 온다. auto 모드에서 자동 승인되면 오지 않는다. 승인·거절에는 훅이 없다(아래 공백) |
 | `Notification` permission_prompt | `waiting` (이미 waiting 이면 그대로) | 창이 뜨고 약 6초 뒤. 예비로만 쓴다 |
 | `Notification` elicitation_dialog·elicitation_url_dialog·agent_needs_input | `waiting` (`input`) | |
 | `Stop` | `done` | |
@@ -106,10 +106,22 @@ tmux 안이면 레코드와 같은 내용을 **그 에이전트가 떠 있는 �
 | `SessionEnd` | 레코드·패널 표시 제거 (clear 면 패널은 다음 SessionStart 가 덮음) | |
 | `SubagentStop` | 쓰지 않는다 | `Stop` 뒤에 따로 온다 |
 
-**알려진 공백.** Esc 로 허락을 거절하거나 작업 도중 중단(이 설정에서는 Option+q)하면 **어떤 훅도 오지 않는다.** `Stop` 도,
-`PostToolUseFailure` 도, 2분 넘게 기다려도 `idle_prompt` 도 오지 않았다. 터미널 제목도 바뀌지 않는다. 대화 기록 파일에는
-`[Request interrupted by user…]` 가 남지만 내부 형식이라 기대지 않는다. 그래서 표시가 `waiting`/`running` 으로 남는다.
-중단은 늘 사용자가 그 패널에서 직접 하므로 다음 프롬프트(`UserPromptSubmit`)에서 바로잡히고, tmux 에는 지금 패널의 표시를 지우는 키를 둔다.
+**알려진 공백.** 사람이 허락 창에 답하는 순간에는 훅이 없다. 그래서 세 경우에 표시가 실제보다 늦거나 남는다.
+
+| 경우 | 오는 훅 | 표시 |
+|---|---|---|
+| 허락 창에서 **승인** | 없음. 승인한 도구가 **끝나야** `PostToolUse` | 그 도구가 도는 동안 `waiting` 이 남는다 (`ping -c 12` 승인 → 16초 동안 waiting, 실측) |
+| 허락 창에서 Esc 로 **거절** | 없음 | `waiting` 이 다음 프롬프트까지 남는다 |
+| 작업 도중 **중단** (이 설정에서는 Option+q) | 없음 | `running` 이 다음 프롬프트까지 남는다 |
+
+거절·중단 뒤에는 `Stop` 도 `PostToolUseFailure` 도, 2분 넘게 기다려도 `idle_prompt` 도 오지 않았다. 터미널 제목도 바뀌지 않는다.
+대화 기록 파일에는 `[Request interrupted by user…]` 가 남지만 내부 형식이라 기대지 않는다. 셋 다 사람이 그 패널에서 직접 하는 일이므로
+다음 이벤트(도구 끝, 다음 프롬프트)에서 바로잡히고, tmux 에는 지금 패널의 표시를 지우는 키를 둔다. 승인 직후를 메우는 방법(그 패널에서
+나갈 때 `waiting` 을 지우기 등)은 진짜 대기를 놓칠 수 있어 넣지 않았다.
+
+**패널과 파일이 어긋날 때.** tmux 쪽의 "봤다" 처리(focus-in 으로 `done` → `idle`, 지우기 키)는 패널 옵션만 바꾸고 레코드 파일은 그대로 둔다.
+"봤는지" 는 보는 도구마다 다른 일이라서다. 그래서 `agent-state list` 는 tmux 와 다를 수 있다. 훅은 `UserPromptSubmit` 에서는 같은 상태여도
+늘 다시 써서, 손으로 지운 패널도 다음 턴에 바로잡는다.
 
 ## 알림
 
@@ -163,8 +175,9 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
 ### 끄기와 키
 
 - `done` 은 다른 데서 그 패널로 **들어올 때** 지운다(`pane-focus-in` 훅, `idle` 로). 이미 보고 있는 패널에서 끝났으면 다음 프롬프트까지 남는다.
-  "봤다" 가 아니라 "들어왔다/답했다" 기준이다. Ghostty 창으로 돌아올 때도 focus-in 이 오므로 그때도 지워진다.
-- `waiting` 은 들어와도 지우지 않는다. 답해야(`PostToolUse`·`UserPromptSubmit`) 바뀐다.
+  "봤다" 가 아니라 "들어왔다/답했다" 기준이다. 다른 앱에서 터미널 창으로 돌아올 때도 tmux 가 focus-in 을 받으므로(`focus-events on`)
+  그때도 지워질 것으로 보지만 실제로는 확인하지 않았다.
+- `waiting` 은 들어와도 지우지 않는다. 다음 훅(`PostToolUse`·`UserPromptSubmit`)이 와야 바뀐다. 승인한 도구가 오래 돌면 그동안 남는다(위 공백).
 - `prefix a`: 나를 기다리는 다음 패널로 간다(waiting → error → done 순, 오래된 것부터, 지금 패널 제외). 세션이 달라도 간다.
 - `prefix M-a`: 지금 패널의 표시를 지운다(`idle`). 위 "알려진 공백" 용.
 - 키는 `@agent-state-jump-key`, `@agent-state-clear-key` 로 바꾸고, 빈 값이면 묶지 않는다.

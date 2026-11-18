@@ -151,11 +151,16 @@ label() {
 
 # ---------- 상태 바꾸기 ----------
 
-# STATE REASON 으로 바꾼다. 같은 상태면 아무것도 하지 않는다 (알림도 바뀔 때만).
+# STATE REASON 으로 바꾼다. 같은 상태면 아무것도 하지 않는다 (알림도 바뀔 때만). FORCE=1 이면 같아도 다시 쓴다(알림은 없음).
 transition() {
   STATE=$1 REASON=${2-}
   read_record
-  [ "$OLD_STATE" = "$STATE" ] && [ "$OLD_REASON" = "$REASON" ] && return 0
+  if [ "$OLD_STATE" = "$STATE" ] && [ "$OLD_REASON" = "$REASON" ]; then
+    [ -n "${FORCE-}" ] || return 0
+    SAME=1
+  else
+    SAME=''
+  fi
   NOW=$(date +%s)
   mkdir -p "$SD" 2>/dev/null && chmod 700 "$SD" 2>/dev/null
   # 첫 필드는 state: 빠른 길(fast_running)이 첫 줄의 앞부분만 보고 판단한다.
@@ -165,7 +170,7 @@ transition() {
     && mv -f "$tmp" "$F" 2>/dev/null
   tmux_probe
   tmux_set
-  notify
+  [ -n "$SAME" ] || notify
 }
 
 end_session() {
@@ -195,8 +200,10 @@ hook_claude() {
   jget hook_event_name; EV=$JV
   state_dir; record_path
 
+  # 빠른 길은 도구 호출 훅에만. UserPromptSubmit 은 턴마다 한 번이라 늘 다시 쓴다: 사람이 tmux 에서 표시를 지웠거나
+  # (prefix M-a — 패널 옵션만 바뀌고 파일은 running 그대로) 중단으로 파일이 running 에 멈춰 있어도 패널을 바로잡는다.
   case $EV in
-    PreToolUse|PostToolUse|PostToolUseFailure|UserPromptSubmit)
+    PreToolUse|PostToolUse|PostToolUseFailure)
       fast_running && return 0 ;;
   esac
 
@@ -209,7 +216,9 @@ hook_claude() {
       if [ "$JV" = compact ] && [ -e "$F" ]; then return 0; fi   # 압축은 작업 도중에도 온다: 상태 유지
       gc_quiet
       transition idle ;;
-    UserPromptSubmit|PreToolUse|PostToolUse|PostToolUseFailure)
+    UserPromptSubmit)
+      FORCE=1; transition running ;;
+    PreToolUse|PostToolUse|PostToolUseFailure)
       transition running ;;
     PermissionRequest)
       jget tool_name; TOOL=$JV
