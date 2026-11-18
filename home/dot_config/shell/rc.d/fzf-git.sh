@@ -3,7 +3,8 @@
 # https://github.com/junegunn/fzf-git.sh  (파일은 .chezmoiexternal.toml 이 ~/.local/share/fzf-git/ 에 받는다)
 #
 # Ctrl-G 를 누른 뒤 두 번째 키 (Ctrl 을 떼고 눌러도 된다. Ctrl-G ? 로 이 목록을 본다)
-#   Ctrl-G Ctrl-B  브랜치            git switch <Ctrl-G Ctrl-B>
+#   Ctrl-G b       브랜치            git switch <Ctrl-G b>
+#                  (tmux 안에서는 Ctrl-B 가 tmux prefix 라 Ctrl-G Ctrl-B 의 Ctrl-B 를 tmux 가 가져간다. b 로 누른다)
 #   Ctrl-G Ctrl-H  커밋 해시         git show <…>, git rebase -i <…>
 #   Ctrl-G Ctrl-F  바뀐 파일 + 추적 파일   git add <…> (Tab 으로 여러 개)
 #   Ctrl-G Ctrl-T  태그 / Ctrl-R 리모트 / Ctrl-S stash / Ctrl-L reflog / Ctrl-W 워크트리 / Ctrl-E 모든 ref

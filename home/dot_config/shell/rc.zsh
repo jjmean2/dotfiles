@@ -195,7 +195,7 @@ bindkey '^[OB' down-line-or-beginning-search
 # (Ghostty 는 왼쪽 Option 만 Alt 로 보낸다. config.ghostty 의 macos-option-as-alt)
 autoload -Uz copy-earlier-word
 zle -N copy-earlier-word
-bindkey '^[,' copy-earlier-word
+# Option+, 의 bindkey 는 아래 compinit 뒤에 있다 (compinit 이 이 키를 가져가므로)
 # Option+. 를 같은 일을 하는 사용자 위젯으로 바꿔 묶는다. copy-earlier-word 는 직전 위젯($LASTWIDGET)을
 # 인자와 함께 다시 불러 단어를 고르는데, zsh-autosuggestions 가 내장 위젯을 감쌀 때는 인자를 버려서
 # (`zle .insert-last-word` 로만 부른다) 한 명령 앞으로 넘어가 버린다. 사용자 위젯은 인자를 그대로 넘긴다.
@@ -251,6 +251,13 @@ else
 	compinit
 fi
 unfunction _should_skip_compinit_check
+
+# Option+, (copy-earlier-word, 위 Bindkey 부분) 는 compinit 뒤에 묶는다.
+# compinit 은 Option+, 와 Option+/ 를 히스토리 단어 완성(_history-complete-newer/older)에 묶는다. 처음 만들 때는
+# 키가 비어 있을 때만 묶지만, 그 결과를 ~/.zcompdump 에 조건 없는 `bindkey '^[,' …` 줄로 적어 두고 다음 셸부터
+# 그 덤프를 읽는다. 그래서 이 키를 비워 두던 시절에 만든 덤프가 있는 머신에서는 앞에서 묶은 것이 덮인다.
+# (Option+/ 는 그대로 둔다: 입력 중인 단어를 히스토리에 있던 단어로 완성)
+bindkey '^[,' copy-earlier-word
 
 # 파일이나 디렉터리 이름을 입력할 때 대소문자를 무시하고 찾아서 자동완성해주는 설정. 예를 들어 downloads라고 소문자로만 쳐도 대문자로 시작하는 Downloads/ 폴더를 찾아준다.
 # 뒤에 복잡하게 똑같은 패턴이 반복되는 부분은 Zsh 자동완성 시스템이 1단계 매칭 실패 시 2단계, 3단계로 넘어가며 '부분 일치'나 '오타 교정'까지 시도하도록 규칙을 겹겹이 쌓아두는 부분
