@@ -3,6 +3,7 @@
   "owner": { "name": "jjmean2" },
   "description": "dotfiles 에 함께 두는 개인 Claude Code 플러그인",
   "plugins": [
-    { "name": "jw", "source": "./claude-plugins/jw" }
+    { "name": "jw", "source": "./claude-plugins/jw" },
+    { "name": "agent-state", "source": "./claude-plugins/agent-state" }
   ]
 }

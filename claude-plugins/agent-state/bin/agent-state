@@ -1,0 +1,306 @@
+#!/bin/sh
+# agent-state: 코딩 에이전트(Claude Code 등)의 진행 상태를 기록하고, 사람이 알아야 할 때 알린다.
+# 설계와 계약(상태 어휘·레코드·tmux 옵션): docs/agent-state.md
+#
+#   agent-state hook claude          Claude Code 훅 입력(JSON, stdin)을 상태로 번역한다 (hooks/hooks.json 이 부른다)
+#   agent-state emit <상태> [옵션]    다른 에이전트·스크립트용 일반 입구. 옵션: --agent A --session S --reason R
+#                                    --pid P (기본: 부모 프로세스) --cwd D
+#   agent-state list [--json]        살아 있는 레코드 목록
+#   agent-state gc                   주인 프로세스가 죽은 레코드와 tmux 패널 표시를 지운다
+#   agent-state dir                  레코드 디렉터리 경로
+#
+# 상태: idle(세션은 있고 할 일 없음) running waiting done error. 레코드가 없으면 "정보 없음".
+# 훅은 표현을 정하지 않는다. 기록(파일 + tmux 패널 옵션)과 알림(OSC 9 등)만 하고, 어떻게 보일지는 받는 쪽이 정한다.
+#
+# 비용: 도구 호출마다 불리므로(PreToolUse·PostToolUse) 상태가 그대로면 셸 내장 명령만으로 끝난다.
+# 실패는 늘 조용히 넘긴다(exit 0). 에이전트를 붙잡거나 화면에 오류를 띄우지 않는다.
+set -u
+
+# ---------- 공통 ----------
+
+state_dir() {
+  if [ -n "${AGENT_STATE_DIR-}" ]; then
+    SD=$AGENT_STATE_DIR
+  elif [ -n "${XDG_RUNTIME_DIR-}" ]; then
+    SD=$XDG_RUNTIME_DIR/agent-state          # Linux: 메모리(tmpfs), 로그아웃하면 사라진다
+  else
+    # macOS: 사용자별 임시 디렉터리. $TMPDIR 는 프로세스마다 바뀔 수 있어(샌드박스 등) 시스템에 직접 묻는다.
+    t=$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null) || t=
+    [ -n "$t" ] || t=${TMPDIR:-/tmp}/agent-state-$(id -u)
+    SD=${t%/}/agent-state
+  fi
+}
+
+# JSON 한 줄(IN)에서 최상위 문자열 필드 하나를 JV 에 꺼낸다. jq 없이 셸 내장 치환만 쓴다.
+# 맨 처음 나온 "키":"값" 을 고른다 (Claude Code 훅 입력은 최상위 필드가 tool_input 보다 앞에 온다).
+jget() {
+  JV=''
+  case $IN in
+    *"\"$1\":\""*)  JV=${IN#*\""$1"\":\"} ;;
+    *"\"$1\": \""*) JV=${IN#*\""$1"\": \"} ;;
+    *) return 0 ;;
+  esac
+  JV=${JV%%\"*}
+  JV=${JV%\\}   # 이스케이프된 따옴표에서 잘렸으면 끝의 \ 를 버린다 (JSON 으로 다시 쓸 때 깨지지 않게)
+}
+
+# 레코드 파일(F)의 첫 줄을 읽어 OLD_STATE OLD_REASON 을 채운다.
+read_record() {
+  OLD_STATE='' OLD_REASON='' REC=''
+  [ -r "$F" ] || return 0
+  IFS= read -r REC <"$F" || [ -n "$REC" ] || return 0
+  IN=$REC
+  jget state;  OLD_STATE=$JV
+  jget reason; OLD_REASON=$JV
+}
+
+record_path() { F=$SD/$AGENT-$SESSION.json; }
+
+# ---------- 채널(sink) ----------
+
+# tmux 패널 옵션. 패널의 주인(@agent_pid)이 살아 있는 다른 프로세스면 건드리지 않는다:
+# 패널 안 에이전트가 Bash 로 띄운 `claude -p` 도 같은 $TMUX_PANE 을 물려받기 때문이다.
+# 결과: OWNER_OK=1 이면 이 프로세스가 패널의 주인, PANE_TTY 는 그 패널의 tty.
+tmux_probe() {
+  OWNER_OK='' PANE_TTY=''
+  [ -n "${TMUX_PANE-}" ] && [ -n "${TMUX-}" ] || return 0
+  command -v tmux >/dev/null 2>&1 || return 0
+  out=$(tmux display-message -p -t "$TMUX_PANE" '#{@agent_pid} #{pane_tty}' 2>/dev/null) || return 0
+  owner=${out%% *}; PANE_TTY=${out#* }
+  if [ -z "$owner" ] || [ "$owner" = "$PID" ] || ! kill -0 "$owner" 2>/dev/null; then
+    OWNER_OK=1
+  fi
+}
+
+tmux_set() {
+  [ -n "$OWNER_OK" ] || return 0
+  tmux set -p -t "$TMUX_PANE" @agent_state "$STATE" \; \
+       set -p -t "$TMUX_PANE" @agent_reason "$REASON" \; \
+       set -p -t "$TMUX_PANE" @agent_name "$AGENT" \; \
+       set -p -t "$TMUX_PANE" @agent_pid "$PID" \; \
+       set -p -t "$TMUX_PANE" @agent_since "$NOW" 2>/dev/null
+}
+
+tmux_unset() {
+  [ -n "$OWNER_OK" ] || return 0
+  tmux set -pu -t "$TMUX_PANE" @agent_state \; set -pu -t "$TMUX_PANE" @agent_reason \; \
+       set -pu -t "$TMUX_PANE" @agent_name \; set -pu -t "$TMUX_PANE" @agent_pid \; \
+       set -pu -t "$TMUX_PANE" @agent_since 2>/dev/null
+}
+
+# 알림: 상태가 바뀌어 사람이 필요해졌을 때만. 터미널 이스케이프로 보내므로 터미널을 가리지 않는다.
+#   osc9    ESC ] 9 ; 본문 BEL           iTerm2·Ghostty·WezTerm·Windows Terminal 의 데스크톱 알림
+#   osc777  ESC ] 777 ; notify ; 제목 ; 본문 BEL   Ghostty·urxvt·foot (제목을 따로 준다)
+#   bell    BEL                         소리·Dock·tmux 벨 플래그(!) — 예전 tmux-bell 과 같은 동작
+# tmux 안에서는 OSC 를 DCS 패스스루(ESC P tmux; … ESC \)로 감싼다. tmux 의 allow-passthrough 가 꺼져 있으면 버려진다.
+notify() {
+  on=${CLAUDE_PLUGIN_OPTION_NOTIFY_ON:-${AGENT_STATE_NOTIFY_ON:-all}}
+  via=${CLAUDE_PLUGIN_OPTION_NOTIFY_VIA:-${AGENT_STATE_NOTIFY_VIA:-osc9}}
+  case $on in
+    off) return 0 ;;
+    attention) case $STATE in waiting|error) ;; *) return 0 ;; esac ;;
+    *) case $STATE in waiting|done|error) ;; *) return 0 ;; esac ;;
+  esac
+  if [ -n "${TMUX_PANE-}" ]; then
+    [ -n "$OWNER_OK" ] || return 0      # 패널 주인이 아닌 중첩 세션은 알리지 않는다
+    tty=$PANE_TTY
+  else
+    tty=$(ps -o tty= -p "$PID" 2>/dev/null | tr -d ' ')
+    case $tty in ''|'?'*) return 0 ;; esac
+    tty=/dev/${tty#/dev/}
+  fi
+  [ -n "$tty" ] && [ -w "$tty" ] || return 0
+
+  where=${CWD%/}; where=${where##*/}
+  case $STATE in
+    waiting)
+      case $REASON in
+        question) body="Has a question" ;;
+        plan)     body="Plan ready for review" ;;
+        input)    body="Needs input" ;;
+        *)        body="Needs permission${TOOL:+: $TOOL}" ;;
+      esac ;;
+    done)  body="Finished" ;;
+    error) body="Stopped${REASON:+: $REASON}" ;;
+  esac
+  title="$(label) · ${where:-?}"
+  # 제어 문자를 빼고, osc777 의 구분자 ; 는 , 로 바꾼다.
+  title=$(printf '%s' "$title" | tr -d '\000-\037' | tr ';' ',')
+  body=$(printf '%s' "$body" | tr -d '\000-\037' | tr ';' ',')
+
+  case $via in
+    bell)   printf '\007' >"$tty" 2>/dev/null; return 0 ;;
+    osc777) seq="]777;notify;$title;$body" ;;
+    off)    return 0 ;;
+    *)      seq="]9;$title: $body" ;;
+  esac
+  if [ -n "${TMUX_PANE-}" ]; then
+    printf '\033Ptmux;\033\033%s\007\033\\' "$seq" >"$tty" 2>/dev/null
+  else
+    printf '\033%s\007' "$seq" >"$tty" 2>/dev/null
+  fi
+}
+
+label() {
+  case $AGENT in
+    claude) printf 'Claude' ;;
+    codex)  printf 'Codex' ;;
+    *)      printf '%s' "$AGENT" ;;
+  esac
+}
+
+# ---------- 상태 바꾸기 ----------
+
+# STATE REASON 으로 바꾼다. 같은 상태면 아무것도 하지 않는다 (알림도 바뀔 때만).
+transition() {
+  STATE=$1 REASON=${2-}
+  read_record
+  [ "$OLD_STATE" = "$STATE" ] && [ "$OLD_REASON" = "$REASON" ] && return 0
+  NOW=$(date +%s)
+  mkdir -p "$SD" 2>/dev/null && chmod 700 "$SD" 2>/dev/null
+  # 첫 필드는 state: 빠른 길(fast_running)이 첫 줄의 앞부분만 보고 판단한다.
+  tmp=$F.$$
+  printf '{"v":1,"state":"%s","reason":"%s","agent":"%s","session":"%s","pid":%s,"tmux_pane":"%s","cwd":"%s","since":%s,"transcript":"%s"}\n' \
+    "$STATE" "$REASON" "$AGENT" "$SESSION" "$PID" "${TMUX_PANE-}" "$CWD" "$NOW" "${TRANSCRIPT-}" >"$tmp" 2>/dev/null \
+    && mv -f "$tmp" "$F" 2>/dev/null
+  tmux_probe
+  tmux_set
+  notify
+}
+
+end_session() {
+  # $1 = 끝난 이유. /clear 는 곧바로 새 세션의 SessionStart 가 오므로 패널 표시는 그쪽이 덮어쓰게 둔다.
+  rm -f "$F" 2>/dev/null
+  [ "$1" = clear ] && return 0
+  tmux_probe
+  tmux_unset
+}
+
+# 상태가 이미 running 이면 셸 내장 명령만으로 끝낸다 (도구 호출마다 불리는 길).
+fast_running() {
+  [ -r "$F" ] || return 1
+  IFS= read -r line <"$F" || [ -n "$line" ] || return 1
+  case $line in '{"v":1,"state":"running"'*) return 0 ;; esac
+  return 1
+}
+
+# ---------- 하위 명령 ----------
+
+hook_claude() {
+  IN=$(cat)
+  AGENT=claude
+  PID=$PPID              # 훅은 claude 프로세스가 직접 띄운다 (실측: 훅의 부모 = claude)
+  jget session_id;      SESSION=$JV
+  [ -n "$SESSION" ] || return 0
+  jget hook_event_name; EV=$JV
+  state_dir; record_path
+
+  case $EV in
+    PreToolUse|PostToolUse|PostToolUseFailure|UserPromptSubmit)
+      fast_running && return 0 ;;
+  esac
+
+  jget cwd;             CWD=$JV
+  jget transcript_path; TRANSCRIPT=$JV
+  TOOL=''
+  case $EV in
+    SessionStart)
+      jget source
+      if [ "$JV" = compact ] && [ -e "$F" ]; then return 0; fi   # 압축은 작업 도중에도 온다: 상태 유지
+      gc_quiet
+      transition idle ;;
+    UserPromptSubmit|PreToolUse|PostToolUse|PostToolUseFailure)
+      transition running ;;
+    PermissionRequest)
+      jget tool_name; TOOL=$JV
+      case $TOOL in
+        AskUserQuestion) transition waiting question ;;
+        ExitPlanMode)    transition waiting plan ;;
+        *)               transition waiting permission ;;
+      esac ;;
+    Notification)
+      jget notification_type
+      case $JV in
+        permission_prompt)                  # PermissionRequest 가 먼저 왔으면 같은 상태라 아무 일도 없다
+          read_record
+          [ "$OLD_STATE" = waiting ] || transition waiting permission ;;
+        elicitation_dialog|elicitation_url_dialog|agent_needs_input)
+          transition waiting input ;;
+      esac ;;
+    Stop)        transition 'done' ;;
+    StopFailure) jget error; transition error "$JV" ;;
+    SessionEnd)  jget reason; end_session "$JV" ;;
+  esac
+}
+
+emit() {
+  STATE=${1-}; shift 2>/dev/null
+  case $STATE in idle|running|waiting|done|error|end) ;; *) echo "agent-state: unknown state '$STATE'" >&2; return 2 ;; esac
+  AGENT=${AGENT_STATE_AGENT:-agent} SESSION='' REASON='' PID=$PPID CWD=$PWD TRANSCRIPT='' TOOL=''
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --agent) AGENT=$2; shift 2 ;;
+      --session) SESSION=$2; shift 2 ;;
+      --reason) REASON=$2; shift 2 ;;
+      --pid) PID=$2; shift 2 ;;
+      --cwd) CWD=$2; shift 2 ;;
+      *) echo "agent-state: unknown option '$1'" >&2; return 2 ;;
+    esac
+  done
+  [ -n "$SESSION" ] || SESSION=$PID
+  state_dir; record_path
+  if [ "$STATE" = end ]; then end_session other; else transition "$STATE" "$REASON"; fi
+}
+
+gc_quiet() {
+  state_dir
+  for f in "$SD"/*.json; do
+    [ -e "$f" ] || continue
+    IFS= read -r IN <"$f" || [ -n "$IN" ] || { rm -f "$f"; continue; }
+    p=${IN#*\"pid\":}; p=${p%%,*}
+    kill -0 "$p" 2>/dev/null || rm -f "$f"
+  done
+  [ -n "${TMUX-}" ] && command -v tmux >/dev/null 2>&1 || return 0
+  tmux list-panes -a -F '#{pane_id} #{@agent_pid}' 2>/dev/null | while read -r pane p; do
+    [ -n "$p" ] || continue
+    kill -0 "$p" 2>/dev/null && continue
+    tmux set -pu -t "$pane" @agent_state \; set -pu -t "$pane" @agent_reason \; set -pu -t "$pane" @agent_name \; \
+         set -pu -t "$pane" @agent_pid \; set -pu -t "$pane" @agent_since 2>/dev/null
+  done
+}
+
+list() {
+  gc_quiet
+  if [ "${1-}" = --json ]; then
+    for f in "$SD"/*.json; do [ -e "$f" ] && cat "$f"; done
+    return 0
+  fi
+  now=$(date +%s)
+  printf '%-8s %-8s %-11s %-7s %-6s %s\n' STATE AGENT REASON AGE PANE CWD
+  for f in "$SD"/*.json; do
+    [ -e "$f" ] || continue
+    IFS= read -r IN <"$f" || [ -n "$IN" ] || continue
+    jget state; s=$JV; jget agent; a=$JV; jget reason; r=$JV; jget tmux_pane; p=$JV; jget cwd; c=$JV
+    t=${IN#*\"since\":}; t=${t%%,*}
+    age=$((now - t))
+    if [ $age -ge 3600 ]; then age="$((age / 3600))h"; elif [ $age -ge 60 ]; then age="$((age / 60))m"; else age="${age}s"; fi
+    printf '%-8s %-8s %-11s %-7s %-6s %s\n' "$s" "$a" "${r:--}" "$age" "${p:--}" "$c"
+  done
+}
+
+cmd=${1-}; [ $# -gt 0 ] && shift
+case $cmd in
+  hook)
+    case ${1-} in
+      claude) hook_claude ;;
+      *) cat >/dev/null ;;
+    esac
+    exit 0 ;;
+  emit) emit "$@" ;;
+  list) list "$@" ;;
+  gc)   gc_quiet ;;
+  dir)  state_dir; printf '%s\n' "$SD" ;;
+  *)
+    sed -n '2,13s/^# \{0,1\}//p' "$0" >&2
+    exit 2 ;;
+esac
