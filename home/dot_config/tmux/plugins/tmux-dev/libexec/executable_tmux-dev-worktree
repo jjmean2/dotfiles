@@ -796,16 +796,35 @@ select_merged_actions() {
 on_marks() { cur_mode; [ "$MODE" = worktree ] && printf 'reload-sync(%s --list worktree --marks)' "$SELF"; return 0; }
 on_refresh() { cur_mode; to_mode "$MODE"; }
 # 백그라운드 fetch (피커가 뜰 때 한 번). 원격 ref 가 바뀌었고 아직 worktree 모드면 목록을 다시 읽는다. 실패는 조용히 넘긴다
+# fetch 자체는 이 콜백(bg-transform)에서 돌리지 않고 tmux 서버의 run-shell -b 로 띄운다 (fetch_job). fzf 는 끝날 때(esc,
+# enter) bg-transform 을 프로세스 그룹째 SIGKILL 하므로, 여기서 돌던 fetch 는 refs/remotes/origin/*.lock·packed-refs.lock
+# 을 남길 수 있었다. 이 콜백은 끝났다는 표시(상태 fetched)만 기다린다: 죽어도 남는 것이 없다. tmux 가 없으면 예전처럼 직접.
+FETCH_WAIT=${TMUX_DEV_FETCH_WAIT:-120}   # 초. 이보다 오래 걸리면 기다리지 않는다 (fetch 는 tmux 서버에서 마저 끝난다)
+fetch_now() {  # 머지된 PR 목록(gh)도 fetch 와 동시에 받는다. gh 실패는 fetch 결과에 영향이 없다. 종료 코드 = fetch 의 것
+  local pr_pid rc=0
+  pr_refresh >/dev/null 2>&1 & pr_pid=$!
+  GIT_TERMINAL_PROMPT=0 git fetch --prune --quiet origin >/dev/null 2>&1 || rc=$?
+  wait "$pr_pid" 2>/dev/null || true
+  return "$rc"
+}
+fetch_job() { local rc=0; fetch_now || rc=$?; job_put fetched "$rc"; }   # tmux 서버에서. 피커가 이미 끝났으면 표시는 버려진다
 on_fetch() {
   [ -n "$IN_REPO" ] || return 0
   st_get busy; [ "$ST" = 1 ] || trash_sweep   # 지난번에 다 못 지운 휴지통이 있으면 마저 (tmux 서버에서)
   git remote get-url origin >/dev/null 2>&1 || return 0
-  # 머지된 PR 목록(gh)도 fetch 와 동시에 받는다. 어느 쪽이 바뀌어도 다시 읽는다. gh 실패는 fetch 결과에 영향이 없다
-  local before after pr_pid=""; pr_file || true
+  # PR 목록이 바뀌어도 다시 읽는다
+  local before after waited=0; pr_file || true
   before=$(git for-each-ref refs/remotes/origin --format='%(objectname) %(refname)' | cksum; { cat "$PR_FILE" 2>/dev/null || true; } | cksum)
-  pr_refresh >/dev/null 2>&1 & pr_pid=$!
-  GIT_TERMINAL_PROMPT=0 git fetch --prune --quiet origin >/dev/null 2>&1 || { wait "$pr_pid" 2>/dev/null || true; return 0; }
-  wait "$pr_pid" 2>/dev/null || true
+  st_del fetched
+  if [ -n "${TMUX:-}" ] && [ -n "${TMUX_DEV_STATE:-}" ] && tmux run-shell -b "$(printf 'cd %q && TMUX_DEV_STATE=%q %q --fetch-job >/dev/null 2>&1' \
+       "$PWD" "$TMUX_DEV_STATE" "$SELF")" 2>/dev/null; then
+    while [ ! -f "$TMUX_DEV_STATE/fetched" ]; do
+      sleep 0.2; waited=$((waited + 1)); [ "$waited" -ge $((FETCH_WAIT * 5)) ] && return 0
+    done
+    st_get fetched; [ "$ST" = 0 ] || return 0
+  else
+    fetch_now || return 0
+  fi
   after=$(git for-each-ref refs/remotes/origin --format='%(objectname) %(refname)' | cksum; { cat "$PR_FILE" 2>/dev/null || true; } | cksum)
   [ "$before" = "$after" ] && return 0
   cur_mode; [ "$MODE" = worktree ] || return 0
@@ -1584,6 +1603,7 @@ while [ $# -gt 0 ]; do
     --cleanup-tick)    cleanup_tick; exit 0 ;;   # 저장소를 찾지 않는다 (틱마다 불린다)
     --cleanup-job)     st_get session; SESSION=$ST; in_session_dir; cleanup_job; exit 0 ;;
     --empty-trash)     repo_init; empty_trash; exit 0 ;;
+    --fetch-job)       repo_init; fetch_job; exit 0 ;;
     --choose-layout)   in_session_dir; w_choose_layout_step; exit 0 ;;
     --choose-create)   in_session_dir; choose_create_step; exit 0 ;;
     --create-preview)  in_session_dir; create_preview "${2:-create}"; exit 0 ;;
