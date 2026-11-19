@@ -219,6 +219,14 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
   중이 아니면 목록을 다시 읽는다. 실패(오프라인 등)는 조용히 넘긴다.
   검색어를 바꿀 때 보내던 `bg-cancel` 은 돌고 있는 bg-transform 을 모두 끊어서 이 fetch 도 죽였다(검색어를 빨리 치면 원격이
   갱신되지 않았다. 시험으로 확인). 그 취소는 디렉토리 모드의 경로 판정(`result`)을 위한 것이라 이제 그 모드에서만 보낸다 (2026-11-17).
+- **fzf 가 끊는 콜백에서는 락을 쥐는 git 을 돌리지 않는다** (2026-11-19). fzf 0.75 는 preview·reload·bg-transform 을 끊을 때
+  (커서 이동, 모드 전환, 마커 다시 읽기, 피커 종료) 프로세스 그룹째 SIGKILL 을 보낸다(손자 프로세스까지. 시험으로 확인).
+  git 은 SIGKILL 에 락을 못 치운다. 그래서
+  - 스크립트 맨 위에서 `GIT_OPTIONAL_LOCKS=0`. `git status` 가 stat 캐시를 index 에 다시 쓰느라 도는 내내 쥐던 `index.lock` 을
+    아예 잡지 않는다. 전에는 preview·마커 계산(`dirty_count`)이 끊길 때 `.git/worktrees/<n>/index.lock` 이 남았고, 남지 않아도
+    피커가 쥔 동안 사용자·에이전트의 `git commit` 이 실패했다. 병렬 마커 계산 자체는 원인이 아니다(워크트리마다 index 가 따로).
+  - fetch(와 gh PR 목록)는 정리 작업처럼 `tmux run-shell -b`(`--fetch-job`)로 띄우고, bg-transform 은 상태 `fetched` 만 기다린다.
+    피커를 닫으면 기다리던 콜백만 죽고 fetch 는 끝까지 가므로 `refs/remotes/origin/*.lock`·`packed-refs.lock` 이 남지 않는다.
 
 ## 워크트리 위치와 만들기
 

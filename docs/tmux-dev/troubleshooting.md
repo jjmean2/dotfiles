@@ -68,6 +68,17 @@ bare 저장소는 지원하지 않는다 (`bare repositories are not supported`)
 
 `ctrl-t` 를 눌렀을 때 `markers are still loading` 이 나오면 마커가 다 얹힌 뒤 다시 누른다.
 
+### git 이 `index.lock` (또는 `*.lock`) 이 있다며 멈춘다
+
+예전 버전의 W 피커는 커서를 옮기거나 피커를 닫을 때 돌던 `git status`·`git fetch` 가 강제 종료돼 락 파일을 남길 수 있었다
+(지금은 락을 잡지 않거나 tmux 서버에서 끝까지 돈다. 설계 문서의 "fzf 가 끊는 콜백" 항목).
+이미 남은 것은 그 저장소에서 git 이 돌고 있지 않은지 확인한 뒤 지운다:
+
+```sh
+pgrep -fl git                                  # 그 저장소의 git 이 없어야 한다
+rm .git/worktrees/<이름>/index.lock            # 메인 체크아웃이면 .git/index.lock
+```
+
 ## 정리가 안 된다
 
 | 메시지·증상 | 원인 | 해결 |
