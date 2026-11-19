@@ -1,10 +1,11 @@
 #!/bin/sh
-# prefix a: 나를 기다리는 다음 패널로 간다. agent-state.tmux 가 묶는다.
+# prefix M-a: 나를 기다리는 다음 패널로 간다. agent-state.tmux 가 묶는다.
 #   agent-state-jump <client> <지금 패널>
 # 순서: waiting → error → done, 같은 상태끼리는 오래된(@agent_since 가 작은) 것부터. 지금 패널은 뺀다.
+# 상태는 어댑터가 만든 @agent_st (패널 옵션, 없으면 진행 표시). 진행 표시에서 온 패널은 시각이 없어 맨 앞(0)으로 친다.
 # 세션이 달라도 간다 (switch-client 가 세션·윈도우·패널을 함께 바꾼다).
 client=$1 here=$2
-target=$(tmux list-panes -a -F '#{@agent_state} #{@agent_since} #{pane_id}' 2>/dev/null | awk -v here="$here" '
+target=$(tmux list-panes -a -F '#{E:@agent_st} #{?#{@agent_since},#{@agent_since},0} #{pane_id}' 2>/dev/null | awk -v here="$here" '
   $3 == here { next }
   $1 == "waiting" { r = 1 } $1 == "error" { r = 2 } $1 == "done" { r = 3 }
   $1 == "waiting" || $1 == "error" || $1 == "done" { print r, $2, $3 }

@@ -1,0 +1,15 @@
+#!/bin/sh
+# 패널의 에이전트 표시를 지운다 ("봤다"). agent-state.tmux 가 prefix M-A 와 pane-focus-in(done 일 때)에 묶는다.
+#   agent-state-ack <패널>
+# 상태가 어디서 왔는지에 따라 지우는 법이 다르다:
+#   패널 옵션 @agent_state   idle 로 바꾼다 (훅이 자기 패널을 아는 세션)
+#   진행 표시 pane_pb_state  그 패널 tty 에 OSC 9;4;0(hidden)을 써서 tmux 가 기억한 진행 표시를 지운다
+#                            (백그라운드 세션에 붙은 패널. tty 에 쓴 바이트는 패널의 출력이라 tmux 가 해석한다)
+p=$1
+out=$(tmux display-message -p -t "$p" '#{@agent_state}|#{pane_tty}' 2>/dev/null) || exit 0
+state=${out%%|*} tty=${out#*|}
+if [ -n "$state" ]; then
+  tmux set -p -t "$p" @agent_state idle
+elif [ -w "$tty" ]; then
+  printf '\033]9;4;0\007' > "$tty"
+fi
