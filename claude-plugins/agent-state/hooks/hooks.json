@@ -1,13 +1,10 @@
 {
-  "description": "Claude Code 의 진행 상태(running·waiting·done·error)를 agent-state 레코드와 tmux 패널 옵션에 기록하고, 사람이 필요해지면 터미널 알림을 보낸다",
+  "description": "Claude Code 의 진행 상태(running·waiting·done·error)를 agent-state 레코드·tmux 패널 옵션·터미널 진행 표시(OSC 9;4)로 내고, 사람이 필요해지면 터미널 알림을 보낸다. PreToolUse 는 걸지 않는다(running 은 UserPromptSubmit 이, 승인 뒤 복귀는 PostToolUse 가 맡아 도구 호출마다 훅 하나)",
   "hooks": {
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
-    ],
-    "PreToolUse": [
       { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
     ],
     "PostToolUse": [

@@ -20,16 +20,19 @@ claude plugin install agent-state@justwonder      # 제거: claude plugin uninst
 | 상태 | 뜻 | 들어가는 훅 |
 |---|---|---|
 | `idle` | 세션은 있고 할 일 없음 | `SessionStart` |
-| `running` | 작업 중 | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure` |
+| `running` | 작업 중 | `UserPromptSubmit`, `PostToolUse`, `PostToolUseFailure` |
 | `waiting` | 사람을 기다림 (`reason`: permission / question / plan / input) | `PermissionRequest`, `Notification` |
 | `done` | 응답을 끝냄 | `Stop` |
 | `error` | API 오류로 멈춤 (`reason`: 오류 종류) | `StopFailure` |
 | (없음) | 세션이 끝남 | `SessionEnd` |
 
-상태가 바뀔 때마다 두 곳에 쓴다.
+상태가 바뀔 때마다 세 곳에 낸다. 상태가 바뀌는 순간에만 일하고 상주 프로세스·주기 작업은 없다(에이전트를 많이 켜도 상시 비용이 늘지 않는다).
 
 - **레코드 파일** `$(agent-state dir)/claude-<session>.json` — 아무 도구나 읽는 원본. macOS 는 사용자 임시 디렉터리, Linux 는 `$XDG_RUNTIME_DIR`.
-- **tmux 패널 옵션** `@agent_state` `@agent_reason` `@agent_name` `@agent_pid` `@agent_since` — tmux 안일 때만. tmux 포맷이 바로 읽는다.
+- **tmux 패널 옵션** `@agent_state` `@agent_reason` `@agent_name` `@agent_pid` `@agent_since` — 자기 tmux 패널을 알 때만. tmux 포맷이 바로 읽는다.
+- **자기 터미널로 OSC 9;4(진행 표시)** — 세션의 tty 에 직접 쓴다. 백그라운드 세션(`claude --bg`)이면 데몬이 지금 붙어 있는 패널로 넘겨 주고,
+  tmux 는 그 패널의 `#{pane_pb_state}` 로 기억한다. 그래서 `claude attach`·agent view 로 붙은 패널에도 상태가 보인다
+  (나중에 붙은 경우엔 다음 상태 변화부터).
 
 `waiting`·`done`·`error` 로 바뀌면 알림을 보낸다(아래 옵션).
 

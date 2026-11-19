@@ -25,15 +25,21 @@ agent-state 는 에이전트의 상태를 **한 번 기록하고**, 그것을 **
 1. **훅은 상태를 알리고, 표현은 받는 쪽이 정한다.** 훅이 하는 일은 이벤트를 공통 상태로 번역 → 기록 → 알림 보내기뿐이다.
    탭 색이나 아이콘은 tmux 설정이 정한다. 그래서 보여 주는 도구가 바뀌어도 훅은 그대로다.
 2. **어느 단위도 다른 단위 없이 조용히 동작한다.** 플러그인만 있으면 기록만 쌓이고, tmux 어댑터만 있으면 아무것도 그리지 않는다.
-3. **도구 호출마다 불리는 길은 싸게.** 상태가 그대로면 셸 내장 명령만으로 끝낸다(실측 평균 8.5 ms, 바뀔 때 36 ms).
+3. **상태가 바뀌는 순간에만 일한다.** 상주 프로세스·주기 작업(폴링, `#()`)이 없어서 에이전트를 몇 개 켜든 늘어나는 상시 비용이 없다.
+   도구 호출마다 불리는 훅은 `PostToolUse` 하나이고 상태가 그대로면 셸 내장 명령만으로 끝낸다(실측 평균 7.4 ms, 바뀔 때 32 ms).
+   빈틈 없이 맞추는 것보다 이쪽을 앞에 둔다(개인용 도구라서 — 2026-11-19 사용자 결정).
 4. **실패는 조용히.** 훅은 늘 exit 0. 에이전트를 붙잡거나 오류를 띄우지 않는다.
 
 ```
- [만드는 쪽]                 [계약]                          [받는 쪽]
- Claude Code 훅 ──┐                                       ┌─ tmux: 탭 배지·패널 테두리·키
- (다른 에이전트) ─┼→ agent-state ─→ 레코드 파일  ──────────┼─ 아무 도구: list / 파일 감시
- 스크립트(emit) ──┘   (번역·기록)  + tmux 패널 옵션         └─ 터미널: OSC 9 알림 (패스스루)
+ [만드는 쪽]                 [계약]                             [받는 쪽]
+ Claude Code 훅 ──┐               ┌─ ① 레코드 파일 ─────────── 아무 도구: list / 파일 감시
+ (다른 에이전트) ─┼→ agent-state ─┼─ ② tmux 패널 옵션 ──────┐
+ 스크립트(emit) ──┘   (번역)      └─ ③ 자기 tty 로 OSC 9;4 ──┴─ tmux: 탭 배지·상태바·패널 테두리·모아 보기
+                                       + OSC 9 알림              (③ 은 #{pane_pb_state} 로)
 ```
+
+②는 훅이 자기 패널(`$TMUX_PANE`)을 알 때만 쓸 수 있다. ③은 패널을 몰라도 된다: 세션의 화면 출력에 섞여 흐르므로, tmux 패널에서 직접 띄운
+세션이면 그 패널로, **백그라운드 세션(`claude --bg`)이면 데몬이 지금 붙어 있는 패널로** 간다. tmux 어댑터는 ②가 있으면 ②를, 없으면 ③을 읽는다.
 
 ## 계약 (v1)
 
@@ -68,8 +74,11 @@ macOS 는 dirhelper 가 매일 03:35 에 3일 넘은 임시 파일을 지운다(
 
 ```json
 {"v":1,"state":"waiting","reason":"permission","agent":"claude","session":"7dbc…","pid":69058,
- "tmux_pane":"%12","cwd":"/…/dotfiles","since":1763520000,"transcript":"/…/7dbc….jsonl"}
+ "tmux_pane":"%12","tty":"/dev/ttys012","cwd":"/…/dotfiles","since":1763520000,"transcript":"/…/7dbc….jsonl"}
 ```
+
+`tty` 는 ③을 낼 터미널이다. tmux 패널이면 그 패널 tty, 아니면 claude 프로세스의 tty 를 세션마다 **한 번만** `ps` 로 찾아 여기 둔다
+(`none` = 찾아봤는데 없음). 그 뒤로는 상태가 바뀔 때 `printf` 한 번이다.
 
 `pid` 가 죽어 있으면 낡은 레코드다. `agent-state gc`(세션이 시작할 때도 돈다)가 지운다.
 
@@ -90,6 +99,25 @@ tmux 안이면 레코드와 같은 내용을 **그 에이전트가 떠 있는 �
 주인은 session id 가 아니라 **claude 프로세스 pid** 다. `/clear` 는 session id 를 바꾸지만 pid 는 그대로이기 때문이다.
 훅의 부모 프로세스가 claude 자신이라 `$PPID` 로 얻는다(실측).
 
+### 터미널 진행 표시 (OSC 9;4)
+
+상태를 터미널 표준 진행 표시 이스케이프(ConEmu OSC 9;4)에 실어 자기 tty 에 쓴다. tmux 3.8 은 이것을 패널마다 `#{pane_pb_state}` 로 기억한다.
+
+| 상태 | 이스케이프 | `pane_pb_state` |
+|---|---|---|
+| running | `ESC ] 9;4;3 BEL` | indeterminate |
+| waiting | `ESC ] 9;4;4 BEL` | paused |
+| error | `ESC ] 9;4;2 BEL` | error |
+| done | `ESC ] 9;4;1;100 BEL` | normal |
+| idle, 끝 | `ESC ] 9;4;0 BEL` | hidden |
+
+- 이유(`reason`)는 실리지 않는다. 모아 보기의 이유 칸은 ②가 있는 패널에만 나온다.
+- tmux 밖에서 Claude Code 가 스스로 진행 표시를 하는 터미널(Ghostty·iTerm2, `TERM_PROGRAM` 으로 안다)에서는 쓰지 않는다. Claude 의
+  `terminalProgressBarEnabled` 와 겹친다. tmux 안과 백그라운드 세션에서는 Claude 가 진행 표시를 내지 않았다(실측).
+- 훅 출력의 `terminalSequence`(Claude Code 가 대신 내 주는 공식 길)를 먼저 시험했지만 2.1.328 은 OSC 9;4 를 걸러 내고 벨만 내보냈다
+  (직접 띄운 세션·백그라운드 세션 모두). 그래서 tty 에 직접 쓴다.
+- 다른 프로그램이 낸 OSC 9;4 도 tmux 에서는 에이전트로 보인다. 원치 않으면 `@agent-state-progress off`(②만 읽는다).
+
 ## Claude Code 훅 대응
 
 | 훅 | 상태 | 실측으로 확인한 것 |
@@ -97,7 +125,7 @@ tmux 안이면 레코드와 같은 내용을 **그 에이전트가 떠 있는 �
 | `SessionStart` (startup·resume·clear) | `idle` + 낡은 레코드 정리 | `/clear` 는 `SessionEnd(clear)` 다음 새 session id 로 온다 |
 | `SessionStart` (compact) | 그대로 | `/compact`·자동 압축 때 온다. 작업 도중일 수 있어 초기화하면 안 된다 |
 | `UserPromptSubmit` | `running` | |
-| `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `running` | 허락·질문에 답한 뒤 다시 작업 중으로 돌아오는 길 |
+| `PostToolUse`, `PostToolUseFailure` | `running` | 허락·질문에 답한 뒤 다시 작업 중으로 돌아오는 길. `PreToolUse` 는 걸지 않는다: running 은 `UserPromptSubmit` 이 이미 켰고, 걸면 도구 호출마다 훅이 둘이 된다 |
 | `PermissionRequest` | `waiting` (`tool_name` 이 AskUserQuestion → `question`, ExitPlanMode → `plan`, 그 밖 → `permission`) | 창이 뜨는 즉시 온다. 질문 도구도 이 훅으로 온다. auto 모드에서 자동 승인되면 오지 않는다. 승인·거절에는 훅이 없다(아래 공백) |
 | `Notification` permission_prompt | `waiting` (이미 waiting 이면 그대로) | 창이 뜨고 약 6초 뒤. 예비로만 쓴다 |
 | `Notification` elicitation_dialog·elicitation_url_dialog·agent_needs_input | `waiting` (`input`) | |
@@ -119,7 +147,21 @@ tmux 안이면 레코드와 같은 내용을 **그 에이전트가 떠 있는 �
 다음 이벤트(도구 끝, 다음 프롬프트)에서 바로잡히고, tmux 에는 지금 패널의 표시를 지우는 키를 둔다. 승인 직후를 메우는 방법(그 패널에서
 나갈 때 `waiting` 을 지우기 등)은 진짜 대기를 놓칠 수 있어 넣지 않았다.
 
-**패널과 파일이 어긋날 때.** tmux 쪽의 "봤다" 처리(focus-in 으로 `done` → `idle`, 지우기 키)는 패널 옵션만 바꾸고 레코드 파일은 그대로 둔다.
+**백그라운드 세션의 공백.** ③은 상태가 바뀌는 순간 그때 붙어 있던 패널에만 간다(실측, `claude attach` 로 붙여 시험).
+
+| 경우 | 표시 |
+|---|---|
+| 붙어 있는 동안 상태가 바뀜 | 바로 반영 (running → paused → running → normal 확인) |
+| 이미 대기·끝남인 세션에 **나중에 붙음** (agent view 에서 들어감) | 다시 오지 않아 다음 상태 변화까지 표시 없음 |
+| ← 로 agent view 에 나가거나 다른 세션으로 옮김 | 앞 세션의 표시가 패널에 남음 → `prefix M-A` 로 지운다 |
+
+메우는 방법으로 "세션마다 몇 초마다 다시 보내는 상주 프로세스" 를 검토했지만 에이전트 수만큼 상시 비용이 늘어 넣지 않았다(원칙 3).
+패널 쪽에서 지금 어느 세션을 보는지 알아낼 단서도 없다: 붙기 클라이언트는 데몬에만 연결되고(소켓 상대가 데몬), agent view 에서는 프로세스가
+`claude agents` 하나로 세션을 갈아 끼우며, `claude agents --json`·데몬의 attach-journal 에도 붙은 클라이언트가 없다(2.1.328 실측).
+알림도 같다: 백그라운드 세션은 붙은 쪽이 tmux 인지 모르므로 맨 OSC 와 패스스루로 감싼 것을 둘 다 내지만, 붙은 패널이 없으면 받을 곳이 없다.
+
+**패널과 파일이 어긋날 때.** tmux 쪽의 "봤다" 처리(focus-in 으로 `done` → `idle`, 지우기 키)는 패널만 바꾸고 레코드 파일은 그대로 둔다
+(②가 있는 패널은 `@agent_state` 를 idle 로, ③만 있는 패널은 그 패널 tty 에 `9;4;0` 을 써서 진행 표시를 지운다 — `bin/agent-state-ack`).
 "봤는지" 는 보는 도구마다 다른 일이라서다. 그래서 `agent-state list` 는 tmux 와 다를 수 있다. 훅은 `UserPromptSubmit` 에서는 같은 상태여도
 늘 다시 써서, 손으로 지운 패널도 다음 턴에 바로잡는다.
 
@@ -133,10 +175,11 @@ tmux 안이면 레코드와 같은 내용을 **그 에이전트가 떠 있는 �
 | `osc777` | `ESC ] 777 ; notify ; Claude · dotfiles ; Finished BEL` | Ghostty, urxvt, foot |
 | `bell` | `BEL` | 모든 터미널. tmux 는 `!` 플래그 |
 
-터미널 이스케이프라서 터미널 종류도, ssh 너머인지도 가리지 않는다. 쓰는 곳은 패널의 tty(tmux 안, `#{pane_tty}`) 또는 claude 프로세스의 tty다.
+터미널 이스케이프라서 터미널 종류도, ssh 너머인지도 가리지 않는다. 쓰는 곳은 ③과 같은 tty(레코드의 `tty`)다.
 훅의 stdout 은 Claude Code 가 가져가서 화면에 닿지 않는다.
 
-tmux 안에서는 OSC 를 DCS 패스스루(`ESC P tmux; … ESC \`, 안쪽 ESC 는 두 번)로 감싼다. tmux 의 `allow-passthrough` 에 따라 (격리 서버 실측):
+tmux 는 패널이 낸 맨 OSC 9·777 을 바깥으로 넘기지 않고 버린다(실측). 그래서 tmux 패널에서는 OSC 를 DCS 패스스루(`ESC P tmux; … ESC \`,
+안쪽 ESC 는 두 번)로 감싼다. 백그라운드 세션은 맨 것과 감싼 것을 둘 다 낸다(tmux 에 붙었으면 감싼 것이, tmux 밖 터미널에 붙었으면 맨 것이 간다). tmux 의 `allow-passthrough` 에 따라 (격리 서버 실측):
 
 | allow-passthrough | 보이는 패널 | 안 보이는 패널 |
 |---|---|---|
@@ -153,6 +196,9 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
 ## tmux 표시
 
 ### 배지
+
+패널의 상태는 어댑터가 만드는 식 `@agent_st` 다: 패널 옵션 `@agent_state` 가 있으면 그것, 없으면 `#{pane_pb_state}` 를 상태로 바꾼 것
+(indeterminate → running, paused → waiting, error → error, normal → done). 아래 모든 표시와 키가 이 식을 쓴다.
 
 패널 옵션은 패널마다 있으므로 **탭(윈도우 포맷)에서는 `#{P:…}` 로 그 윈도우의 모든 패널을 훑는다.** 그냥 `#{@agent_state}` 를 쓰면
 활성 패널 값만 읽혀 다른 패널의 Claude 를 놓친다(실측). 패널을 닫거나 다른 윈도우로 빼도(`break-pane`) 옵션이 패널을 따라가므로
@@ -201,7 +247,7 @@ tmux 기본 `choose-tree` 를 floating pane 에 띄운다(tmux man 의 `new-pane
 - `prefix a`: 모아 보기 (위).
 - `prefix M-a`: 나를 기다리는 다음 패널로 바로 간다(waiting → error → done 순, 오래된 것부터, 지금 패널 제외). 세션이 달라도 간다.
   대기가 둘 이상이면 대기끼리 오가고, 대기를 다 풀어야 끝남·오류로 간다(가장 급한 것부터라서).
-- `prefix M-A`: 지금 패널의 표시를 지운다(`idle`). 위 "알려진 공백" 용.
+- `prefix M-A`: 지금 패널의 표시를 지운다(②는 `idle` 로, ③은 진행 표시를 hidden 으로). 위 "알려진 공백"·백그라운드 세션의 남은 표시용.
 - 키는 `@agent-state-tree-key`, `@agent-state-jump-key`, `@agent-state-clear-key` 로 바꾸고, 빈 값이면 묶지 않는다.
   (2026-11-19 첫 판은 `prefix a` = 바로 가기, `prefix M-a` = 지우기였다. 모아 보기를 넣으며 한 칸씩 밀었다.)
 
@@ -229,6 +275,6 @@ tmux 어댑터는 모든 머신에 둔다. 플러그인이 없는 머신에서�
 
 ## 후속 후보
 
-- OSC 9;4 진행 표시(`running` 동안 불확정 막대. Ghostty `progress-style` 기본 켜짐).
+- tmux 가 받은 OSC 9;4 를 바깥 Ghostty 로도 넘기기(`terminal-features` 의 `progressbar`) — Ghostty 탭에도 진행 표시가 생긴다. 시험 안 함.
 - tmux-dev S·W 피커에 세션·윈도우별 상태 열.
 - 중단(공백)을 대화 기록으로 감지하는 감시자 — 내부 형식에 기대므로 보류.
