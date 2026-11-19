@@ -75,6 +75,13 @@
 # 윈도우 식별: 워크트리 윈도우는 사용자 옵션 @worktree <경로>, 디렉토리 윈도우는 @dir <경로>. 메인 체크아웃 행은
 # 옵션이 없을 때 패널 경로로 보완한다 (project 가 세션을 만들며 첫 윈도우에 @worktree 를 둔다). 탐색 범위는 세션 하나다.
 set -euo pipefail
+# git 의 "덤으로 잡는 락"을 끈다 (= git --no-optional-locks). git status 는 읽기만 하는 것 같아도 stat 캐시를 index 에 다시
+# 쓰느라 도는 내내 index.lock 을 쥔다. fzf 는 preview·reload·bg-transform 을 끊을 때 프로세스 그룹째 SIGKILL 을 보내므로
+# (커서 이동, 모드 전환, 마커 다시 읽기, esc) 그 순간 돌던 status 가 락을 못 치우고 죽어 .git/worktrees/<n>/index.lock 이
+# 남았다. 남지 않아도 피커가 쥔 동안 사용자·에이전트의 git add/commit 이 "index.lock exists" 로 실패했다. 이 변수는
+# 덤 작업만 끄고 쓰기 명령(worktree add, branch -D, checkout …)의 필수 락은 그대로다. 대가는 피커가 stat 캐시를 갱신해
+# 주지 않는 것뿐이다 (결과는 같다). 자식(서브셸, run-shell -b 로 다시 띄우는 작업)도 물려받는다.
+export GIT_OPTIONAL_LOCKS=0
 
 SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
 LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
