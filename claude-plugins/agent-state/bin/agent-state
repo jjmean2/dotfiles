@@ -201,7 +201,7 @@ hook_claude() {
   state_dir; record_path
 
   # 빠른 길은 도구 호출 훅에만. UserPromptSubmit 은 턴마다 한 번이라 늘 다시 쓴다: 사람이 tmux 에서 표시를 지웠거나
-  # (prefix M-a — 패널 옵션만 바뀌고 파일은 running 그대로) 중단으로 파일이 running 에 멈춰 있어도 패널을 바로잡는다.
+  # (prefix M-A — 패널 옵션만 바뀌고 파일은 running 그대로) 중단으로 파일이 running 에 멈춰 있어도 패널을 바로잡는다.
   case $EV in
     PreToolUse|PostToolUse|PostToolUseFailure)
       fast_running && return 0 ;;

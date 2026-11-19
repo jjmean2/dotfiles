@@ -160,7 +160,15 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
 
 - 탭: 가장 급한 상태 하나. 우선순위 `waiting` > `error` > `done` > `running`. 대기가 둘 이상이면 개수를 붙인다(`◆2`).
   보고 있는 윈도우의 탭에도 나온다(tmux 의 벨 `!` 는 보고 있는 윈도우에는 붙지 않는다 — `bell-action any` 로도. 실측).
+- 탭 바탕: 대기·오류가 있는 **비활성** 탭은 바탕 전체를 노랑·빨강으로 칠한다(벨 탭과 같은 강도). 보고 있는 탭은 "여기" 를 보여 주는
+  원래 색 그대로 두고 아이콘만 색으로. 칠한 탭에서는 아이콘·플래그에 색을 입히지 않는다(바탕과 같은 색이라 묻혀서).
+  tmux.conf 의 `window-status-style` 이 `@agent_tab_style` 이 비었으면 원래 색을 쓴다. `@agent-state-tab-paint off` 로 끈다.
+- 상태바 요약(`status-right`, 시각 앞): **모든 세션**을 통틀어 상태별 개수 `◆2 ✘1 ✔1 ⋯3`(0 인 것은 뺀다). `#{S:#{W:#{P:…}}}` 로 훑는다.
+  탭에는 지금 세션의 윈도우만 보이므로, 다른 세션(다른 프로젝트)의 에이전트가 기다리는 것은 여기서 보인다.
 - 패널 테두리(`pane-border-format`): 그 패널의 상태. 윈도우 안에서 어느 패널인지 보인다.
+
+다시 그리기: 뒤쪽 윈도우의 패널 옵션만 바뀌어도 tmux 는 상태줄을 곧바로 다시 그린다(220칸 클라이언트로 실측, 0.6초 안에 노란 바탕 출력).
+시험할 때 주의: `script` 로 붙인 클라이언트는 기본 80칸이라 긴 status-right 가 탭 목록을 밀어내 탭 글자가 안 보인다 — `stty cols 220` 으로 넓힌다.
 
 | 상태 | 아이콘 (기본) | 색 (기본) |
 |---|---|---|
@@ -170,7 +178,19 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
 | error | `✘` | 빨강 `#f38ba8` |
 
 아이콘·색은 `@agent-state-icon-<상태>`, `@agent-state-color-<상태>` 로 바꾼다. 어댑터가 만드는 포맷 조각은 `@agent_badge`(탭),
-`@agent_pane_badge`(패널 테두리)이고, tmux.conf 의 포맷이 `#{E:@agent_badge}` 처럼 꺼내 쓴다. 어댑터를 빼면 조각이 비어 아무것도 그리지 않는다.
+`@agent_tab_style`(탭 바탕), `@agent_summary`(상태바), `@agent_pane_badge`(패널 테두리)이고, tmux.conf 의 포맷이 `#{E:@agent_badge}` 처럼
+꺼내 쓴다. 어댑터를 빼면 조각이 비어 아무것도 그리지 않는다.
+
+### 모아 보기 (`prefix a`)
+
+tmux 기본 `choose-tree` 를 floating pane 에 띄운다(tmux man 의 `new-pane -E; choose-tree -hk` 꼴, 크기·스타일은 `@float-*` 를 따른다).
+
+- `-f '#{@agent_state}'`: 에이전트가 있는 패널만. 그런 패널이 없는 윈도우·세션은 트리에서 빠진다.
+- `-F`: 패널 줄 = `waiting (permission)  /경로`, 윈도우·세션 줄 = 이름.
+- 아래쪽 미리보기, 숫자키 바로 고르기, Enter 로 이동(다른 세션이어도), `C-s` 찾기, `q` 닫기. 고르면 floating pane 은 닫힌다(`-k`).
+- 한계: 정렬은 tmux 가 번호·이름·활동 시각만 지원해 "대기 먼저" 는 안 된다. 그건 `prefix M-a`(바로 가기) 몫이다.
+
+키 `prefix C-a` 는 쓰지 않는다. 이미 "C-a 글자를 패널로 보내기"(`send-prefix -2`)다.
 
 ### 끄기와 키
 
@@ -178,17 +198,19 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
   "봤다" 가 아니라 "들어왔다/답했다" 기준이다. 다른 앱에서 터미널 창으로 돌아올 때도 tmux 가 focus-in 을 받으므로(`focus-events on`)
   그때도 지워질 것으로 보지만 실제로는 확인하지 않았다.
 - `waiting` 은 들어와도 지우지 않는다. 다음 훅(`PostToolUse`·`UserPromptSubmit`)이 와야 바뀐다. 승인한 도구가 오래 돌면 그동안 남는다(위 공백).
-- `prefix a`: 나를 기다리는 다음 패널로 간다(waiting → error → done 순, 오래된 것부터, 지금 패널 제외). 세션이 달라도 간다.
+- `prefix a`: 모아 보기 (위).
+- `prefix M-a`: 나를 기다리는 다음 패널로 바로 간다(waiting → error → done 순, 오래된 것부터, 지금 패널 제외). 세션이 달라도 간다.
   대기가 둘 이상이면 대기끼리 오가고, 대기를 다 풀어야 끝남·오류로 간다(가장 급한 것부터라서).
-- `prefix M-a`: 지금 패널의 표시를 지운다(`idle`). 위 "알려진 공백" 용.
-- 키는 `@agent-state-jump-key`, `@agent-state-clear-key` 로 바꾸고, 빈 값이면 묶지 않는다.
+- `prefix M-A`: 지금 패널의 표시를 지운다(`idle`). 위 "알려진 공백" 용.
+- 키는 `@agent-state-tree-key`, `@agent-state-jump-key`, `@agent-state-clear-key` 로 바꾸고, 빈 값이면 묶지 않는다.
+  (2026-11-19 첫 판은 `prefix a` = 바로 가기, `prefix M-a` = 지우기였다. 모아 보기를 넣으며 한 칸씩 밀었다.)
 
 ## 설치와 제거
 
 | 단위 | 설치 | 제거 |
 |---|---|---|
 | Claude 플러그인 | `claude plugin marketplace update justwonder` → `claude plugin install agent-state@justwonder` | `claude plugin uninstall agent-state@justwonder` |
-| tmux 어댑터 | chezmoi 가 배포. tmux.conf 의 `run-shell …/agent-state.tmux` 한 줄 | 그 줄과 포맷의 `#{E:@agent_badge}` 를 지우고 `prefix R` |
+| tmux 어댑터 | chezmoi 가 배포. tmux.conf 의 `run-shell …/agent-state.tmux` 한 줄 | 그 줄과 포맷의 `#{E:@agent_*}` 를 지우고 `prefix R` |
 
 tmux 어댑터는 모든 머신에 둔다. 플러그인이 없는 머신에서는 패널 옵션이 비어 아무것도 그리지 않으므로 머신별 기능 스위치를 두지 않는다
 (설정은 모든 머신에 같게, 갈리는 것은 깔았을 때 무언가 일어나는 것뿐 — [`docs/machines.md`](machines.md)). Claude 의 `settings.json` 은 chezmoi 가 관리하지 않으므로 플러그인 설치는 머신마다 한 번 손으로 한다.
