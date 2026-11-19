@@ -9,7 +9,8 @@
 #
 # 동작
 #   fork   지금 대화를 포크한 세션: claude --resume <id> --fork-session -n <이름> -- "<첫 메시지>"
-#          --session 이 없으면 $WORKTREE_HANDOFF_SESSION (스킬은 ${CLAUDE_SESSION_ID} 로 넘긴다).
+#          --session 이 없으면 $WORKTREE_HANDOFF_SESSION, 그것도 없으면 $CLAUDE_CODE_SESSION_ID
+#          (Claude Code 가 Bash 도구 셸에 넣어 주는 지금 세션의 ID).
 #          --prompt-file 이 없으면 기본 첫 메시지를 쓴다
 #   fresh  대화 없는 새 세션: claude -n <이름> -- "<첫 메시지>". 첫 메시지가 꼭 있어야 한다
 #   path   워크트리만 확보하고, 지금 세션을 그리로 옮기는 명령(/cd <경로>)을 출력한다. 세션은 만들지 않는다
@@ -69,7 +70,7 @@ case ${1:-} in
   "") usage >&2; exit 1 ;;
   *) die "동작을 먼저 주세요: fork | fresh | path (받은 것: $1)" ;;
 esac
-sid=${WORKTREE_HANDOFF_SESSION:-}; base=""; prompt_file=""; branch=""; stack_mode=""
+sid=${WORKTREE_HANDOFF_SESSION:-${CLAUDE_CODE_SESSION_ID:-}}; base=""; prompt_file=""; branch=""; stack_mode=""
 while [ $# -gt 0 ]; do
   case $1 in --session|--base|--prompt-file|--open) [ $# -ge 2 ] || die "$1 에 값이 없습니다" ;; esac
   case $1 in   # macOS 기본 bash 3.2 에서도 돌게 ;;& 는 쓰지 않는다

@@ -66,10 +66,11 @@ Claude Code 의 `WorktreeCreate` 훅은 `claude -w`, EnterWorktree, 백그라운
 
 ## 메인에서 설계하다가 넘기기: jw 플러그인의 handoff
 
-메인 체크아웃에서 범위를 정한 대화를 그대로 들고 워크트리로 가려면 `/jw:handoff <브랜치>`.
-대화를 포크해서 워크트리에서 이어 가며, 메인 세션은 남는다. tmux 안에서 부르면 그 워크트리의 윈도우를 `-d` 로 열고
-거기서 세션을 띄운다(밖이면 `claude --bg`). 대화 없이 작업 지시서만 넘긴 새 세션은 `/jw:handoff-fresh <브랜치>`,
-지금 세션을 옮기려면 `/jw:handoff-move <브랜치>` (`/cd` 안내). 워크트리 위치는 기본으로 handoff 자신의 XDG 디렉토리이고,
+메인 체크아웃에서 범위를 정한 대화를 들고 워크트리로 가려면 "따로 세션에서 하자"고 말하거나 `/jw:handoff [<브랜치>]`.
+모델이 대화를 포크할지(fork) 작업 지시서만 넘길지(fresh) 정해 확인을 받은 뒤 워크트리에 새 세션을 띄우고, 메인 세션은 남는다.
+tmux 안에서 부르면 그 워크트리의 윈도우를 `-d` 로 열고 거기서 세션을 띄운다(밖이면 `claude --bg`).
+지금 세션을 옮기는 일은 사용자 규칙(`~/.claude/rules/worktree-workflow.md`)에 따라 모델이 `EnterWorktree` 로 하고,
+handoff 의 워크트리 위치로 옮기려면 `worktree-handoff path <브랜치>` (`/cd` 안내). 워크트리 위치는 기본으로 handoff 자신의 XDG 디렉토리이고,
 tmux-dev 규칙으로 만들려면 `~/.config/worktree-handoff/config` 에 `create=tmux-dev`.
 dotfiles 저장소의 `claude-plugins/jw/README.md` 참고 (이 파일은 홈에 배포되므로 상대 링크를 쓰지 않는다).
 

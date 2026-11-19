@@ -4,10 +4,10 @@
 
 | 스킬 | 하는 일 |
 |---|---|
-| `/jw:handoff <브랜치> [--in-stack\|--new-worktree] [추가 지시]` | 지금 대화를 브랜치 워크트리로 **포크**한 세션을 연다 |
-| `/jw:handoff-fresh <브랜치> [--in-stack\|--new-worktree] [추가 지시]` | 대화 없이, 자기완결적인 작업 지시서를 첫 메시지로 넣은 **새 세션**을 연다 |
-| `/jw:handoff-move <브랜치> [--in-stack\|--new-worktree]` | 워크트리만 만들고, **지금 세션**을 그리로 옮기는 `/cd` 명령을 알려 준다 |
+| `/jw:handoff [<브랜치>] [fork\|fresh] [--base <ref>] [--in-stack\|--new-worktree] [추가 지시]` | 대화를 **포크**하거나 작업 지시서를 쓴 **새 세션**을 브랜치 워크트리에 연다. 모델도 대화를 보고 부르며, 실행 전에 확인을 받는다 |
 | `/jw:pr-review-handle [PR] [--all] [--stack]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 수정안과 배경 원리를 설명한다 |
+
+0.8.0 에서 `handoff-fresh`·`handoff-move` 를 `handoff` 하나로 합치고 모델도 부를 수 있게 했다 (아래 "모델이 부르는 handoff").
 
 0.7.0 에서 끝남·허락 대기 때 벨을 울리던 `hooks/tmux-bell` 을 뺐다. 그 일은 별도 플러그인
 [`agent-state`](../agent-state/README.md)가 맡는다(상태 배지 + 데스크톱 알림. 벨을 원하면 그 플러그인의 `notify_via = bell`).
@@ -18,14 +18,14 @@ Claude 와 대화하다가 작업 방향이 정해지면 그 작업의 브랜치
 
 ```
 워크트리 확보 ──▶ 세션 ─────────────────▶ 띄우기 ────────────────▶ 안내 출력
-(git worktree)   fork | fresh | move(path)   bg | tmux | none           attach / run / resume / /cd
+(git worktree)   fork | fresh | (path)        bg | tmux | none           attach / run / resume / /cd
 ```
 
-- **fork** (`handoff`): 대화를 포크한다. 시행착오·기각한 안까지 넘겨야 할 때.
-- **fresh** (`handoff-fresh`): 결론만 담은 지시서로 깨끗한 맥락에서 시작한다. 원본 대화가 길어 컨텍스트가 아까울 때도.
-- **move** (`handoff-move`): 세션을 둘로 나누지 않고 지금 세션을 워크트리로 옮긴다.
+- **fork**: 대화를 포크한다. 시행착오·기각한 안까지 넘겨야 할 때.
+- **fresh**: 결론만 담은 지시서로 깨끗한 맥락에서 시작한다. 원본 대화가 길어 컨텍스트가 아까울 때도.
+- **path** (스크립트만): 세션을 둘로 나누지 않고 지금 세션을 워크트리로 옮길 `/cd` 명령을 출력한다.
 
-fork·fresh 는 원본 세션이 메인 체크아웃에 남아 설계와 질의를 계속한다. 스크립트는 세션을 띄우고 들어가는 명령을
+원본 세션은 남아 설계와 질의를 계속한다. 스크립트는 세션을 띄우고 들어가는 명령을
 출력하는 데까지만 한다. 그 세션에 들어가는 것은 사용자가 한다.
 
 tmux 는 필요 없다. tmux 안에서 부르면 워크트리의 윈도우를 열어 그 안에서 세션을 띄워 주는 것뿐이다.
@@ -56,12 +56,26 @@ resume:   cd '…/feat-x' && claude --resume 'feat/x@1111-1530'
 워크트리는 남아 있으니 `run:` 줄을 터미널에서 실행하면 된다. 포크는 원본의 기록이 써지도록 2초 뒤에 띄우므로
 실패가 그 자리에서 보이지 않는다. `open:` 줄의 로그 파일을 본다.
 
-## 옮기기: handoff-move
+## 모델이 부르는 handoff
+
+0.7.0 까지는 세 스킬 모두 `/jw:…` 로만 불렀다. 0.8.0 부터는 하나로 합치고 `disable-model-invocation` 을 뺐다.
+
+- 언제 넘길지·스택을 어떻게 쌓을지 같은 원칙은 chezmoi 가 까는 사용자 규칙
+  [`~/.claude/rules/worktree-workflow.md`](../../home/dot_claude/rules/worktree-workflow.md) 에 있다. 규칙은 매 세션
+  읽히고, 스킬 본문은 넘길 때만 읽힌다.
+- 모델이 먼저 제안할 수 있지만, 실행 전에는 브랜치·베이스·방식·넘길 내용을 보여 주고 답을 기다린다.
+- `start_session` 도구가 있는 Claude 데스크톱 앱에서는 이 스킬 대신 그 도구를 쓴다 (원본 세션과 연결되고 보고가 돌아온다).
+- 첫 메시지는 heredoc 대신 임시 파일로 넘긴다. 워크트리 세션의 Bash 가드가 heredoc 이 섞인 명령을 거절하기 때문이다.
+- fork 의 세션 ID 는 스크립트가 `$CLAUDE_CODE_SESSION_ID` (Claude Code 가 Bash 셸에 넣어 줌)에서 읽는다.
+
+## 옮기기: path
+
+예전 `handoff-move` 스킬은 없앴다. 지금 세션을 워크트리로 옮기는 일은 규칙에 따라 모델이 `EnterWorktree` 로 한다
+(`.claude/worktrees/` 아래). 이 플러그인의 워크트리 위치로 옮기고 싶으면 스크립트를 직접 쓴다.
 
 `worktree-handoff path <브랜치>` 가 워크트리를 확보하고 `move: /cd <경로>` 를 출력한다. 사용자가 그 `/cd` 를 입력하면
 세션 기록(`~/.claude/projects/` 아래)·설정·훅·스킬·CLAUDE.md 가 새 디렉토리 기준으로 바뀐다. 세션 ID 는 그대로이고,
-이후 `claude --resume` 목록에는 그 워크트리에서 보인다. 모델은 `/cd` 를 부를 수 없다. EnterWorktree 도구도 기록을
-옮기지만 설정·스킬을 다시 읽지 않고 저장소 밖 경로면 승인을 묻기 때문에 쓰지 않는다.
+이후 `claude --resume` 목록에는 그 워크트리에서 보인다. 모델은 `/cd` 를 부를 수 없다.
 
 ## 워크트리
 
@@ -146,7 +160,7 @@ worktree-handoff path                                             [--base <ref>]
 # <스택> = --in-stack | --new-worktree
 ```
 
-세션 ID 는 Claude 안의 `/status` 에서 확인한다. fork 에서 `--prompt-file` 이 없으면 기본 첫 메시지를 쓴다.
+세션 ID 는 Claude 안의 `/status` 에서 확인한다. Claude 의 Bash 도구에서 부르면 `--session` 없이 `$CLAUDE_CODE_SESSION_ID` 를 쓴다. fork 에서 `--prompt-file` 이 없으면 기본 첫 메시지를 쓴다.
 fresh 는 첫 메시지가 꼭 있어야 하고, 비어 있으면(공백뿐이어도) 워크트리를 만들기 전에 멈춘다.
 첫 메시지 파일과 런처(`.sh`)·로그(`.log`)는 `${XDG_STATE_HOME:-~/.local/state}/worktree-handoff/prompt/` 에 호출마다
 새로 생기고 7일 뒤 지워진다.
@@ -165,7 +179,7 @@ fresh 는 첫 메시지가 꼭 있어야 하고, 비어 있으면(공백뿐이�
 - tmux: 새 윈도우는 호출한 패널의 tmux 세션에 생긴다. 그 워크트리의 윈도우(`@worktree`)가 이미 있으면 키를 보내지 않고
   거기에 새 패널을 열고, 나눌 자리가 없으면 새 윈도우를 연다. 다른 터미널 창에서 따로 보려면 같은 세션 그룹에 붙는다:
   `tmux new-session -t <세션> -s <세션>-2 \; select-window -t <윈도우 번호>`.
-- 포크된 세션은 /handoff 지시문까지 이어받는다. 그래서 첫 메시지가 "그 지시는 원본 세션에 대한 것"이라고 먼저 밝힌다.
+- 포크된 세션은 handoff 지시문까지 이어받는다. 그래서 첫 메시지가 "그 지시는 원본 세션에 대한 것"이라고 먼저 밝힌다.
 
 ## pr-review-handle
 
