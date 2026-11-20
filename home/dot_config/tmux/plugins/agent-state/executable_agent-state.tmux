@@ -125,7 +125,8 @@ key_clear=$(opt @agent-state-clear-key M-A)
 
 # 모아 보기: choose-tree 를 floating pane 에서 연다 (tmux man 의 `new-pane -E; choose-tree -hk` 꼴).
 #   -f <상태>             에이전트가 있는 패널만. 그런 패널이 없는 윈도우·세션은 트리에서 빠진다
-#   -F                    패널 줄 = "상태 (이유)  경로", 윈도우·세션 줄 = 이름
+#   -F                    패널 줄 = "아이콘 상태 (이유)  경로", 윈도우·세션 줄 = 이름. 상태는 상태바와 같은 색
+#                         (choose-tree 도 줄을 format_draw 로 그려 #[fg=…] 가 먹는다. 커서 줄은 선택 색이 이긴다)
 #   -h -k                 모드를 담은 floating pane 은 숨기고, 모드가 끝나면 그 패널을 닫는다
 # 정렬은 tmux 가 번호·이름·활동 시각만 지원해 "대기 먼저" 는 안 된다. 바로 가기는 prefix M-a.
 if [ -n "$key_tree" ]; then
@@ -133,7 +134,11 @@ if [ -n "$key_tree" ]; then
   fs=$(optd @float-style 'bg=#24253a,fg=default')
   fb=$(optd @float-border-style 'fg=#b4befe')
   fl=$(optd @float-border-lines single)
-  line="#{?pane_format,$st#{?@agent_reason, (#{@agent_reason}),}  #{pane_current_path},#{?window_format,#{window_name},#{session_name}}}"
+  st_col="#{?#{==:$st,waiting},$(paint "$c_wait" "$i_wait waiting"),"
+  st_col+="#{?#{==:$st,error},$(paint "$c_err" "$i_err error"),"
+  st_col+="#{?#{==:$st,done},$(paint "$c_done" "$i_done done"),"
+  st_col+="#{?#{==:$st,running},$(paint "$c_run" "$i_run running"),}}}}"
+  line="#{?pane_format,$st_col#{?@agent_reason, (#{@agent_reason}),}  #{pane_current_path},#{?window_format,#{window_name},#{session_name}}}"
   # '\;' : 셸에서 그냥 ; 를 넘기면 tmux 명령줄이 "이번 호출의 구분자" 로 먹어서 move-pane 이 키에 묶이지 않고 바로 실행된다.
   # \; 로 넘겨야 bind-key 가 묶을 명령 안의 구분자로 받는다.
   tmux bind-key "$key_tree" new-pane -A -E -x "${size%,*}" -y "${size#*,}" -s "$fs" -S "$fb" -R "$fb" -B "$fl" '\;' \
