@@ -131,6 +131,7 @@ key_clear=$(opt @agent-state-clear-key M-A)
 #   -F                    패널 줄 = "아이콘 상태 (이유)  경로", 윈도우·세션 줄 = 이름. 상태는 상태바와 같은 색 + 굵게
 #                         (choose-tree 도 줄을 format_draw 로 그려 #[fg=…] 가 먹는다. 커서 줄은 선택 색이 이긴다)
 #   -h -k                 모드를 담은 floating pane 은 숨기고, 모드가 끝나면 그 패널을 닫는다
+#   new-pane -O + if      이미 떠 있으면 다시 눌러도 쌓이지 않는다 (아래)
 # 정렬은 tmux 가 번호·이름·활동 시각만 지원해 "대기 먼저" 는 안 된다. 바로 가기는 prefix M-a.
 if [ -n "$key_tree" ]; then
   size=$(optd @agent-state-tree-size '85%,75%')
@@ -142,11 +143,14 @@ if [ -n "$key_tree" ]; then
   st_col+="#{?#{==:$st,done},$(paint_b "$c_done" "$i_done done"),"
   st_col+="#{?#{==:$st,running},$(paint_b "$c_run" "$i_run running"),}}}}"
   line="#{?pane_format,$st_col#{?@agent_reason, (#{@agent_reason}),}  #{pane_current_path},#{?window_format,#{window_name},#{session_name}}}"
-  # '\;' : 셸에서 그냥 ; 를 넘기면 tmux 명령줄이 "이번 호출의 구분자" 로 먹어서 move-pane 이 키에 묶이지 않고 바로 실행된다.
-  # \; 로 넘겨야 bind-key 가 묶을 명령 안의 구분자로 받는다.
-  tmux bind-key "$key_tree" new-pane -A -E -x "${size%,*}" -y "${size#*,}" -s "$fs" -S "$fb" -R "$fb" -B "$fl" '\;' \
-    move-pane -P centre '\;' \
-    choose-tree -hk -f "$st" -F "$line"
+  # 한 번만 뜨게: prefix s·w 는 지금 패널에 choose-tree 를 열고, 이미 그 모드면 tmux 가 다시 열지 않는다(window_pane_set_mode).
+  # 여기는 누를 때마다 새 패널을 만드므로 그 보호가 없어 모아 보기 안에서 prefix a 를 다시 누르면 패널이 쌓였다.
+  #   -O       modal floating pane (tmux-dev 피커와 같다). 창마다 하나뿐이고 늘 활성 패널이다
+  #   if -F    활성 패널이 modal 이면(= 이미 떠 있다) 아무것도 안 한다. 없으면 "window already has a modal pane" 오류가 뜬다
+  # 묶을 명령은 if 에 문자열 하나로 넘기고 tmux 가 키를 누를 때 파싱한다. 값마다 작은따옴표로 싼다(값에 작은따옴표는 없다).
+  open="new-pane -O -E -x '${size%,*}' -y '${size#*,}' -s '$fs' -S '$fb' -R '$fb' -B '$fl' ; move-pane -P centre ;"
+  open+=" choose-tree -hk -f '$st' -F '$line'"
+  tmux bind-key "$key_tree" if-shell -F '#{pane_modal_flag}' '' "$open"
 fi
 [ -z "$key_jump" ] || tmux bind-key "$key_jump" run-shell -b "$DIR/bin/agent-state-jump '#{client_name}' '#{pane_id}'"
 [ -z "$key_clear" ] || tmux bind-key "$key_clear" run-shell -b "$DIR/bin/agent-state-ack '#{pane_id}'"
