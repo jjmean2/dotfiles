@@ -231,8 +231,9 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
 
 tmux 기본 `choose-tree` 를 floating pane 에 띄운다(tmux man 의 `new-pane -E; choose-tree -hk` 꼴, 크기·스타일은 `@float-*` 를 따른다).
 
-- `-f '#{@agent_state}'`: 에이전트가 있는 패널만. 그런 패널이 없는 윈도우·세션은 트리에서 빠진다.
-- `-F`: 패널 줄 = `waiting (permission)  /경로`, 윈도우·세션 줄 = 이름.
+- `-f '#{E:@agent_st}'`(패널 옵션 또는 진행 표시에서 읽은 상태): 에이전트가 있는 패널만. 그런 패널이 없는 윈도우·세션은 트리에서 빠진다.
+- `-F`: 패널 줄 = `◆ waiting (permission)  /경로`, 윈도우·세션 줄 = 이름. 아이콘과 상태 글자는 상태바와 같은 색(`@agent-state-color-*`)이다.
+  `choose-tree` 도 줄을 `format_draw()` 로 그려서 `#[fg=…]` 가 먹는다(tmux `mode-tree.c`). 커서가 있는 줄은 선택 색이 이겨 색이 빠진다.
 - 아래쪽 미리보기, 숫자키 바로 고르기, Enter 로 이동(다른 세션이어도), `C-s` 찾기, `q` 닫기. 고르면 floating pane 은 닫힌다(`-k`).
 - 한계: 정렬은 tmux 가 번호·이름·활동 시각만 지원해 "대기 먼저" 는 안 된다. 그건 `prefix M-a`(바로 가기) 몫이다.
 
