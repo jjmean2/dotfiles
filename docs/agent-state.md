@@ -218,10 +218,13 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
 
 | 상태 | 아이콘 (기본) | 색 (기본) |
 |---|---|---|
-| running | `⋯` | 탭 글자색 그대로 |
-| waiting | `◆` | 노랑 `#f9e2af` (벨 탭과 같은 계열) |
-| done | `✔` | 초록 `#a6e3a1` |
-| error | `✘` | 빨강 `#f38ba8` |
+| running | `⋯` | 파랑 `#3b9eff` |
+| waiting | `◆` | 호박색 노랑 `#ffc400` (탭 바탕으로도 칠한다) |
+| done | `✔` | 초록 `#22e06b` |
+| error | `✘` | 빨강 `#ff3d5a` (탭 바탕으로도 칠한다) |
+
+기본 색은 어두운 상태바(`#1e1e2e`)에서 튀도록 채도를 높였다. 처음엔 테마(Catppuccin Mocha)의 파스텔 색을 썼는데 눈에 덜 띄었다(2026-11-20).
+running 도 처음엔 색이 없었다. 빈 값으로 설정하면 그 상태는 색을 바꾸지 않는다.
 
 아이콘·색은 `@agent-state-icon-<상태>`, `@agent-state-color-<상태>` 로 바꾼다. 어댑터가 만드는 포맷 조각은 `@agent_badge`(탭),
 `@agent_tab_style`(탭 바탕), `@agent_summary`(상태바), `@agent_pane_badge`(패널 테두리)이고, tmux.conf 의 포맷이 `#{E:@agent_badge}` 처럼
@@ -232,7 +235,7 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
 tmux 기본 `choose-tree` 를 floating pane 에 띄운다(tmux man 의 `new-pane -E; choose-tree -hk` 꼴, 크기·스타일은 `@float-*` 를 따른다).
 
 - `-f '#{E:@agent_st}'`(패널 옵션 또는 진행 표시에서 읽은 상태): 에이전트가 있는 패널만. 그런 패널이 없는 윈도우·세션은 트리에서 빠진다.
-- `-F`: 패널 줄 = `◆ waiting (permission)  /경로`, 윈도우·세션 줄 = 이름. 아이콘과 상태 글자는 상태바와 같은 색(`@agent-state-color-*`)이다.
+- `-F`: 패널 줄 = `◆ waiting (permission)  /경로`, 윈도우·세션 줄 = 이름. 아이콘과 상태 글자는 상태바와 같은 색(`@agent-state-color-*`)에 굵게다.
   `choose-tree` 도 줄을 `format_draw()` 로 그려서 `#[fg=…]` 가 먹는다(tmux `mode-tree.c`). 커서가 있는 줄은 선택 색이 이겨 색이 빠진다.
 - 아래쪽 미리보기, 숫자키 바로 고르기, Enter 로 이동(다른 세션이어도), `C-s` 찾기, `q` 닫기. 고르면 floating pane 은 닫힌다(`-k`).
 - 한계: 정렬은 tmux 가 번호·이름·활동 시각만 지원해 "대기 먼저" 는 안 된다. 그건 `prefix M-a`(바로 가기) 몫이다.

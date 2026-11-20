@@ -17,7 +17,8 @@
 #
 # 설정 (run-shell 줄보다 앞에서 set -g, 없으면 기본값)
 #   @agent-state-icon-{running,waiting,done,error}    ⋯ ◆ ✔ ✘
-#   @agent-state-color-{running,waiting,done,error}   (글자색) #f9e2af #a6e3a1 #f38ba8   빈 값 = 색 안 바꿈
+#   @agent-state-color-{running,waiting,done,error}   (글자색) #3b9eff #ffc400 #22e06b #ff3d5a   빈 값 = 색 안 바꿈
+#                                 어두운 바탕(#1e1e2e)에서 튀도록 채도 높은 색. 대기·오류 색은 탭 바탕으로도 칠한다
 #   @agent-state-tab-paint        on      off 면 탭 바탕을 칠하지 않는다 (아이콘만)
 #   @agent-state-tab-fg           #11111b 칠한 탭의 글자색
 #   @agent-state-clear-on-focus   on      off 면 done 을 들어와도 지우지 않는다 (다음 프롬프트까지 남는다)
@@ -38,15 +39,17 @@ i_run=$(optd @agent-state-icon-running '⋯')
 i_wait=$(optd @agent-state-icon-waiting '◆')
 i_done=$(optd @agent-state-icon-done '✔')
 i_err=$(optd @agent-state-icon-error '✘')
-c_run=$(tmux show-option -gqv @agent-state-color-running)
-c_wait=$(optd @agent-state-color-waiting '#f9e2af')
-c_done=$(optd @agent-state-color-done '#a6e3a1')
-c_err=$(optd @agent-state-color-error '#f38ba8')
+c_run=$(opt @agent-state-color-running '#3b9eff')
+c_wait=$(opt @agent-state-color-waiting '#ffc400')
+c_done=$(opt @agent-state-color-done '#22e06b')
+c_err=$(opt @agent-state-color-error '#ff3d5a')
 tab_paint=$(optd @agent-state-tab-paint on)
 tab_fg=$(optd @agent-state-tab-fg '#11111b')
 
 # 색을 입힌 아이콘. 뒤의 #[default] 는 그 포맷의 바탕 스타일(window-status-style 등)로 되돌린다.
 paint() { if [ -n "$1" ]; then printf '#[fg=%s]%s#[default]' "$1" "$2"; else printf '%s' "$2"; fi; }
+# 굵게 + 색. 모아 보기의 상태 글자용 (목록에서 눈에 먼저 들어오게)
+paint_b() { if [ -n "$1" ]; then printf '#[fg=%s]#[bold]%s#[default]' "$1" "$2"; else printf '#[bold]%s#[default]' "$2"; fi; }
 # 탭용: $3 = 색을 빼는 조건. 바탕이 아이콘과 같은 색으로 칠해지는 탭(벨 탭, 대기·오류로 칠한 탭)에서는 아이콘이 묻히므로
 # 색을 입히지 않고 탭 글자색을 쓴다.
 paint_tab() {
@@ -125,7 +128,7 @@ key_clear=$(opt @agent-state-clear-key M-A)
 
 # 모아 보기: choose-tree 를 floating pane 에서 연다 (tmux man 의 `new-pane -E; choose-tree -hk` 꼴).
 #   -f <상태>             에이전트가 있는 패널만. 그런 패널이 없는 윈도우·세션은 트리에서 빠진다
-#   -F                    패널 줄 = "아이콘 상태 (이유)  경로", 윈도우·세션 줄 = 이름. 상태는 상태바와 같은 색
+#   -F                    패널 줄 = "아이콘 상태 (이유)  경로", 윈도우·세션 줄 = 이름. 상태는 상태바와 같은 색 + 굵게
 #                         (choose-tree 도 줄을 format_draw 로 그려 #[fg=…] 가 먹는다. 커서 줄은 선택 색이 이긴다)
 #   -h -k                 모드를 담은 floating pane 은 숨기고, 모드가 끝나면 그 패널을 닫는다
 # 정렬은 tmux 가 번호·이름·활동 시각만 지원해 "대기 먼저" 는 안 된다. 바로 가기는 prefix M-a.
@@ -134,10 +137,10 @@ if [ -n "$key_tree" ]; then
   fs=$(optd @float-style 'bg=#24253a,fg=default')
   fb=$(optd @float-border-style 'fg=#b4befe')
   fl=$(optd @float-border-lines single)
-  st_col="#{?#{==:$st,waiting},$(paint "$c_wait" "$i_wait waiting"),"
-  st_col+="#{?#{==:$st,error},$(paint "$c_err" "$i_err error"),"
-  st_col+="#{?#{==:$st,done},$(paint "$c_done" "$i_done done"),"
-  st_col+="#{?#{==:$st,running},$(paint "$c_run" "$i_run running"),}}}}"
+  st_col="#{?#{==:$st,waiting},$(paint_b "$c_wait" "$i_wait waiting"),"
+  st_col+="#{?#{==:$st,error},$(paint_b "$c_err" "$i_err error"),"
+  st_col+="#{?#{==:$st,done},$(paint_b "$c_done" "$i_done done"),"
+  st_col+="#{?#{==:$st,running},$(paint_b "$c_run" "$i_run running"),}}}}"
   line="#{?pane_format,$st_col#{?@agent_reason, (#{@agent_reason}),}  #{pane_current_path},#{?window_format,#{window_name},#{session_name}}}"
   # '\;' : 셸에서 그냥 ; 를 넘기면 tmux 명령줄이 "이번 호출의 구분자" 로 먹어서 move-pane 이 키에 묶이지 않고 바로 실행된다.
   # \; 로 넘겨야 bind-key 가 묶을 명령 안의 구분자로 받는다.
