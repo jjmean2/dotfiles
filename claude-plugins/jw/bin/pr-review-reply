@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# pr-review-reply — 리뷰 스레드 하나에 답글을 달고, 원하면 해결(resolve) 처리한다.
+#
+#   pr-review-reply [--pr <PR 번호|URL|브랜치>] --thread <thread_id> [--body-file <파일>] [--resolve]
+#
+# --thread     스레드의 GitHub 노드 ID (pr-review-fetch 의 thread_id, PRRT_…). 댓글 ID 가 아니다
+# --body-file  답글 본문 파일 (마크다운). 비어 있으면(공백뿐이어도) 멈춘다. 없으면 답글 없이 해결만 한다
+# --resolve    답글 뒤에 스레드를 해결 처리한다. 이미 해결돼 있으면 건너뛴다
+# --pr         호스트를 정하는 데만 쓴다 (GitHub Enterprise). 없으면 gh 의 기본 호스트
+#
+# 상태 재확인(새 댓글, 권한)은 부르는 쪽이 pr-review-fetch --threads 로 먼저 한다. 이 스크립트는 쓰기만 한다.
+# 출력 (JSON 한 줄): thread_id · reply_url (답글을 달았으면) · resolved
+set -euo pipefail
+
+die() { echo "pr-review-reply: $*" >&2; exit 1; }
+
+pr=""; thread=""; body_file=""; resolve=false
+while [ $# -gt 0 ]; do
+  case $1 in
+    --pr) [ $# -ge 2 ] || die "--pr 에 값이 없습니다"; pr=$2; shift 2 ;;
+    --thread) [ $# -ge 2 ] || die "--thread 에 값이 없습니다"; thread=$2; shift 2 ;;
+    --body-file) [ $# -ge 2 ] || die "--body-file 에 값이 없습니다"; body_file=$2; shift 2 ;;
+    --resolve) resolve=true; shift ;;
+    -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "unknown argument: $1" ;;
+  esac
+done
+command -v gh >/dev/null || die "gh 가 PATH 에 없습니다 (설치 후 gh auth login)"
+command -v jq >/dev/null || die "jq 가 PATH 에 없습니다"
+[[ $thread =~ ^PRRT_[A-Za-z0-9_=-]+$ ]] || die "--thread 는 리뷰 스레드 ID(PRRT_…)여야 합니다: ${thread:-(없음)}"
+[ -n "$body_file" ] || $resolve || die "--body-file 이나 --resolve 중 하나는 있어야 합니다"
+if [ -n "$body_file" ]; then
+  [ -f "$body_file" ] || die "본문 파일이 없습니다: $body_file"
+  grep -q '[^[:space:]]' "$body_file" || die "본문이 비어 있습니다: $body_file"
+fi
+
+hostopt=()
+if [ -n "$pr" ]; then
+  u=$(gh pr view "$pr" --json url -q .url) || die "PR 을 찾지 못했습니다: $pr"
+  IFS=/ read -r _ _ h _ <<<"$u"; hostopt=(--hostname "$h")
+fi
+gql() { gh api graphql ${hostopt[@]+"${hostopt[@]}"} "$@"; }
+
+reply_url=null
+if [ -n "$body_file" ]; then
+  # -f 는 값을 늘 문자열로 넘긴다 (-F 는 "123"·"true" 같은 본문을 숫자·불린으로 바꿀 수 있다)
+  out=$(gql -f query='mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{url}}}' \
+    -f id="$thread" -f body="$(cat "$body_file")") || die "답글을 달지 못했습니다 ($thread)"
+  reply_url=$(jq '.data.addPullRequestReviewThreadReply.comment.url' <<<"$out")
+fi
+
+resolved=false
+if $resolve; then
+  out=$(gql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id="$thread") \
+    || die "해결 처리하지 못했습니다 ($thread)${body_file:+. 답글은 달렸습니다: $reply_url}"
+  resolved=$(jq '.data.resolveReviewThread.thread.isResolved' <<<"$out")
+fi
+
+jq -nc --arg t "$thread" --argjson r "$reply_url" --argjson s "$resolved" '{thread_id: $t, reply_url: $r, resolved: $s}'

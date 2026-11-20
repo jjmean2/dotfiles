@@ -5,7 +5,11 @@
 | 스킬 | 하는 일 |
 |---|---|
 | `/jw:handoff [<브랜치>] [fork\|fresh] [--base <ref>] [--in-stack\|--new-worktree] [추가 지시]` | 대화를 **포크**하거나 작업 지시서를 쓴 **새 세션**을 브랜치 워크트리에 연다. 모델도 대화를 보고 부르며, 실행 전에 확인을 받는다 |
-| `/jw:pr-review-handle [PR] [--all] [--stack]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 수정안과 배경 원리를 설명한다 |
+| `/jw:pr-review-handle [PR] [--all] [--stack]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 지적들의 근본 원인을 묶어 구조 개선을 포함한 수정 계획과 배경 원리를 설명한다 |
+| `/jw:pr-review-apply [묶음\|지적…] [--no-push] [--no-reply]` | pr-review-handle 의 수정 계획을 구현·커밋·푸시하고, 스레드마다 답글을 달고 해결 처리한다. 사용자만 부른다 |
+
+0.9.0 에서 pr-review-handle 이 지적마다 수정안을 내는 대신 근본 원인으로 묶은 수정 계획을 내고, 그 계획을 구현하고
+답글·해결까지 하는 `pr-review-apply` 와 `bin/pr-review-reply` 를 더했다 (아래 "pr-review-apply").
 
 0.8.0 에서 `handoff-fresh`·`handoff-move` 를 `handoff` 하나로 합치고 모델도 부를 수 있게 했다 (아래 "모델이 부르는 handoff").
 
@@ -133,7 +137,7 @@ open=bg
 
 - handoff: `claude`, git. `create=tmux-dev` 면 [tmux-dev](../../docs/tmux-dev/design/claude-code.md) 와 jq,
   `--open tmux` 면 tmux.
-- pr-review-handle: git, `gh` (`gh auth login` 한 번), jq.
+- pr-review-handle·pr-review-apply: git, `gh` (`gh auth login` 한 번), jq.
 
 ## 설치
 
@@ -148,7 +152,8 @@ claude plugin install jw@justwonder
 플러그인의 `bin/` 은 Claude 의 Bash 도구 PATH 에만 붙는다. 터미널에서도 쓰려면 링크를 둔다.
 
 ```sh
-ln -s "$(pwd)/claude-plugins/jw/bin/worktree-handoff" "$(pwd)/claude-plugins/jw/bin/pr-review-fetch" ~/.local/bin/
+ln -s "$(pwd)/claude-plugins/jw/bin/worktree-handoff" "$(pwd)/claude-plugins/jw/bin/pr-review-fetch" \
+      "$(pwd)/claude-plugins/jw/bin/pr-review-reply" ~/.local/bin/
 ```
 
 ## 스크립트를 직접 쓰기
@@ -198,7 +203,10 @@ PR 에 이미 달린 리뷰 댓글을 처리한다. 코드를 직접 리뷰하�
    찾아 PR 마다 같은 내용을 모은다. fork PR 은 스택으로 잇지 않는다.
 2. 스킬이 항목마다 리뷰 시점 / PR head / 로컬 세 시점의 코드를 구분해 읽고 판정한다:
    ✅ 수정 필요 · 🟡 선택 · ❌ 불필요(반대 증거 필요) · 💬 답변 필요 · 💬✓ 답변 완료 · 🔁 반영됨 · ❓ 판단 보류.
-3. ✅ 는 수정안과 배경 원리, ❌·💬 는 리뷰어에게 보낼 답글 초안(게시하지 않음)을 쓴다.
+3. ✅·🟡·❓ 를 한데 놓고 근본 원인별로 묶는다 (중복된 정보, 흩어진 책임, 경계 없는 입력, 암묵적인 계약…). 리뷰에 없던
+   같은 원인의 증상도 찾는다. 묶음마다 구조 개선을 포함한 수정 계획과 배경 원리를 쓰고, 어느 지적이 어느 수정으로
+   해소되는지 대응표를 만든다. 근본 수정이 PR 범위를 크게 넘으면 "증상 수정 + 후속 작업" 안도 함께 낸다.
+4. ❌·💬 는 리뷰어에게 보낼 답글 초안(게시하지 않음)을 쓴다.
 
 스레드마다 GitHub 노드 ID(`thread_id`, `PRRT_…`), 첫 댓글의 REST ID(`comment_database_id`), 답글·해결 권한
 (`viewer_can_reply`·`viewer_can_resolve`)을 함께 받는다. 결과를 보고 고른 스레드에 나중에 답글을 달거나 해결 처리할 때 쓰는
@@ -211,3 +219,25 @@ PR 에 이미 달린 리뷰 댓글을 처리한다. 코드를 직접 리뷰하�
 pr-review-fetch [<PR 번호|URL|브랜치>] [--all] [--stack]   # 직접 써도 된다
 pr-review-fetch [<PR>] --threads <thread_id>[,<thread_id>…]  # 고른 스레드의 지금 상태만
 ```
+
+## pr-review-apply
+
+pr-review-handle 의 결과를 본 뒤 `/jw:pr-review-apply` 로 부른다. 부른 것이 구현·커밋·푸시·답글·해결 처리에 대한 승인이라
+중간에 묻지 않는다. 바깥에 글을 쓰는 스킬이라 `disable-model-invocation` 으로 모델이 스스로 부르지 않게 했다.
+분석(읽기만 하는 스킬, 좁은 `allowed-tools`)과 나눈 것도 같은 이유다.
+
+1. 대화의 수정 계획을 쓴다. 대화에 계획이 없으면 분석만 하고 멈춘다 (계획을 보지 않은 채 구조를 바꾸지 않는다).
+2. `pr-review-fetch` 로 다시 확인한다: 그 PR 의 워크트리 안인지, PR 이 열려 있는지, 원격이 앞서지 않았는지, 미커밋 변경이
+   없는지. 하나라도 어긋나면 멈춘다 (stash 하지 않는다).
+3. 묶음마다 고치고 확인 방법을 돌려 커밋한다. 단독 PR 은 묶음 하나 = 커밋 하나, 스택 워크트리는 fixup 커밋 뒤
+   `rebase --autosquash --update-refs`. 계획이 틀렸다는 것을 알게 되면 즉석에서 설계를 바꾸지 않고 멈춘다.
+4. 푸시한다 (rebase 했으면 `--force-with-lease`). 직전에 PR 이 아직 열려 있는지 다시 본다.
+5. `pr-review-fetch --threads` 로 재확인한 뒤 대응표대로 답글을 단다. 고친 지적과 Copilot 의 지적은 해결 처리하고, 사람
+   리뷰어에게 반박·답변한 스레드는 열어 둔다 (납득했는지는 상대가 정한다).
+
+```sh
+pr-review-reply [--pr <PR>] --thread <thread_id> [--body-file <파일>] [--resolve]   # 답글 하나 + 해결
+```
+
+본문은 파일로만 받는다 (따옴표·줄바꿈이 셸 인자에서 깨지지 않게, 그리고 워크트리 세션의 Bash 가드가 heredoc 을 거절해서).
+상태 재확인은 하지 않는다. 그것은 부르는 쪽이 `pr-review-fetch --threads` 로 한다.
