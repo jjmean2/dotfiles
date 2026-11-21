@@ -2,7 +2,7 @@
 name: pr-review-handle
 description: GitHub PR 에 이미 달린 리뷰 댓글(Copilot·사람)을 모아 쉽게 풀어 설명하고, 실제 코드와 대조해 타당성을 판정하고, 원인을 따져 수정 계획(개별 수정, 근거가 있을 때만 공통 원인·구조 개선)과 그 배경 원리를 설명한다. "PR 리뷰 댓글 정리해줘", "리뷰 받은 거 봐줘", "Copilot 리뷰 맞는 말이야?", "스택 PR 리뷰 전부 봐줘" 처럼 남이 단 리뷰를 다룰 때 쓴다. 코드를 직접 리뷰해 달라는 요청에는 쓰지 않는다.
 argument-hint: "[PR 번호|URL|브랜치] [--all] [--stack]"
-allowed-tools: Bash(pr-review-fetch:*), Bash(git show:*), Bash(git diff:*), Bash(git log:*), Bash(git blame:*), Bash(git rev-list:*), Bash(gh pr view:*), Bash(gh pr diff:*)
+allowed-tools: Bash(pr-review-fetch:*), Bash(${CLAUDE_PLUGIN_ROOT}/bin/pr-review-fetch:*), Bash(git show:*), Bash(git diff:*), Bash(git log:*), Bash(git blame:*), Bash(git rev-list:*), Bash(gh pr view:*), Bash(gh pr diff:*)
 ---
 
 PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명만** 한다. 코드 수정·커밋·푸시, GitHub 에 답글 게시·스레드
@@ -15,7 +15,8 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 
 ## 1. 수집
 
-`pr-review-fetch $ARGUMENTS` 를 한 번 실행한다 (인자가 없으면 지금 브랜치의 PR). 실패하면 오류를 그대로 보여 주고 멈춘다.
+`${CLAUDE_PLUGIN_ROOT}/bin/pr-review-fetch $ARGUMENTS` 를 한 번 실행한다 (인자가 없으면 지금 브랜치의 PR. 그 경로에
+스크립트가 없으면 PATH 의 `pr-review-fetch`). 실패하면 오류를 그대로 보여 주고 멈춘다.
 지금 브랜치에 PR 이 없어서 실패하면 (스택 맨 위의 작업 중 브랜치) 오류에 그 아래 쌓인 PR 목록이 있다. 그것을 보여 주고
 특정 PR 인지 스택 전체(`--stack`)인지 묻는다.
 출력의 `warnings` 는 결과 맨 위에 그대로 옮긴다. `threads` 가 비어 있고 `reviews`·`comments` 에도 다룰 것이 없으면
@@ -206,7 +207,7 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 | checkout | 지금 그 워크트리 안 | 안내 |
 |---|---|---|
 | `self` | 예 | "`/jw:pr-review-apply` 로 계획대로 고치고 답글·해결까지 한다. 일부만 하려면 수정 단위(A, B…)나 지적 번호를 붙인다." |
-| `self` | 아니오 | 그 워크트리의 파일은 이 세션에서 고치지 않는다. 이 세션을 그 워크트리로 옮기거나 (`worktree-handoff path <PR 브랜치>` 가 출력하는 `/cd`) `/jw:handoff <PR 브랜치> fork` 로 이 분석을 이어받은 세션을 연다. 거기서 `/jw:pr-review-apply` |
+| `self` | 아니오 | 그 워크트리의 파일은 이 세션에서 고치지 않는다. 이 세션을 그 워크트리로 옮기거나 (`${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff path <PR 브랜치>` 가 출력하는 `/cd`) `/jw:handoff <PR 브랜치> fork` 로 이 분석을 이어받은 세션을 연다. 거기서 `/jw:pr-review-apply` |
 | `stack` | 예 | `self`·예 와 같다. pr-review-apply 가 체크아웃을 바꾸지 않고 fixup 커밋 + autosquash 로 고친다 |
 | `stack` | 아니오 | `/jw:handoff <PR 브랜치> fork --in-stack` 으로 스택 워크트리에 세션을 연다. `--in-stack` 없이 부르면 스크립트가 멈춘다 (새 워크트리를 만들면 스택이 갈라진다) |
 | `none` | | 위 handoff 명령이 그 브랜치의 워크트리를 만든다고 안내한다 |
