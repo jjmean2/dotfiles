@@ -8,22 +8,27 @@
 | `/jw:pr-review-handle [PR] [--all] [--stack]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 원인을 따져 수정 계획(개별 수정, 근거가 있을 때만 공통 원인·구조 개선)과 배경 원리를 설명한다 |
 | `/jw:pr-review-apply [수정 단위\|지적…] [--no-push] [--no-reply]` | pr-review-handle 의 수정 계획을 구현·커밋·푸시하고, 스레드마다 답글을 달고 해결 처리한다. 사용자만 부른다 |
 
-0.11.0 에서 워크트리를 찾고 만드는 일을 `bin/branch-worktree` 로 떼었다. `worktree-handoff` 는 세션 띄우기만 하고
-`pr-review-fetch` 도 같은 판정을 쓴다. `worktree-handoff path` 는 `branch-worktree ensure` 가 대신하고, `pr-review-fetch` 의
-`local` 에서 `uncommitted_changes` 는 `worktree_dirty` 로 합쳤다. `test/run` 으로 스크립트를 확인한다 (아래 "스크립트의 구조").
+## 구성
 
-0.10.0 에서 handoff 가 Cursor CLI 세션도 열게 했다. Claude 와 Cursor 어느 쪽에서 부르든 돌고, 어느 도구로 열지는 확인 단계에서
-고른다 (아래 "세션을 여는 도구"). 세 스킬 모두 Cursor 에서도 스크립트를 찾도록 `bin/` 경로로 부른다 (아래 "Cursor 에서 쓰기").
+```
+스킬 handoff ──▶ worktree-handoff ──▶ branch-worktree ensure      워크트리 확보 (git 만 다룬다. 도구를 모른다)
+                 세션 띄우기                ▲
+스킬 pr-review-* ──▶ pr-review-fetch ──────┘ branch-worktree find  그 브랜치를 고칠 워크트리가 어디인가
+                 └─▶ pr-review-reply
+```
 
-0.9.0 에서 pr-review-handle 이 지적마다 따로 수정안을 내는 대신 원인을 따진 수정 계획(공통 원인은 근거가 있을 때만 묶음)을 내고, 그 계획을 구현하고
-답글·해결까지 하는 `pr-review-apply` 와 `bin/pr-review-reply` 를 더했다 (아래 "pr-review-apply").
+- **`branch-worktree`**: 브랜치의 워크트리를 찾고(`find`, 읽기만) 확보한다(`ensure`). 스택 워크트리 판정이 여기 한 곳에 있다.
+  저장소를 바꾸는 것은 `ensure` 가 워크트리를 만드는 한 곳뿐이다.
+- **`worktree-handoff`**: 세션 띄우기. 도구마다 다른 것(실행 줄, fork·bg 가능 여부, 다시 여는 명령)은 스크립트 위쪽의
+  "도구 어댑터" 절에 도구별 함수 하나씩으로 모여 있고, 그 아래 본문은 도구 이름을 모른다.
+  하는 순서는 확인 → 첫 메시지 읽기 → 워크트리 확보 → 런처 쓰기 → 띄우기 → 안내다. 확인은 아무것도 바꾸지 않고,
+  워크트리를 확보하기 전에 실패하면 남기는 것이 없다.
+- **`test/run`**: 가짜 `claude`·`agent`·`gh` 와 임시 저장소, 격리된 tmux 서버로 위 스크립트를 확인한다.
+  실제 도구는 부르지 않는다. 스크립트를 고치면 돌린다: `claude-plugins/jw/test/run` (일부만: `test/run worktree handoff`).
 
-0.8.0 에서 `handoff-fresh`·`handoff-move` 를 `handoff` 하나로 합치고 모델도 부를 수 있게 했다 (아래 "모델이 부르는 handoff").
+## handoff
 
-0.7.0 에서 끝남·허락 대기 때 벨을 울리던 `hooks/tmux-bell` 을 뺐다. 그 일은 별도 플러그인
-[`agent-state`](../agent-state/README.md)가 맡는다(상태 배지 + 데스크톱 알림. 벨을 원하면 그 플러그인의 `notify_via = bell`).
-
-## 개념
+### 개념
 
 Claude 나 Cursor 와 대화하다가 작업 방향이 정해지면 그 작업의 브랜치와 워크트리를 만들고, 그 워크트리에서 일할 세션을 준비한다.
 
@@ -41,7 +46,7 @@ Claude 나 Cursor 와 대화하다가 작업 방향이 정해지면 그 작업�
 
 tmux 는 필요 없다. tmux 안에서 부르면 워크트리의 윈도우를 열어 그 안에서 세션을 띄워 주는 것뿐이다.
 
-## 세션을 여는 도구 (`--agent`, fork·fresh)
+### 세션을 여는 도구 (`--agent`, fork·fresh)
 
 새 세션은 Claude Code(`claude`, 기본)나 Cursor CLI(`cursor`)로 연다. 도구마다 다른 것은 이 표가 전부다.
 
@@ -67,7 +72,7 @@ tmux 는 필요 없다. tmux 안에서 부르면 워크트리의 윈도우를 �
 안 되는 조합(`cursor` 의 fork 와 `--open bg`)은 스크립트가 워크트리를 만들기 전에 거절한다. 설정에서 온 `open=bg` 는 알림을 내고
 `auto` 로 띄운다.
 
-## 세션을 띄우는 방식 (`--open`, fork·fresh)
+### 세션을 띄우는 방식 (`--open`, fork·fresh)
 
 | 값 | 동작 | 들어가기 |
 |---|---|---|
@@ -93,51 +98,7 @@ resume:   cd '…/feat-x' && claude --resume 'feat/x@1111-1530'
 종료 코드 1 로 끝난다. 워크트리는 남아 있으니 `run:` 줄을 터미널에서 실행하면 된다. 포크는 원본의 기록이 써지도록 2초 뒤에 띄우므로
 실패가 그 자리에서 보이지 않는다. `open:` 줄의 로그 파일을 본다.
 
-## 모델이 부르는 handoff
-
-0.7.0 까지는 세 스킬 모두 `/jw:…` 로만 불렀다. 0.8.0 부터는 하나로 합치고 `disable-model-invocation` 을 뺐다.
-
-- 언제 넘길지·스택을 어떻게 쌓을지 같은 원칙은 chezmoi 가 까는 사용자 규칙
-  [`~/.claude/rules/worktree-workflow.md`](../../home/dot_claude/rules/worktree-workflow.md) 에 있다. 규칙은 매 세션
-  읽히고, 스킬 본문은 넘길 때만 읽힌다.
-- 모델이 먼저 제안할 수 있지만, 실행 전에는 브랜치·베이스·방식·도구·넘길 내용을 보여 주고 답을 기다린다.
-- `start_session` 도구가 있는 Claude 데스크톱 앱에서는 이 스킬 대신 그 도구를 쓴다 (원본 세션과 연결되고 보고가 돌아온다).
-  그 도구는 Claude 세션만 열므로, Cursor 세션으로 넘길 때는 이 스킬을 쓴다.
-- 첫 메시지는 heredoc 대신 임시 파일로 넘긴다. 워크트리 세션의 Bash 가드가 heredoc 이 섞인 명령을 거절하기 때문이다.
-- fork 의 세션 ID 는 스크립트가 `$CLAUDE_CODE_SESSION_ID` (Claude Code 가 Bash 셸에 넣어 줌)에서 읽는다.
-
-## Cursor 에서 쓰기
-
-Cursor(데스크톱·CLI)는 설치된 Claude 플러그인을 `~/.claude/plugins/installed_plugins.json` 과 `~/.claude/settings.json` 의
-`enabledPlugins` 로 찾아 그 캐시 경로에서 그대로 불러온다. 따로 설치할 것은 없고, Claude 쪽에서 플러그인을 갱신하면 Cursor 에도
-반영된다.
-
-세 스킬(handoff·pr-review-handle·pr-review-apply)은 스크립트를 `${CLAUDE_PLUGIN_ROOT}/bin/<이름>` 으로 부른다. 플러그인
-`bin/` 을 PATH 에 넣어 주는 것은 Claude Code 뿐이라, 맨이름으로 부르면 Cursor 에서는 찾지 못한다. Claude Code 와 Cursor 모두
-플러그인 스킬 본문에서 이 변수를 설치 경로로 바꾼다. Claude Code 는 `allowed-tools` 에서도 바꾸므로 권한 프롬프트 없이 돈다.
-
-실제 Cursor 세션에서 돌려 보지는 않았다. 번들 코드(CLI 2026.11.13, 데스크톱 3.31.11)와 가짜 `agent` 로 확인했다.
-확인하지 못한 것:
-
-- Cursor 의 셸 도구가 `TMUX`·`TMUX_PANE` 을 스크립트까지 넘겨 주는지. 없으면 tmux 안에서도 윈도우를 열지 못하고 tmux 밖처럼
-  띄운다. Cursor 에이전트에게 `env | grep '^TMUX'` 를 시켜 보면 안다
-- Cursor 의 셸 도구에서 띄운 `claude --bg` 세션이 그 명령이 끝난 뒤에도 살아 있는지 (Cursor → `claude`, tmux 밖)
-- 처음 보는 워크트리에서 신뢰 여부를 물은 뒤에도 첫 메시지가 이어지는지
-- `agent resume` 이 고르는 "가장 최근 세션"이 그 워크트리로 한정되는지
-- 스킬 이름에 `jw:` 가 붙지 않아 `/handoff` 로 불리는지, `allowed-tools` 를 읽지 않아 스크립트 실행 때 승인을 묻는지
-  (둘 다 3.30.8 데스크톱에서 본 것). 승인을 묻는다면 git·gh 명령을 여러 번 쓰는 pr-review 스킬은 명령마다 묻는다.
-  Cursor 의 허용 목록에 넣어야 줄어든다
-
-## 지금 세션을 옮기기
-
-지금 세션을 워크트리로 옮기는 일은 규칙에 따라 모델이 `EnterWorktree` 로 한다 (`.claude/worktrees/` 아래).
-이 플러그인의 워크트리 위치로 옮기고 싶으면 스크립트를 직접 쓴다.
-
-`branch-worktree ensure <브랜치>` 가 워크트리를 확보하고 `worktree: <경로>` 를 출력한다. 사용자가 `/cd <경로>` 를 입력하면
-세션 기록(`~/.claude/projects/` 아래)·설정·훅·스킬·CLAUDE.md 가 새 디렉토리 기준으로 바뀐다. 세션 ID 는 그대로이고,
-이후 `claude --resume` 목록에는 그 워크트리에서 보인다. 모델은 `/cd` 를 부를 수 없다.
-
-## 워크트리
+### 워크트리
 
 워크트리는 `branch-worktree ensure` 가 확보한다. handoff 는 그 결과를 받아 쓰고, 그 워크트리가 지금 세션이 있는
 체크아웃이면 넘기지 않는다 (한 작업 트리는 한 세션만 고친다).
@@ -156,7 +117,7 @@ Cursor(데스크톱·CLI)는 설치된 Claude 플러그인을 `~/.claude/plugins
 bare 저장소는 지원하지 않는다. 정리는 `git worktree remove <경로>` 와 `git branch -d <브랜치>`. `.env` 처럼 추적되지 않는 파일은
 복사하지 않는다 (필요하면 `create=tmux-dev` 의 셋업 훅).
 
-### 스택 워크트리
+#### 스택 워크트리
 
 워크트리 하나에서 브랜치를 바꿔 가며 PR 을 쌓으면 (`main ← a ← b ← c`, 워크트리에는 `c`) 하위 브랜치 `a`·`b` 는 어디에도
 체크아웃돼 있지 않다. 이때 `a` 로 새 워크트리를 만들면 스택 워크트리에서 `a` 를 체크아웃할 수 없고
@@ -176,7 +137,27 @@ git commit --fixup=<a 의 커밋>
 git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base main
 ```
 
-## 설정
+### 지금 세션을 옮기기
+
+지금 세션을 워크트리로 옮기는 일은 규칙에 따라 모델이 `EnterWorktree` 로 한다 (`.claude/worktrees/` 아래).
+이 플러그인의 워크트리 위치로 옮기고 싶으면 스크립트를 직접 쓴다.
+
+`branch-worktree ensure <브랜치>` 가 워크트리를 확보하고 `worktree: <경로>` 를 출력한다. 사용자가 `/cd <경로>` 를 입력하면
+세션 기록(`~/.claude/projects/` 아래)·설정·훅·스킬·CLAUDE.md 가 새 디렉토리 기준으로 바뀐다. 세션 ID 는 그대로이고,
+이후 `claude --resume` 목록에는 그 워크트리에서 보인다. 모델은 `/cd` 를 부를 수 없다.
+
+### 스킬이 하는 일
+
+- 언제 넘길지·스택을 어떻게 쌓을지 같은 원칙은 chezmoi 가 까는 사용자 규칙
+  [`~/.claude/rules/worktree-workflow.md`](../../home/dot_claude/rules/worktree-workflow.md) 에 있다. 규칙은 매 세션
+  읽히고, 스킬 본문은 넘길 때만 읽힌다.
+- 모델이 먼저 제안할 수 있지만, 실행 전에는 브랜치·베이스·방식·도구·넘길 내용을 보여 주고 답을 기다린다.
+- `start_session` 도구가 있는 Claude 데스크톱 앱에서는 이 스킬 대신 그 도구를 쓴다 (원본 세션과 연결되고 보고가 돌아온다).
+  그 도구는 Claude 세션만 열므로, Cursor 세션으로 넘길 때는 이 스킬을 쓴다.
+- 첫 메시지는 heredoc 대신 임시 파일로 넘긴다. 워크트리 세션의 Bash 가드가 heredoc 이 섞인 명령을 거절하기 때문이다.
+- fork 의 세션 ID 는 스크립트가 `$CLAUDE_CODE_SESSION_ID` (Claude Code 가 Bash 셸에 넣어 줌)에서 읽는다.
+
+### 설정
 
 `${XDG_CONFIG_HOME:-~/.config}/worktree-handoff/config` 에 `key=value` (`#` 주석). 실행하지 않고 값만 읽는다.
 같은 이름의 환경 변수가 먼저다. `root` 는 절대 경로나 `~/` 로 시작해야 한다.
@@ -193,47 +174,7 @@ root=~/dev/worktrees
 open=bg
 ```
 
-## 필요한 것
-
-- handoff: `claude` (Cursor 세션이면 Cursor CLI `agent`), git. `create=tmux-dev` 면
-  [tmux-dev](../../docs/tmux-dev/design/claude-code.md) 와 jq, `--open tmux` 면 tmux.
-- pr-review-handle·pr-review-apply: git, `gh` (`gh auth login` 한 번), jq.
-
-## 설치
-
-```sh
-claude plugin marketplace add jjmean2/dotfiles          # 또는 클론한 경로: claude plugin marketplace add ~/dev/jwlee/dotfiles
-claude plugin install jw@justwonder
-```
-
-세션 안에서는 `/plugin marketplace add ...`, `/plugin install jw@justwonder`. 개발 중에는 설치 없이
-`claude --plugin-dir claude-plugins/jw`.
-
-플러그인의 `bin/` 은 Claude 의 Bash 도구 PATH 에만 붙는다. 터미널에서도 쓰려면 링크를 둔다.
-
-```sh
-ln -s "$(pwd)"/claude-plugins/jw/bin/{branch-worktree,worktree-handoff,pr-review-fetch,pr-review-reply} ~/.local/bin/
-```
-
-`worktree-handoff` 와 `pr-review-fetch` 는 `branch-worktree` 를 자기 옆에서 먼저 찾고, 없으면 PATH 에서 찾는다. 넷을 함께 링크한다.
-
-## 스크립트의 구조
-
-```
-스킬 handoff ──▶ worktree-handoff ──▶ branch-worktree ensure      워크트리 확보 (git 만 다룬다. 도구를 모른다)
-                 세션 띄우기                ▲
-스킬 pr-review-* ──▶ pr-review-fetch ──────┘ branch-worktree find  그 브랜치를 고칠 워크트리가 어디인가
-                 └─▶ pr-review-reply
-```
-
-- **`branch-worktree`**: 브랜치의 워크트리를 찾고(`find`, 읽기만) 확보한다(`ensure`). 스택 워크트리 판정이 여기 한 곳에 있다.
-  저장소를 바꾸는 것은 `ensure` 가 워크트리를 만드는 한 곳뿐이다.
-- **`worktree-handoff`**: 세션 띄우기. 도구마다 다른 것(실행 줄, fork·bg 가능 여부, 다시 여는 명령)은 스크립트 위쪽의
-  "도구 어댑터" 절에 도구별 함수 하나씩으로 모여 있고, 그 아래 본문은 도구 이름을 모른다.
-  하는 순서는 확인 → 첫 메시지 읽기 → 워크트리 확보 → 런처 쓰기 → 띄우기 → 안내다. 확인은 아무것도 바꾸지 않고,
-  워크트리를 확보하기 전에 실패하면 남기는 것이 없다.
-- **`test/run`**: 가짜 `claude`·`agent`·`gh` 와 임시 저장소, 격리된 tmux 서버로 위 스크립트를 확인한다.
-  실제 도구는 부르지 않는다. 스크립트를 고치면 돌린다: `claude-plugins/jw/test/run` (일부만: `test/run worktree handoff`).
+### 스크립트를 직접 쓰기
 
 ```sh
 branch-worktree find   [--tip <커밋>]                             <브랜치>
@@ -248,7 +189,7 @@ fresh 는 첫 메시지가 꼭 있어야 하고, 비어 있으면(공백뿐이�
 첫 메시지 파일과 런처(`.sh`)·로그(`.log`)는 `${XDG_STATE_HOME:-~/.local/state}/worktree-handoff/prompt/` 에 호출마다
 새로 생기고 7일 뒤 지워진다.
 
-## 알아 둘 것
+### 알아 둘 것
 
 - 포크는 대화 기록만 복사한다. 파일·git 상태는 복사하지 않고, 새 세션의 작업 디렉토리는 워크트리다.
 - 대화 중에 한 번만 허용한 권한은 새 프로세스로 넘어가지 않는다 (`settings.local.json` 에 저장된 승인은 워크트리가 공유).
@@ -328,3 +269,57 @@ pr-review-reply [--pr <PR>] --thread <thread_id> [--body-file <파일>] [--resol
 
 본문은 파일로만 받는다 (따옴표·줄바꿈이 셸 인자에서 깨지지 않게, 그리고 워크트리 세션의 Bash 가드가 heredoc 을 거절해서).
 상태 재확인은 하지 않는다. 그것은 부르는 쪽이 `pr-review-fetch --threads` 로 한다.
+
+## Cursor 에서 쓰기
+
+Cursor(데스크톱·CLI)는 설치된 Claude 플러그인을 `~/.claude/plugins/installed_plugins.json` 과 `~/.claude/settings.json` 의
+`enabledPlugins` 로 찾아 그 캐시 경로에서 그대로 불러온다. 따로 설치할 것은 없고, Claude 쪽에서 플러그인을 갱신하면 Cursor 에도
+반영된다.
+
+세 스킬(handoff·pr-review-handle·pr-review-apply)은 스크립트를 `${CLAUDE_PLUGIN_ROOT}/bin/<이름>` 으로 부른다. 플러그인
+`bin/` 을 PATH 에 넣어 주는 것은 Claude Code 뿐이라, 맨이름으로 부르면 Cursor 에서는 찾지 못한다. Claude Code 와 Cursor 모두
+플러그인 스킬 본문에서 이 변수를 설치 경로로 바꾼다. Claude Code 는 `allowed-tools` 에서도 바꾸므로 권한 프롬프트 없이 돈다.
+
+실제 Cursor 세션에서 돌려 보지는 않았다. 번들 코드(CLI 2026.11.13, 데스크톱 3.31.11)와 가짜 `agent` 로 확인했다.
+확인하지 못한 것:
+
+- Cursor 의 셸 도구가 `TMUX`·`TMUX_PANE` 을 스크립트까지 넘겨 주는지. 없으면 tmux 안에서도 윈도우를 열지 못하고 tmux 밖처럼
+  띄운다. Cursor 에이전트에게 `env | grep '^TMUX'` 를 시켜 보면 안다
+- Cursor 의 셸 도구에서 띄운 `claude --bg` 세션이 그 명령이 끝난 뒤에도 살아 있는지 (Cursor → `claude`, tmux 밖)
+- 처음 보는 워크트리에서 신뢰 여부를 물은 뒤에도 첫 메시지가 이어지는지
+- `agent resume` 이 고르는 "가장 최근 세션"이 그 워크트리로 한정되는지
+- 스킬 이름에 `jw:` 가 붙지 않아 `/handoff` 로 불리는지, `allowed-tools` 를 읽지 않아 스크립트 실행 때 승인을 묻는지
+  (둘 다 3.30.8 데스크톱에서 본 것). 승인을 묻는다면 git·gh 명령을 여러 번 쓰는 pr-review 스킬은 명령마다 묻는다.
+  Cursor 의 허용 목록에 넣어야 줄어든다
+
+## 필요한 것
+
+- handoff: `claude` (Cursor 세션이면 Cursor CLI `agent`), git. `create=tmux-dev` 면
+  [tmux-dev](../../docs/tmux-dev/design/claude-code.md) 와 jq, `--open tmux` 면 tmux.
+- pr-review-handle·pr-review-apply: git, `gh` (`gh auth login` 한 번), jq.
+
+## 설치
+
+```sh
+claude plugin marketplace add jjmean2/dotfiles          # 또는 클론한 경로: claude plugin marketplace add ~/dev/jwlee/dotfiles
+claude plugin install jw@justwonder
+```
+
+세션 안에서는 `/plugin marketplace add ...`, `/plugin install jw@justwonder`. 개발 중에는 설치 없이
+`claude --plugin-dir claude-plugins/jw`.
+
+플러그인의 `bin/` 은 Claude 의 Bash 도구 PATH 에만 붙는다. 터미널에서도 쓰려면 링크를 둔다.
+
+```sh
+ln -s "$(pwd)"/claude-plugins/jw/bin/{branch-worktree,worktree-handoff,pr-review-fetch,pr-review-reply} ~/.local/bin/
+```
+
+`worktree-handoff` 와 `pr-review-fetch` 는 `branch-worktree` 를 자기 옆에서 먼저 찾고, 없으면 PATH 에서 찾는다. 넷을 함께 링크한다.
+
+## 바뀐 것
+
+- **0.11.0**: 워크트리를 찾고 만드는 일을 `bin/branch-worktree` 로 떼었다. `worktree-handoff` 는 세션 띄우기만 하고 `pr-review-fetch` 도 같은 판정을 쓴다. `worktree-handoff path` 는 `branch-worktree ensure` 가 대신하고, `pr-review-fetch` 의 `local` 에서 `uncommitted_changes` 는 `worktree_dirty` 로 합쳤다. `test/run` 으로 스크립트를 확인한다 (위 "구성").
+- **0.10.0**: handoff 가 Cursor CLI 세션도 열게 했다. Claude 와 Cursor 어느 쪽에서 부르든 돌고, 어느 도구로 열지는 확인 단계에서 고른다 (위 "세션을 여는 도구"). 세 스킬 모두 Cursor 에서도 스크립트를 찾도록 `bin/` 경로로 부른다 (위 "Cursor 에서 쓰기").
+- **0.9.0**: pr-review-handle 이 지적마다 따로 수정안을 내는 대신 원인을 따진 수정 계획(공통 원인은 근거가 있을 때만 묶음)을 내고, 그 계획을 구현하고 답글·해결까지 하는 `pr-review-apply` 와 `bin/pr-review-reply` 를 더했다 (위 "pr-review-apply").
+- **0.8.0**: `handoff-fresh`·`handoff-move` 를 `handoff` 하나로 합치고 모델도 부를 수 있게 했다 (위 "스킬이 하는 일"). 그 전까지는 세 스킬 모두 `/jw:…` 로만 불렀고, 합치면서 `disable-model-invocation` 을 뺐다.
+- **0.7.0**: 끝남·허락 대기 때 벨을 울리던 `hooks/tmux-bell` 을 뺐다. 그 일은 별도 플러그인 [`agent-state`](../agent-state/README.md)가 맡는다(상태 배지 + 데스크톱 알림. 벨을 원하면 그 플러그인의 `notify_via = bell`).
