@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
-# worktree-handoff — 브랜치 워크트리를 만들고(있으면 그대로), 그 워크트리에서 새 세션(Claude Code 또는 Cursor CLI)을 연다.
+# worktree-handoff — 브랜치 워크트리에서 새 세션(Claude Code 또는 Cursor CLI)을 연다.
 #                    세션에 다시 들어가는 명령을 출력하고 끝낸다. tmux 는 필요 없다 (있으면 윈도우까지 열어 준다).
+#                    워크트리는 branch-worktree 가 확보한다 (찾기·만들기·스택 워크트리 규칙은 branch-worktree --help).
 #
 #   worktree-handoff fork  --session <id> [--prompt-file <파일|->] [--base <ref>] [--open <방식>]                  [<스택>] <브랜치>
 #   worktree-handoff fresh --prompt-file <파일|->                  [--base <ref>] [--open <방식>] [--agent <도구>] [<스택>] <브랜치>
-#   worktree-handoff path                                          [--base <ref>]                                  [<스택>] <브랜치>
-#   <스택> = --in-stack | --new-worktree
+#   <스택> = --in-stack | --new-worktree.  --base 와 <스택> 은 branch-worktree ensure 에 그대로 넘긴다
 #
 # 동작
 #   fork   지금 대화를 포크한 세션. Claude 세션만 된다
-#          --session 이 없으면 $WORKTREE_HANDOFF_SESSION, 그것도 없으면 $CLAUDE_CODE_SESSION_ID
-#          (Claude Code 가 Bash 도구 셸에 넣어 주는 지금 세션의 ID).
+#          --session 이 없으면 $CLAUDE_CODE_SESSION_ID (Claude Code 가 Bash 도구 셸에 넣어 주는 지금 세션의 ID).
 #          --prompt-file 이 없으면 기본 첫 메시지를 쓴다
 #   fresh  대화 없는 새 세션. 첫 메시지가 꼭 있어야 한다
-#   path   워크트리만 확보하고, 지금 세션을 그리로 옮기는 명령(/cd <경로>)을 출력한다. 세션은 만들지 않는다
 #   --prompt-file - 이면 첫 메시지를 표준 입력에서 읽는다
 #
 # 세션을 여는 도구 (--agent, 기본 claude). 도구마다 다른 것은 이 표가 전부다
@@ -23,64 +21,98 @@
 #   둘 다 첫 메시지는 -- "<첫 메시지>" 로 넘긴다. 부른 곳이 어느 도구인지는 짐작하지 않는다.
 #   cursor 에서 안 되는 까닭: CLI 에 대화를 포크하는 옵션이 없고, agent persist 는 터미널이 있어야 해서 스크립트가 띄울 수 없다
 #
-# 세션을 띄우는 방식 (--open, fork·fresh 만)
+# 세션을 띄우는 방식 (--open)
 #   auto   $TMUX 가 있으면 tmux, 없으면 bg, bg 가 안 되는 도구면 none (기본)
 #   bg     워크트리에서 claude --bg 로 백그라운드 세션을 띄운다. claude attach <이름> 으로 들어간다.
 #          안 되는 도구면 --open bg 는 거절하고, 설정에서 온 open=bg 는 auto 로 바꿔 띄운다
 #   tmux   호출한 패널의 tmux 세션에 윈도우(그 워크트리의 윈도우가 있으면 패널)를 -d 로 열고 그 안에서 실행한다
 #   none   띄우지 않고 실행할 명령만 출력한다
 #
-# 워크트리
-#   그 브랜치의 워크트리가 있으면 그대로 쓴다 (메인 체크아웃이나 지금 있는 체크아웃이면 거부).
-#   없으면 git worktree add 로 <root>/<저장소>/<브랜치의 / 를 - 로> 에 만든다
-#   (로컬 브랜치 → 그것, --base 없이 원격 하나에만 있으면 → 추적 브랜치, 아니면 → 베이스에서 새 브랜치).
-#   create=tmux-dev 면 tmux-dev worktree --hook-create 로 만든다 (그 위치·셋업 훅). 실패하면 git 으로
-#
-# 스택 워크트리
-#   워크트리 하나에서 브랜치를 바꿔 가며 PR 을 쌓으면 하위 브랜치는 어디에도 체크아웃돼 있지 않다. 그 브랜치로 새 워크트리를
-#   만들면 스택 워크트리에서 그 브랜치를 체크아웃할 수 없고 git rebase --update-refs 도 그 브랜치를 옮기지 않는다.
-#   그래서 브랜치가 체크아웃돼 있지 않은데 그 브랜치를 조상으로 품은 워크트리(기본 브랜치의 워크트리는 제외)가 있으면 멈춘다.
-#   --in-stack      그 스택 워크트리를 쓴다 (체크아웃은 바꾸지 않는다. 고칠 때는 fixup 커밋 + rebase --update-refs)
-#   --new-worktree  그래도 새 워크트리를 만든다
+# 하는 순서: 확인 → 첫 메시지 읽기 → 워크트리 확보 → 런처 쓰기 → 띄우기 → 안내
+#   확인은 아무것도 바꾸지 않는다. 워크트리를 확보하기 전에 실패하면 남기는 것이 없다.
+#   그 뒤에 띄우다 실패하면 worktree: 와 run: 줄을 출력하고 종료 코드 1 로 끝난다 (run: 줄을 터미널에서 실행하면 된다)
 #
 # 설정: ${XDG_CONFIG_HOME:-~/.config}/worktree-handoff/config 의 key=value (# 주석). 환경 변수가 먼저다
-#   root=<절대 경로|~/…>   WORKTREE_HANDOFF_ROOT    기본 ${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees
 #   open=auto|bg|tmux|none WORKTREE_HANDOFF_OPEN   기본 auto
-#   create=git|tmux-dev   WORKTREE_HANDOFF_CREATE  기본 git
 #   agent=claude|cursor   WORKTREE_HANDOFF_AGENT   기본 claude
+#   (root·create 는 branch-worktree 가 읽는다)
 set -euo pipefail
 
 die() { echo "worktree-handoff: $*" >&2; exit 1; }
+note() { echo "worktree-handoff: $*" >&2; }
+usage() { sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; }
 STATE=${XDG_STATE_HOME:-$HOME/.local/state}/worktree-handoff
 CONFIG=${XDG_CONFIG_HOME:-$HOME/.config}/worktree-handoff/config
 
-usage() { sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; }
-
-# --- 설정 ----------------------------------------------------------------------
-# 파일은 실행하지 않고 key=value 만 읽는다. 값 양끝의 따옴표는 벗긴다
+# 설정 파일은 실행하지 않고 key=value 만 읽는다. 값 양끝의 따옴표는 벗긴다 (branch-worktree 의 conf 와 같다)
 conf() {   # conf <키>
   [ -f "$CONFIG" ] || return 0
   sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$CONFIG" | tail -n 1 |
     sed -e 's/[[:space:]]*$//' -e "s/^\"\(.*\)\"$/\1/" -e "s/^'\(.*\)'$/\1/"
 }
-expand_home() { case $1 in "~") echo "$HOME" ;; "~/"*) echo "$HOME/${1#\~/}" ;; *) echo "$1" ;; esac; }
+sq() { printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")"; }   # 작은따옴표 인용: sh·bash·zsh·fish 모두 같은 뜻
 
-root=${WORKTREE_HANDOFF_ROOT:-$(conf root)}
-root=$(expand_home "${root:-${XDG_DATA_HOME:-$HOME/.local/share}/worktree-handoff/worktrees}")
-# 상대 경로는 기준이 모호하고(호출 위치? 메인 체크아웃?), 아래에서 cd 한 뒤 런처·출력 경로가 틀어지므로 받지 않는다
-case $root in /*) ;; *) die "root 는 절대 경로나 ~ 로 시작해야 합니다: $root" ;; esac
+# === 도구 어댑터 ================================================================
+# 도구마다 다른 것은 이 절이 전부다. 아래 본문은 도구 이름을 모르고 여기서 정한 변수만 본다.
+#
+#   agent_<도구> caps      할 수 있는 것. 아무것도 바꾸지 않는다
+#       cli         실행 파일                  cli_label   오류 메시지에 쓸 이름
+#       no_fork     fork 를 못 하는 까닭 (비어 있으면 된다)
+#       no_bg       bg 로 못 띄우는 까닭 (비어 있으면 된다)      bg_flag  bg 로 띄울 때 런처에 줄 옵션
+#       sid         fork 할 세션 ID 의 기본값 (--session 이 없을 때)
+#   agent_<도구> commands  $mode·$sid·$name·$pf 가 정해진 뒤에 부른다
+#       pre_line    런처에서 실행 줄 앞에 둘 줄 (없으면 빈 값). 있으면 bg 는 분리해서 띄운다
+#       exec_note   런처에 남길 주석            exec_line   런처의 실행 줄. "$@" 에 띄우는 쪽의 옵션이 들어간다
+#       session     출력의 session: 값          resume_cmd  다시 여는 명령
+#       attach_cmd  bg 세션에 붙는 명령
+agent_claude() {
+  case $1 in
+    caps)
+      cli=claude; cli_label=claude; no_fork=""; no_bg=""; bg_flag=--bg
+      sid=${sid:-${CLAUDE_CODE_SESSION_ID:-}} ;;
+    commands)
+      local resume=""
+      pre_line=""
+      if [ "$mode" = fork ]; then
+        # 스킬에서 불렸을 때 원본 세션의 Bash 호출 결과가 기록에 써질 때까지 기다린다
+        pre_line="sleep 2"; resume="--resume $sid --fork-session "
+      fi
+      exec_note="# -n: claude --resume <세션 이름> 으로 바로 열고, /resume 피커에서 브랜치로 찾게. -- : 첫 메시지가 - 로 시작해도 옵션으로 읽히지 않게"
+      exec_line="exec claude \"\$@\" ${resume}-n $(sq "$name") -- \"\$(cat $(sq "$pf"))\""
+      session=$name
+      resume_cmd="claude --resume $(sq "$name")"
+      attach_cmd="claude attach $(sq "$name")" ;;
+  esac
+}
+agent_cursor() {
+  case $1 in
+    caps)
+      # 지금 이름은 agent, 옛 이름은 cursor-agent. agent 가 없을 때만 옛 이름을 쓴다
+      cli=agent; cli_label="Cursor CLI(agent)"
+      if ! command -v agent >/dev/null && command -v cursor-agent >/dev/null; then cli=cursor-agent; fi
+      no_fork="Cursor CLI 에는 대화를 포크하는 옵션이 없습니다. fresh 로 넘기세요 (Claude 세션을 포크하려면 --agent claude)"
+      no_bg="agent persist 는 터미널이 있어야 해서 스크립트가 띄울 수 없습니다"; bg_flag="" ;;
+    commands)
+      # 세션 이름 옵션이 없다. -- 가 없으면 - 로 시작하는 첫 메시지를 옵션으로 읽고 "unknown option" 으로 끝난다
+      pre_line=""
+      exec_note="# -- : 첫 메시지가 - 로 시작해도 옵션으로 읽히지 않게"
+      exec_line="exec $cli \"\$@\" -- \"\$(cat $(sq "$pf"))\""
+      session="Cursor CLI (이름 없음)"
+      resume_cmd="$cli resume"   # 그 워크트리의 가장 최근 세션. 고르려면 $cli ls
+      attach_cmd="" ;;
+  esac
+}
+
+# === 인자와 설정 ================================================================
 open=${WORKTREE_HANDOFF_OPEN:-$(conf open)}; open=${open:-auto}
-create=${WORKTREE_HANDOFF_CREATE:-$(conf create)}; create=${create:-git}
 agent=${WORKTREE_HANDOFF_AGENT:-$(conf agent)}; agent=${agent:-claude}
-
-# --- 인자 ----------------------------------------------------------------------
 case ${1:-} in
-  fork|fresh|path) mode=$1; shift ;;
+  fork|fresh) mode=$1; shift ;;
   -h|--help) usage; exit 0 ;;
   "") usage >&2; exit 1 ;;
-  *) die "동작을 먼저 주세요: fork | fresh | path (받은 것: $1)" ;;
+  *) die "동작을 먼저 주세요: fork | fresh (받은 것: $1)" ;;
 esac
-sid=${WORKTREE_HANDOFF_SESSION:-${CLAUDE_CODE_SESSION_ID:-}}; base=""; prompt_file=""; branch=""; stack_mode=""
+sid=""; base=""; prompt_file=""; branch=""; stack_mode=""
 open_arg=""   # --open 을 명령줄에서 받았는가 (도구가 못 하는 방식이면 명령줄 값은 거절하고 설정 값은 auto 로 바꾼다)
 while [ $# -gt 0 ]; do
   case $1 in --session|--base|--prompt-file|--open|--agent) [ $# -ge 2 ] || die "$1 에 값이 없습니다" ;; esac
@@ -101,180 +133,76 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$branch" ] || die "브랜치 이름을 주세요"
 case $open in auto|bg|tmux|none) ;; *) die "--open 은 auto | bg | tmux | none 중 하나입니다: $open" ;; esac
-case $create in git|tmux-dev) ;; *) die "create 는 git | tmux-dev 중 하나입니다: $create" ;; esac
 case $agent in claude|cursor) ;; *) die "--agent 는 claude | cursor 중 하나입니다: $agent" ;; esac
 
-# --- 세션을 여는 도구 ------------------------------------------------------------
-# 도구마다 다른 것은 두 곳에서만 가른다: 여기(할 수 있는 것)와 아래 "런처"(명령).
-# no_fork·no_bg 는 그 도구가 못 하는 까닭이다. 비어 있으면 할 수 있다
-case $agent in
-  claude) cli=claude; cli_label=claude; no_fork=""; no_bg="" ;;
-  cursor)
-    # 지금 이름은 agent, 옛 이름은 cursor-agent. agent 가 없을 때만 옛 이름을 쓴다
-    cli=agent; cli_label="Cursor CLI(agent)"
-    if ! command -v agent >/dev/null && command -v cursor-agent >/dev/null; then cli=cursor-agent; fi
-    no_fork="Cursor CLI 에는 대화를 포크하는 옵션이 없습니다"
-    no_bg="agent persist 는 터미널이 있어야 해서 스크립트가 띄울 수 없습니다" ;;
-esac
-
-# 맞지 않는 조합은 아무것도 만들기 전에 거절한다
-[ "$mode" != fork ] || [ -z "$no_fork" ] || die "$no_fork. fresh 로 넘기세요 (Claude 세션을 포크하려면 --agent claude)"
+# === 확인: 아무것도 바꾸지 않는다 ================================================
+"agent_$agent" caps
+[ "$mode" != fork ] || [ -z "$no_fork" ] || die "$no_fork"
 case $mode in
   fork)
     [ -n "$sid" ] || die "세션 ID 를 주세요 (--session <id>)"
     [[ $sid =~ ^[A-Za-z0-9-]+$ ]] || die "세션 ID 형식이 아닙니다: $sid" ;;
   fresh) [ -n "$prompt_file" ] || die "fresh 에는 첫 메시지가 필요합니다 (--prompt-file <파일|->)" ;;
-  path) [ -z "$prompt_file" ] || die "path 는 첫 메시지를 받지 않습니다" ;;
 esac
-if [ "$mode" != path ]; then
-  if [ "$open" = bg ] && [ -n "$no_bg" ]; then
-    [ -z "$open_arg" ] || die "$agent 세션은 bg 로 띄울 수 없습니다 ($no_bg). --open tmux 나 none 을 쓰세요"
-    echo "worktree-handoff: 설정의 open=bg 는 $agent 세션에 쓸 수 없어 auto 로 띄웁니다" >&2
-    open=auto
-  fi
-  if [ "$open" = auto ]; then
-    if [ -n "${TMUX:-}" ]; then open=tmux
-    elif [ -z "$no_bg" ]; then open=bg
-    else open=none
-    fi
-  fi
-  [ "$open" != tmux ] || [ -n "${TMUX:-}" ] || die "--open tmux 는 tmux 안에서만 됩니다 (bg 나 none 을 쓰세요)"
-  [ "$open" = none ] || command -v "$cli" >/dev/null || die "$cli_label 가 PATH 에 없습니다"
+if [ "$open" = bg ] && [ -n "$no_bg" ]; then
+  [ -z "$open_arg" ] || die "$agent 세션은 bg 로 띄울 수 없습니다 ($no_bg). --open tmux 나 none 을 쓰세요"
+  note "설정의 open=bg 는 $agent 세션에 쓸 수 없어 auto 로 띄웁니다"
+  open=auto
 fi
+if [ "$open" = auto ]; then
+  if [ -n "${TMUX:-}" ]; then open=tmux
+  elif [ -z "$no_bg" ]; then open=bg
+  else open=none
+  fi
+fi
+[ "$open" != tmux ] || [ -n "${TMUX:-}" ] || die "--open tmux 는 tmux 안에서만 됩니다 (bg 나 none 을 쓰세요)"
+[ "$open" = none ] || command -v "$cli" >/dev/null || die "$cli_label 가 PATH 에 없습니다"
 git check-ref-format --branch "$branch" >/dev/null 2>&1 || die "브랜치 이름으로 쓸 수 없습니다: $branch"
-
-# 아래에서 cd 하므로 상대 경로를 절대 경로로. 워크트리를 만든 뒤에 실패하지 않게 미리 확인한다
 if [ -n "$prompt_file" ] && [ "$prompt_file" != - ]; then
   [ -r "$prompt_file" ] && [ ! -d "$prompt_file" ] || die "프롬프트 파일을 읽을 수 없습니다: $prompt_file"
-  prompt_file="$(cd "$(dirname "$prompt_file")" && pwd)/$(basename "$prompt_file")"
 fi
+# 워크트리를 확보해 줄 branch-worktree: 이 스크립트 옆에 있다. 없으면 PATH 에서 찾는다
+bw="$(cd "$(dirname "$0")" && pwd)/branch-worktree"
+[ -x "$bw" ] || bw=$(command -v branch-worktree || true)
+[ -n "$bw" ] || die "branch-worktree 를 찾지 못했습니다 (worktree-handoff 와 같은 디렉토리에 있어야 합니다)"
+here=$(git rev-parse --show-toplevel 2>/dev/null || true)   # 이 세션이 있는 체크아웃
 
-# pipefail 이라 저장소 밖에서 git 이 실패하면 대입에서 조용히 끝난다. || true 로 die 까지 가게 한다
-main=$(git worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p' || true)
-[ -n "$main" ] || die "git 저장소 안에서 실행하세요"
-# 첫 항목이 bare 면 "메인 체크아웃"이 없다 (bare + 워크트리 구성)
-[ -z "$(git worktree list --porcelain | awk '/^$/{exit} /^bare$/{print}')" ] || die "bare 저장소는 지원하지 않습니다"
-here=$(git rev-parse --show-toplevel 2>/dev/null || true)   # 호출한 체크아웃 (cd 전에)
-cd "$main"
-
-default_base() {   # origin/HEAD 가 가리키는 브랜치가 로컬에 있으면 그것, 아니면 main/master, 아니면 메인의 HEAD
-  local b
-  b=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) && b=${b#origin/} &&
-    git show-ref --verify --quiet "refs/heads/$b" && { echo "$b"; return; }
-  for b in main master; do git show-ref --verify --quiet "refs/heads/$b" && { echo "$b"; return; }; done
-  echo HEAD
-}
-sq() { printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")"; }   # 작은따옴표 인용: sh·bash·zsh·fish 모두 같은 뜻
-
-# --- 첫 메시지 읽기 ------------------------------------------------------------
-# 워크트리를 만들기 전에 읽어서, 비어 있으면 아무것도 만들지 않고 끝낸다
-pf=""
-if [ "$mode" != path ]; then
-  mkdir -p "$STATE/prompt"
-  find "$STATE/prompt" -type f -mtime +7 -delete 2>/dev/null || true
-  # 세션은 나중에 이 파일을 읽으므로, 연달아 불려도 덮어쓰지 않게 호출마다 새 파일
-  pf=$(mktemp "$STATE/prompt/${branch//\//-}.XXXXXX")
-  if [ "$prompt_file" = - ]; then cat >"$pf"
-  elif [ -n "$prompt_file" ]; then cat -- "$prompt_file" >"$pf"
-  fi
-  # 공백뿐이면 빈 것으로 본다 (fork 는 기본 문구로, fresh 는 오류)
-  grep -q '[^[:space:]]' "$pf" || : >"$pf"
-  [ "$mode" != fresh ] || [ -s "$pf" ] || { rm -f "$pf"; die "첫 메시지가 비어 있습니다"; }
+# === 첫 메시지 읽기 ==============================================================
+# 워크트리보다 먼저 읽어서, 비어 있으면 아무것도 만들지 않고 끝낸다. 세션은 나중에 이 파일을 읽으므로, 연달아 불려도
+# 덮어쓰지 않게 호출마다 새 파일로 둔다. 워크트리를 확보하기 전에 실패하면 지운다
+mkdir -p "$STATE/prompt"
+find "$STATE/prompt" -type f -mtime +7 -delete 2>/dev/null || true
+pf=$(mktemp "$STATE/prompt/${branch//\//-}.XXXXXX")
+trap 'rm -f "$pf"' EXIT
+if [ "$prompt_file" = - ]; then cat >"$pf"
+elif [ -n "$prompt_file" ]; then cat -- "$prompt_file" >"$pf"
 fi
+# 공백뿐이면 빈 것으로 본다 (fork 는 기본 문구로, fresh 는 오류)
+grep -q '[^[:space:]]' "$pf" || : >"$pf"
+[ "$mode" != fresh ] || [ -s "$pf" ] || die "첫 메시지가 비어 있습니다"
 
-# --- 워크트리 ------------------------------------------------------------------
-existing=$(git worktree list --porcelain | awk -v b="refs/heads/$branch" '
-  /^worktree /{p=substr($0,10)} $0=="branch " b {print p; exit}')
-wt=""; stack_cur=""
-# 스택 워크트리: 브랜치가 체크아웃돼 있지 않은데 그 브랜치를 조상으로 품은 워크트리 (기본 브랜치의 워크트리 제외).
-# 지금 체크아웃이 후보면 그것, 아니면 커밋 차이가 가장 적은(바로 위) 것
-if [ -z "$existing" ] && [ "$stack_mode" != --new-worktree ] &&
-   tip=$(git rev-parse -q --verify "refs/heads/$branch^{commit}" 2>/dev/null); then
-  defb=$(default_base); sw=""; swb=""; swn=""; others=()
-  while IFS=$(printf '\t') read -r p h b; do
-    [ -n "$p" ] && [ -d "$p" ] && [ -n "$h" ] || continue
-    if [ -n "$b" ] && { [ "$b" = "$defb" ] || [ "$b" = main ] || [ "$b" = master ]; }; then continue; fi
-    git merge-base --is-ancestor "$tip" "$h" 2>/dev/null || continue
-    n=$(git rev-list --count "$tip..$h"); others+=("$p")
-    if [ "$p" = "$here" ]; then sw=$p; swb=$b; swn=-1
-    elif [ "$swn" != -1 ] && { [ -z "$sw" ] || [ "$n" -lt "$swn" ]; }; then sw=$p; swb=$b; swn=$n; fi
-  done <<WTS
-$(git worktree list --porcelain | awk '
-  /^worktree /{p=substr($0,10); h=""; b=""} /^HEAD /{h=$2} /^branch /{b=substr($0,8); sub("^refs/heads/","",b)}
-  /^$/{if (p!="") print p "\t" h "\t" b; p=""} END{if (p!="") print p "\t" h "\t" b}')
-WTS
-  if [ -n "$sw" ]; then
-    swb=${swb:-detached HEAD}
-    if [ "$stack_mode" != --in-stack ]; then
-      msg="$branch 는 어디에도 체크아웃돼 있지 않지만 스택 워크트리 $sw (체크아웃: $swb) 에 들어 있습니다."
-      [ ${#others[@]} -le 1 ] || msg="$msg (그 브랜치를 품은 워크트리: ${others[*]})"
-      die "$msg
-  새 워크트리를 만들면 스택 워크트리에서 $branch 를 체크아웃할 수 없고 rebase --update-refs 도 $branch 를 옮기지 않습니다.
-  스택 워크트리를 쓰려면 --in-stack, 그래도 새로 만들려면 --new-worktree 를 붙이세요"
-    fi
-    [ "$sw" != "$main" ] || die "$branch 의 스택이 메인 체크아웃($swb)에 있습니다. 메인을 기본 브랜치로 돌리고 다시 하세요"
-    if [ "$sw" = "$here" ]; then
-      [ "$mode" = path ] && die "$branch 를 품은 스택 워크트리가 지금 이 체크아웃입니다. 옮길 곳이 없습니다 (여기서 고치면 됩니다)"
-      die "$branch 를 품은 스택 워크트리가 지금 이 세션이 있는 체크아웃입니다. 같은 트리를 두 세션이 고치게 되므로 넘기지 않습니다"
-    fi
-    wt=$sw; stack_cur=$swb
-  fi
+# === 워크트리 확보 ================================================================
+# branch-worktree 의 오류와 종료 코드는 그대로 내보낸다. 표준 입력은 위에서 다 읽었으니 넘기지 않는다
+ensured=$("$bw" ensure ${base:+--base "$base"} ${stack_mode:+"$stack_mode"} -- "$branch" </dev/null) || exit $?
+wt=$(sed -n 's/^worktree: //p' <<<"$ensured")
+stack_cur=$(sed -n 's/^stack: //p' <<<"$ensured")
+main=$(sed -n 's/^main: //p' <<<"$ensured")
+[ -n "$wt" ] && [ -d "$wt" ] || die "branch-worktree 가 워크트리를 알려 주지 않았습니다"
+# 한 작업 트리는 한 세션만 고친다. 이 세션이 있는 체크아웃으로는 넘기지 않는다 (이 경우 branch-worktree 는 만든 것이 없다)
+if [ "$wt" = "$here" ]; then
+  [ -z "$stack_cur" ] || die "$branch 를 품은 스택 워크트리가 지금 이 세션이 있는 체크아웃입니다. 같은 트리를 두 세션이 고치게 되므로 넘기지 않습니다"
+  die "$branch 는 지금 이 세션이 있는 체크아웃입니다. 같은 트리를 두 세션이 고치게 되므로 넘기지 않습니다"
 fi
-[ "$stack_mode" != --in-stack ] || [ -n "$existing" ] || [ -n "$wt" ] ||
-  die "--in-stack: $branch 를 품은 스택 워크트리가 없습니다"
-if [ -n "$existing" ]; then
-  [ "$existing" != "$main" ] || die "$branch 는 메인 체크아웃에 체크아웃돼 있습니다. 메인을 기본 브랜치로 돌리고 다시 하세요"
-  if [ "$existing" = "$here" ]; then
-    [ "$mode" = path ] && die "$branch 는 지금 이 체크아웃입니다. 옮길 곳이 없습니다"
-    die "$branch 는 지금 이 세션이 있는 체크아웃입니다. 같은 트리를 두 세션이 고치게 되므로 넘기지 않습니다"
-  fi
-  [ -d "$existing" ] || die "$branch 의 워크트리($existing)가 없습니다. git worktree prune 후 다시 하세요"
-  wt=$existing
-elif [ -n "$wt" ]; then
-  :   # 스택 워크트리
-elif [ "$create" = tmux-dev ]; then
-  td=$(command -v tmux-dev 2>/dev/null || true)
-  [ -n "$td" ] || { [ -x "$HOME/.config/tmux/plugins/tmux-dev/bin/tmux-dev" ] && td=$HOME/.config/tmux/plugins/tmux-dev/bin/tmux-dev; } || true
-  if [ -z "$td" ]; then
-    echo "worktree-handoff: tmux-dev 가 없어 git 으로 만듭니다" >&2
-  elif ! command -v jq >/dev/null; then
-    echo "worktree-handoff: jq 가 없어 git 으로 만듭니다" >&2
-  else
-    wt=$(jq -nc --arg n "$branch" --arg c "$main" '{name:$n,cwd:$c}' | "$td" worktree ${base:+--base "$base"} --hook-create) || wt=""
-    # tmux-dev 가 거부하는 구성(서브모듈 등)이면 git 으로 만든다
-    [ -n "$wt" ] && [ -d "$wt" ] || { echo "worktree-handoff: tmux-dev 가 워크트리를 만들지 못해 git 으로 만듭니다" >&2; wt=""; }
-  fi
-fi
-if [ -z "$wt" ]; then
-  wt="$root/$(basename "$main")/${branch//\//-}"
-  [ ! -e "$wt" ] || die "$wt 가 이미 있습니다 (같은 이름의 다른 저장소이거나 남은 디렉토리). 지우거나 다른 브랜치 이름을 쓰세요"
-  mkdir -p "$(dirname "$wt")"
-  remotes=$(git for-each-ref --format='%(refname)' "refs/remotes/*/$branch" | wc -l)
-  if git show-ref --verify --quiet "refs/heads/$branch"; then
-    git worktree add "$wt" "$branch" >&2
-  elif [ -z "$base" ] && [ "$remotes" -eq 1 ]; then
-    git worktree add "$wt" "$branch" >&2          # 원격 하나에만 있으면 git 이 추적 브랜치를 만든다
-  else
-    git worktree add -b "$branch" "$wt" "${base:-$(default_base)}" >&2
-  fi
-fi
+trap - EXIT   # 여기부터는 워크트리가 있다. 실패해도 첫 메시지와 런처를 남겨 run: 줄로 이어 갈 수 있게 한다
 
-# --- path: 지금 세션을 옮기는 안내만 -----------------------------------------
-if [ "$mode" = path ]; then
-  echo "worktree: $wt"
-  echo "branch:   $branch${stack_cur:+ (스택 워크트리, 체크아웃: $stack_cur)}"
-  echo "move:     /cd $wt"   # /cd 는 셸이 아니라 따옴표를 경로로 읽는다. 인용하지 않는다
-  exit 0
-fi
-
-# --- 첫 메시지 (포크의 기본 문구) ----------------------------------------------
-stack_note() {
-  [ -n "$stack_cur" ] || return 0
-  echo "- 이 워크트리에는 $stack_cur 가 체크아웃돼 있고 $branch 는 그 아래에 쌓인 브랜치다. 체크아웃을 바꾸지 말고"
-  echo "  $branch 의 커밋을 겨냥한 fixup 커밋을 만든 뒤 git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base <$branch 의 base>"
-  echo "  로 스택 전체를 다시 쌓는다."
-}
-if [ ! -s "$pf" ]; then
+# === 런처 쓰기 ====================================================================
+if [ ! -s "$pf" ]; then   # 포크의 기본 첫 메시지
+  stack_note() {
+    [ -n "$stack_cur" ] || return 0
+    echo "- 이 워크트리에는 $stack_cur 가 체크아웃돼 있고 $branch 는 그 아래에 쌓인 브랜치다. 체크아웃을 바꾸지 말고"
+    echo "  $branch 의 커밋을 겨냥한 fixup 커밋을 만든 뒤 git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base <$branch 의 base>"
+    echo "  로 스택 전체를 다시 쌓는다."
+  }
   cat >"$pf" <<EOF
 너는 원본 대화에서 포크된 구현 세션이다. 위 대화의 /handoff 지시와 "이 세션은 워크트리를 편집하지 않는다"는
 원본 세션에 대한 것이다. 이 세션은 아래 워크트리에서 구현한다.
@@ -284,87 +212,71 @@ $(stack_note)
 지금까지 합의한 범위를 짧게 요약한 뒤 시작해.
 EOF
 fi
-
-# 세션 이름: --resume <이름> 은 정확히 일치해야 바로 열리므로 시각을 붙여 겹치지 않게 한다
+# 세션 이름: 겹치지 않게 분 단위 시각을 붙인다 (이름으로 다시 열 때 정확히 하나만 일치해야 한다)
 name="$branch@$(date +%m%d-%H%M)"
-
-# --- 런처 ----------------------------------------------------------------------
-# 어느 방식이든 같은 sh 런처를 돌린다. 사용자 셸(bash/zsh/fish …)의 문법에 기대지 않는다
-if [ "$mode" = fork ]; then
-  # sleep: 스킬에서 불렸을 때 원본 세션의 Bash 호출 결과가 기록에 써질 때까지 기다린다
-  wait_line="sleep 2"; resume="--resume $sid --fork-session "
-else
-  wait_line=""; resume=""
-fi
-# 도구마다 다른 명령: 런처의 실행 줄, 출력의 session: 과 resume: 줄.
-# 런처에 준 인자("$@")는 도구의 옵션 앞에 붙는다 (bg 는 --bg). 직접 돌리면 지금 터미널의 대화형 세션이 된다
-case $agent in
-  claude)
-    exec_note="# -n: claude --resume <세션 이름> 으로 바로 열고, /resume 피커에서 브랜치로 찾게. -- : 첫 메시지가 - 로 시작해도 옵션으로 읽히지 않게"
-    exec_line="exec claude \"\$@\" ${resume}-n $(sq "$name") -- \"\$(cat $(sq "$pf"))\""
-    session_label=$name
-    resume_cmd="claude --resume $(sq "$name")" ;;
-  cursor)
-    # 세션 이름 옵션이 없다. -- 가 없으면 - 로 시작하는 첫 메시지를 옵션으로 읽고 "unknown option" 으로 끝난다
-    exec_note="# -- : 첫 메시지가 - 로 시작해도 옵션으로 읽히지 않게"
-    exec_line="exec $cli \"\$@\" -- \"\$(cat $(sq "$pf"))\""
-    session_label="Cursor CLI (이름 없음)"
-    resume_cmd="$cli resume" ;;   # 그 워크트리의 가장 최근 세션. 고르려면 $cli ls
-esac
+"agent_$agent" commands
+# 어느 방식이든 같은 sh 런처를 돌린다. 사용자 셸(bash/zsh/fish …)의 문법에 기대지 않는다.
+# 런처에 준 인자("$@")는 도구의 옵션 앞에 붙는다. 직접 돌리면 지금 터미널의 대화형 세션이 된다
 cat >"$pf.sh" <<LAUNCHER
 #!/bin/sh
-$wait_line
+$pre_line
 # 셸 rc 가 디렉토리를 바꿔도 워크트리에서 시작하게
 cd $(sq "$wt") || exit 1
 $exec_note
 $exec_line
 LAUNCHER
 
-# --- 띄우기 --------------------------------------------------------------------
+# === 띄우기 ======================================================================
+# 실패하면 failed 와 where 만 정하고 계속 간다. 아래 안내가 run: 줄을 내준다
 where=""; failed=""
-case $open in
-  bg)
-    if [ "$mode" = fork ]; then
-      # 포크는 sleep 동안 이 스크립트(와 원본의 Bash 호출)가 먼저 끝나야 하므로 분리해서 돌린다. 실패는 로그로만 보인다.
-      # setsid: 호출한 쪽(Claude 의 Bash 도구 등)이 끝나며 프로세스 그룹을 정리해도 살아남게 (macOS 엔 없어 nohup 만)
-      if command -v setsid >/dev/null; then setsid nohup sh "$pf.sh" --bg >"$pf.log" 2>&1 </dev/null &
-      else nohup sh "$pf.sh" --bg >"$pf.log" 2>&1 </dev/null &
-      fi
-      where="background, 2초 뒤 시작 (실패하면 로그에 남는다: $pf.log)"
-    elif sh "$pf.sh" --bg >"$pf.log" 2>&1 </dev/null; then
-      where="background"     # --bg 는 띄우고 바로 돌아온다. 실패(작업 폴더 신뢰 등)를 여기서 알 수 있다
-    else
-      sed 's/^/claude: /' "$pf.log" >&2
-      failed=1; where="background 실패 (위 claude: 줄). 아래 run: 줄을 터미널에서 직접 실행하세요"
-    fi ;;
-  tmux)
-    # 대상 세션은 호출한 패널의 세션. -t 없이 두면 tmux 가 "가장 최근 세션"을 골라 다른 저장소에 열 수 있다
-    sess=$(tmux display -p ${TMUX_PANE:+-t "$TMUX_PANE"} '#{session_id}')
-    # 그 워크트리의 윈도우가 이미 있으면 거기에 새 패널 (기존 패널에서 무엇이 돌지 모르므로 키를 보내지 않는다).
-    # 없거나 자리가 없어 나눌 수 없으면 새 윈도우. 어느 쪽이든 -d 라 지금 보는 화면은 그대로다
-    tab=$(printf '\t')
-    wid=$(tmux list-windows -t "$sess" -F "#{window_id}$tab#{@worktree}" | awk -F'\t' -v p="$wt" '$2==p{print $1; exit}')
-    pane=""
-    # -c 와 -n 은 tmux 형식 문자열로 해석된다. 경로·브랜치의 # 을 ## 로 (안 하면 fix/#H 같은 이름이 엉뚱한 디렉토리가 된다)
-    fmt_esc() { printf %s "$1" | sed 's/#/##/g'; }
-    wt_esc=$(fmt_esc "$wt")
-    [ -z "$wid" ] || pane=$(tmux split-window -d -h -P -F '#{pane_id}' -t "$wid" -c "$wt_esc" 2>/dev/null) || pane=""
-    if [ -z "$pane" ]; then
-      pane=$(tmux new-window -d -P -F '#{pane_id}' -t "$sess:" -c "$wt_esc" -n "$(fmt_esc "$branch")")
-      tmux set -w -t "$pane" @worktree "$wt"    # tmux-dev 피커가 이 윈도우를 워크트리로 인식한다 (없어도 무해)
+open_bg() {
+  if [ -n "$pre_line" ]; then
+    # 런처가 기다렸다 시작하므로, 그동안 이 스크립트(와 부른 쪽의 Bash 호출)가 먼저 끝나게 분리해서 돌린다. 실패는 로그로만 보인다.
+    # setsid: 부른 쪽이 끝나며 프로세스 그룹을 정리해도 살아남게 (macOS 엔 없어 nohup 만)
+    if command -v setsid >/dev/null; then setsid nohup sh "$pf.sh" $bg_flag >"$pf.log" 2>&1 </dev/null &
+    else nohup sh "$pf.sh" $bg_flag >"$pf.log" 2>&1 </dev/null &
     fi
-    # -l: 글자 그대로 입력 (키 이름으로 해석하지 않게). Enter 는 따로
-    tmux send-keys -l -t "$pane" "sh $(sq "$pf.sh")"
-    tmux send-keys -t "$pane" Enter
-    where="tmux $(tmux display -p -t "$pane" '#S:#I (#W)')" ;;
+    where="background, 2초 뒤 시작 (실패하면 로그에 남는다: $pf.log)"
+  elif sh "$pf.sh" $bg_flag >"$pf.log" 2>&1 </dev/null; then
+    where="background"     # 띄우고 바로 돌아온다. 실패(작업 폴더 신뢰 등)를 여기서 알 수 있다
+  else
+    sed "s/^/$cli: /" "$pf.log" >&2
+    failed=1; where="background 실패 (위 $cli: 줄). 아래 run: 줄을 터미널에서 직접 실행하세요"
+  fi
+}
+open_tmux() {
+  local sess tab wid pane="" wt_esc
+  # 대상 세션은 호출한 패널의 세션. -t 없이 두면 tmux 가 "가장 최근 세션"을 골라 다른 저장소에 열 수 있다
+  sess=$(tmux display -p ${TMUX_PANE:+-t "$TMUX_PANE"} '#{session_id}') || return 1
+  # 그 워크트리의 윈도우가 이미 있으면 거기에 새 패널 (기존 패널에서 무엇이 돌지 모르므로 키를 보내지 않는다).
+  # 없거나 자리가 없어 나눌 수 없으면 새 윈도우. 어느 쪽이든 -d 라 지금 보는 화면은 그대로다
+  tab=$(printf '\t')
+  wid=$(tmux list-windows -t "$sess" -F "#{window_id}$tab#{@worktree}" | awk -F'\t' -v p="$wt" '$2==p{print $1; exit}') || return 1
+  # -c 와 -n 은 tmux 형식 문자열로 해석된다. 경로·브랜치의 # 을 ## 로 (안 하면 fix/#H 같은 이름이 엉뚱한 디렉토리가 된다)
+  fmt_esc() { printf %s "$1" | sed 's/#/##/g'; }
+  wt_esc=$(fmt_esc "$wt")
+  [ -z "$wid" ] || pane=$(tmux split-window -d -h -P -F '#{pane_id}' -t "$wid" -c "$wt_esc" 2>/dev/null) || pane=""
+  if [ -z "$pane" ]; then
+    pane=$(tmux new-window -d -P -F '#{pane_id}' -t "$sess:" -c "$wt_esc" -n "$(fmt_esc "$branch")") || return 1
+    tmux set -w -t "$pane" @worktree "$wt" || return 1   # tmux-dev 피커가 이 윈도우를 워크트리로 인식한다 (없어도 무해)
+  fi
+  # -l: 글자 그대로 입력 (키 이름으로 해석하지 않게). Enter 는 따로
+  tmux send-keys -l -t "$pane" "sh $(sq "$pf.sh")" || return 1
+  tmux send-keys -t "$pane" Enter || return 1
+  where="tmux $(tmux display -p -t "$pane" '#S:#I (#W)')"
+}
+case $open in
+  bg) open_bg ;;
+  tmux) open_tmux || { failed=1; where="tmux 실패 (위 오류). 아래 run: 줄을 터미널에서 직접 실행하세요"; } ;;
   none) where="none (아래 run: 줄을 직접 실행)" ;;
 esac
 
+# === 안내 ========================================================================
 echo "worktree: $wt"
 echo "branch:   $branch${stack_cur:+ (스택 워크트리, 체크아웃: $stack_cur)}"
-echo "session:  $session_label"
+echo "session:  $session"
 echo "open:     $where"
-[ -n "$failed" ] || [ "$open" != bg ] || echo "attach:   claude attach $(sq "$name")"   # bg 는 claude 뿐
+[ -n "$failed" ] || [ "$open" != bg ] || echo "attach:   $attach_cmd"
 [ -z "$failed" ] && [ "$open" != none ] || echo "run:      sh $(sq "$pf.sh")"
 echo "resume:   cd $(sq "$wt") && $resume_cmd"
 [ -z "$failed" ]
