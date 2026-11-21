@@ -1,7 +1,7 @@
 ---
 name: handoff
-description: 대화로 작업 범위가 정리돼 그 작업을 별도 세션·워크트리에서 진행할 때, 대화를 포크하거나 작업 지시서를 쓴 새 세션을 브랜치 워크트리에 띄우고 들어가는 명령을 알려 준다. 사용자가 "따로 세션에서 하자", "이거 넘겨줘" 처럼 원하거나 /jw:handoff 로 부를 때 쓴다. 내가 판단해 먼저 제안할 수도 있지만 실행 전에는 반드시 사용자 확인을 받는다. start_session 도구가 있는 환경(Claude 데스크톱 앱)에서는 이 스킬 대신 그 도구를 쓴다.
-argument-hint: "[<브랜치>] [fork|fresh] [--base <ref>] [--in-stack|--new-worktree] [추가 지시]"
+description: 대화로 작업 범위가 정리돼 그 작업을 별도 세션·워크트리에서 진행할 때, 대화를 포크하거나 작업 지시서를 쓴 새 세션을 브랜치 워크트리에 띄우고 들어가는 명령을 알려 준다. 사용자가 "따로 세션에서 하자", "이거 넘겨줘" 처럼 원하거나 /jw:handoff 로 부를 때 쓴다. 내가 판단해 먼저 제안할 수도 있지만 실행 전에는 반드시 사용자 확인을 받는다. start_session 도구가 있는 환경(Claude 데스크톱 앱)에서는 이 스킬 대신 그 도구를 쓴다 (Cursor 세션으로 넘길 때는 이 스킬).
+argument-hint: "[<브랜치>] [fork|fresh] [--agent claude|cursor] [--base <ref>] [--in-stack|--new-worktree] [추가 지시]"
 allowed-tools:
   - Bash(worktree-handoff:*)
   - Bash(${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff *)
@@ -11,20 +11,21 @@ allowed-tools:
 설계와 질의를 계속한다. 워크트리와 스택에 관한 원칙은 사용자 규칙(`worktree-workflow`)을 따른다.
 
 `start_session` 도구가 보이면 이 스킬을 쓰지 말고 그 도구로 넘긴다 (원본과 연결되고 보고가 돌아온다).
-
-어느 도구의 세션을 열지는 스크립트가 부른 곳을 보고 정한다. Claude Code 에서 부르면 Claude 세션, Cursor 에서 부르면
-Cursor CLI 세션이다. 사용자가 다른 쪽을 말했을 때만 `--agent claude|cursor` 를 붙인다.
+그 도구는 Claude 세션만 연다. 사용자가 Cursor 세션으로 넘기라고 했으면 이 스킬을 쓴다.
 
 ## 1. 정하기
 
 인자(`$ARGUMENTS`)로 받은 것은 그대로 쓰고, 없는 것은 대화를 보고 정한다.
 
 - **브랜치**: 저장소의 이름 규칙을 따른다. 처음 보는 저장소면 `git branch -a` 로 관례를 본다.
+- **도구**: 새 세션을 여는 도구. `claude`(Claude Code) 또는 `cursor`(Cursor CLI).
+  - 기본은 지금 이 세션의 도구다. Claude Code 에서 일하고 있으면 `claude`, Cursor 에서 일하고 있으면 `cursor`.
+  - 사용자가 고르면 다른 쪽으로도 연다. 그때는 `fresh` 만 된다 (대화 기록은 다른 도구로 옮길 수 없다).
 - **방식**:
-  - `fork`: 대화를 통째로 복사한다. 시행착오·기각한 안까지 넘겨야 할 때. Claude 세션만 된다.
+  - `fork`: 대화를 통째로 복사한다. 시행착오·기각한 안까지 넘겨야 할 때. Claude Code 에서 `claude` 로 넘길 때만 된다.
   - `fresh`: 지시서 한 장으로 깨끗한 맥락에서 시작한다. 대화가 길거나 결론만 넘기면 될 때. 망설여지면 이쪽.
-  - Cursor 세션은 `fresh` 뿐이다 (Cursor CLI 에 대화를 포크하는 옵션이 없다). 거기서 fork 를 요청받으면 그렇다고
-    알리고, 넘겨야 할 시행착오까지 지시서에 담는 `fresh` 로 확인받는다.
+  - `fork` 가 안 되는 조합(도구가 `cursor` 이거나 지금 세션과 다른 도구)에서 fork 를 요청받으면 그렇다고 알리고,
+    넘겨야 할 시행착오까지 지시서에 담는 `fresh` 로 확인받는다.
 - **베이스**:
   - 서로 관련 없는 작업: 생략 (기본 브랜치).
   - 지금 브랜치 위에 쌓는 스택의 다음 단계: `--base <지금 브랜치>`. 지금 브랜치의 커밋이 끝나 있어야 한다.
@@ -38,10 +39,12 @@ Cursor CLI 세션이다. 사용자가 다른 쪽을 말했을 때만 `--agent cl
 
 ```
 브랜치: <이름>   베이스: <ref 또는 기본 브랜치>   방식: fork|fresh
+도구: <claude|cursor>   (<다른 쪽> 으로도 열 수 있다. 그때는 fresh)
 넘길 내용: <범위·첫 할 일 한두 줄>
 ```
 
-사용자가 고치면 반영해서 다시 보여 준다. 답이 없거나 애매하면 실행하지 않는다.
+사용자가 고치면 반영해서 다시 보여 준다. 도구를 바꿔 방식이 `fork` 에서 `fresh` 로 바뀌면 그것도 알린다.
+답이 없거나 애매하면 실행하지 않는다.
 
 ## 3. 실행
 
@@ -57,11 +60,12 @@ Cursor CLI 세션이다. 사용자가 다른 쪽을 말했을 때만 `--agent cl
      `git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base <대상 브랜치의 base>` 로 고친다는 것.
 2. 첫 메시지를 임시 파일로 쓴다 (scratchpad 가 있으면 거기, 없으면 `${TMPDIR:-/tmp}` 아래. 저장소 안에는 두지 않는다).
    heredoc 은 쓰지 않는다. 워크트리 세션에서는 heredoc 이 섞인 Bash 명령이 거절된다.
-3. 한 줄로 실행한다. 세션을 띄우는 방식은 스크립트가 정한다 (tmux 안이면 새 윈도우. 아니면 Claude 세션은 `claude --bg`,
+3. 한 줄로 실행한다. 확인받은 도구는 `--agent` 로 늘 넘긴다 (스크립트가 짐작하게 두지 않는다).
+   세션을 띄우는 방식은 스크립트가 정한다 (tmux 안이면 새 윈도우. 아니면 Claude 세션은 `claude --bg`,
    Cursor 세션은 띄우지 않고 `run:` 줄만 출력한다). 사용자가 방식을 말했을 때만 `--open bg|tmux|none` 을 붙인다
    (Cursor 세션에 `bg` 는 없다). fork 의 세션 ID 는 스크립트가 `$CLAUDE_CODE_SESSION_ID` 에서 읽는다.
    ```
-   ${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff <fork|fresh> --prompt-file <파일> [--base <ref>] [--in-stack|--new-worktree] -- <브랜치>
+   ${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff <fork|fresh> --agent <claude|cursor> --prompt-file <파일> [--base <ref>] [--in-stack|--new-worktree] -- <브랜치>
    ```
    위 경로에 스크립트가 없으면 PATH 의 `worktree-handoff` 를 부른다.
 4. 스크립트가 "스택 워크트리" 때문에 멈추면 오류를 보여 주고 묻는다.
