@@ -9,7 +9,7 @@
 | `/jw:pr-review-apply [수정 단위\|지적…] [--no-push] [--no-reply]` | pr-review-handle 의 수정 계획을 구현·커밋·푸시하고, 스레드마다 답글을 달고 해결 처리한다. 사용자만 부른다 |
 
 0.10.0 에서 handoff 가 Cursor CLI 세션도 열게 했다. Claude 와 Cursor 어느 쪽에서 부르든 돌고, 어느 도구로 열지는 확인 단계에서
-고른다. 세 스킬 모두 Cursor 에서도 스크립트를 찾도록 `bin/` 경로로 부른다 (아래 "Cursor 에서 쓰기").
+고른다 (아래 "세션을 여는 도구"). 세 스킬 모두 Cursor 에서도 스크립트를 찾도록 `bin/` 경로로 부른다 (아래 "Cursor 에서 쓰기").
 
 0.9.0 에서 pr-review-handle 이 지적마다 따로 수정안을 내는 대신 원인을 따진 수정 계획(공통 원인은 근거가 있을 때만 묶음)을 내고, 그 계획을 구현하고
 답글·해결까지 하는 `pr-review-apply` 와 `bin/pr-review-reply` 를 더했다 (아래 "pr-review-apply").
@@ -21,11 +21,12 @@
 
 ## 개념
 
-Claude 와 대화하다가 작업 방향이 정해지면 그 작업의 브랜치와 워크트리를 만들고, 그 워크트리에서 일할 세션을 준비한다.
+Claude 나 Cursor 와 대화하다가 작업 방향이 정해지면 그 작업의 브랜치와 워크트리를 만들고, 그 워크트리에서 일할 세션을 준비한다.
 
 ```
-워크트리 확보 ──▶ 세션 ─────────────────▶ 띄우기 ────────────────▶ 안내 출력
-(git worktree)   fork | fresh | (path)        bg | tmux | none           attach / run / resume / /cd
+워크트리 확보 ──▶ 세션 ─────────────────────────▶ 띄우기 ──────────▶ 안내 출력
+(git worktree)   방식: fork | fresh | (path)      bg | tmux | none    attach / run / resume / /cd
+                 도구: claude | cursor
 ```
 
 - **fork**: 대화를 포크한다. 시행착오·기각한 안까지 넘겨야 할 때.
@@ -37,18 +38,44 @@ Claude 와 대화하다가 작업 방향이 정해지면 그 작업의 브랜치
 
 tmux 는 필요 없다. tmux 안에서 부르면 워크트리의 윈도우를 열어 그 안에서 세션을 띄워 주는 것뿐이다.
 
+## 세션을 여는 도구 (`--agent`, fork·fresh)
+
+새 세션은 Claude Code(`claude`, 기본)나 Cursor CLI(`cursor`)로 연다. 도구마다 다른 것은 이 표가 전부다.
+
+| | `claude` | `cursor` |
+|---|---|---|
+| 실행 | `claude -n <이름> -- "<첫 메시지>"` | `agent -- "<첫 메시지>"` (`agent` 가 없으면 옛 이름 `cursor-agent`) |
+| fork | `--resume <id> --fork-session` | 안 된다. CLI 에 대화를 포크하는 옵션이 없다 (대화 안의 `/fork` 뿐) |
+| `--open bg` | `claude --bg` | 안 된다. `agent persist` 는 tmux 안에서는 그냥 `agent` 를 실행하고, 밖에서는 터미널이 있어야 한다 |
+| 세션 이름 | `<브랜치>@<MMDD-HHMM>` | 붙일 수 없다 |
+| `resume:` 줄 | `claude --resume <이름>` | `agent resume` (그 워크트리의 가장 최근 세션. 고르려면 `agent ls`) |
+
+스킬에서는 확인 단계의 `도구:` 줄에서 고른다. 기본은 스킬을 부른 세션의 도구이고, 확인받은 도구를 `--agent` 로 넘긴다.
+스크립트는 부른 곳이 어느 도구인지 짐작하지 않는다. `--agent` 가 없으면 설정의 `agent`, 그것도 없으면 `claude` 다.
+
+부른 곳과 여는 도구에 따라 되는 조합은 이렇다. 대화 기록은 다른 도구로 옮길 수 없어서 도구를 바꾸면 fresh 만 된다.
+
+| 지금 세션 → 여는 도구 | 방식 | tmux 밖에서 띄우면 |
+|---|---|---|
+| Claude Code → `claude` | fork · fresh | `claude --bg` |
+| Cursor → `claude` | fresh | `claude --bg` |
+| 어디서든 → `cursor` | fresh | 띄우지 않고 `run:` 줄 |
+
+안 되는 조합(`cursor` 의 fork 와 `--open bg`)은 스크립트가 워크트리를 만들기 전에 거절한다. 설정에서 온 `open=bg` 는 알림을 내고
+`auto` 로 띄운다.
+
 ## 세션을 띄우는 방식 (`--open`, fork·fresh)
 
 | 값 | 동작 | 들어가기 |
 |---|---|---|
-| `auto` (기본) | `$TMUX` 가 있으면 `tmux`, 없으면 `bg` (Cursor 세션은 `none`) | |
-| `bg` | 워크트리에서 `claude --bg` 로 백그라운드 세션을 띄운다. Claude 세션만 | `claude attach <세션 이름>` |
+| `auto` (기본) | `$TMUX` 가 있으면 `tmux`, 없으면 `bg`, `bg` 가 안 되는 도구면 `none` | |
+| `bg` | 워크트리에서 `claude --bg` 로 백그라운드 세션을 띄운다 (`claude` 만) | `claude attach <세션 이름>` |
 | `tmux` | 호출한 패널의 tmux 세션에 윈도우를 `-d` 로 열고 그 안에서 실행 | 그 윈도우로 이동 |
 | `none` | 띄우지 않는다 | 출력의 `run:` 줄을 원하는 터미널에서 실행 |
 
-어느 방식이든 대화형 세션이고 이름은 `<브랜치>@<MMDD-HHMM>` 이다. 출력의 `resume:` 줄
-(`cd <워크트리> && claude --resume <세션 이름>`)로 언제든 다시 연다. 이름을 잊었으면 그 워크트리에서
-`claude --resume <브랜치>` 로 검색한다.
+어느 방식이든 대화형 세션이다. 출력의 `resume:` 줄로 언제든 다시 연다. `claude` 세션은 이름이 `<브랜치>@<MMDD-HHMM>` 이고
+`cd <워크트리> && claude --resume <세션 이름>` 으로 연다. 이름을 잊었으면 그 워크트리에서 `claude --resume <브랜치>` 로 검색한다.
+아래는 `claude` 세션을 `bg` 로 띄운 출력이다.
 
 ```
 worktree: ~/.local/share/worktree-handoff/worktrees/dotfiles/feat-x
@@ -86,53 +113,17 @@ Cursor(데스크톱·CLI)는 설치된 Claude 플러그인을 `~/.claude/plugins
 `bin/` 을 PATH 에 넣어 주는 것은 Claude Code 뿐이라, 맨이름으로 부르면 Cursor 에서는 찾지 못한다. Claude Code 와 Cursor 모두
 플러그인 스킬 본문에서 이 변수를 설치 경로로 바꾼다. Claude Code 는 `allowed-tools` 에서도 바꾸므로 권한 프롬프트 없이 돈다.
 
-### 어느 도구로 열지
+실제 Cursor 세션에서 돌려 보지는 않았다. 번들 코드(CLI 2026.11.13, 데스크톱 3.31.11)와 가짜 `agent` 로 확인했다.
+확인하지 못한 것:
 
-스킬은 확인 단계에 `도구:` 줄을 보여 준다. 기본은 스킬을 부른 세션의 도구이고, 사용자가 거기서 다른 쪽으로 바꿀 수 있다
-(`/jw:handoff … --agent cursor` 처럼 처음부터 줘도 된다). 확인받은 도구는 스크립트에 `--agent` 로 넘긴다.
-
-| 부른 곳 → 여는 세션 | 방식 | tmux 밖이면 |
-|---|---|---|
-| Claude Code → Claude | fork · fresh | `claude --bg` |
-| Claude Code → Cursor | fresh | 띄우지 않고 `run:` 줄 |
-| Cursor → Cursor | fresh | 띄우지 않고 `run:` 줄 |
-| Cursor → Claude | fresh | `claude --bg` |
-
-도구를 바꿔 넘기는 것은 fresh 만 된다. 대화 기록은 다른 도구로 옮길 수 없다.
-
-스크립트를 직접 부르면서 `--agent` 를 주지 않으면 `auto` 다. 부른 곳을 환경 변수로 짐작한다.
-
-| 환경 변수 | 여는 세션 |
-|---|---|
-| `CLAUDE_CODE_SESSION_ID` 가 있음 (Claude Code 의 Bash 도구) | Claude |
-| 위가 없고 `CURSOR_AGENT` 가 있음 (Cursor 의 셸 도구) | Cursor CLI |
-| 둘 다 없음 (터미널에서 직접) | Claude |
-
-설정의 `agent` 와 `WORKTREE_HANDOFF_AGENT` 는 이 `auto` 대신 쓸 기본값이다. 스킬은 늘 `--agent` 를 넘기므로 스킬에는 적용되지 않는다.
-
-### Cursor 세션이 다른 점
-
-| | Claude | Cursor CLI |
-|---|---|---|
-| 실행 | `claude -n <이름> -- "<첫 메시지>"` | `agent -- "<첫 메시지>"` (`agent` 가 없으면 `cursor-agent`) |
-| fork | `--resume <id> --fork-session` | 없음. CLI 에 포크 옵션이 없어 거절한다 (대화 안의 `/fork` 뿐) |
-| `--open` | `bg` · `tmux` · `none` | `tmux` · `none`. `auto` 는 tmux 밖이면 `none` |
-| 세션 이름 | `<브랜치>@<MMDD-HHMM>` | 붙일 수 없다 |
-| `resume:` 줄 | `claude --resume <이름>` | `agent resume` (그 워크트리의 가장 최근 세션. 고르려면 `agent ls`) |
-
-- `bg` 가 없는 이유: `agent persist` 는 tmux 안에서는 그냥 `agent` 를 실행하고, 밖에서는 터미널이 있어야 해서 스크립트가 띄울 수
-  없다. `--open bg` 는 거절하고, 설정의 `open=bg` 는 알림을 내고 `auto` 로 띄운다.
-- 번들 코드(CLI 2026.11.13, 데스크톱 3.31.11)와 가짜 `agent` 로 확인한 것이고, 실제 Cursor 세션에서 돌려 보지는 않았다.
-  확인하지 못한 것:
-  - Cursor 의 셸 도구가 `TMUX`·`TMUX_PANE`·`CURSOR_AGENT` 를 스크립트까지 넘겨 주는지. `TMUX` 가 없으면 tmux 안에서도 윈도우를
-    열지 못하고 tmux 밖처럼 띄운다. `CURSOR_AGENT` 는 `--agent` 없이 스크립트를 직접 부를 때만 쓰인다. Cursor 에이전트에게
-    `env | grep -E '^(CURSOR_AGENT|TMUX)'` 를 시켜 보면 안다
-  - Cursor 의 셸 도구에서 띄운 `claude --bg` 세션이 그 명령이 끝난 뒤에도 살아 있는지 (Cursor → Claude, tmux 밖)
-  - 처음 보는 워크트리에서 신뢰 여부를 물은 뒤에도 첫 메시지가 이어지는지
-  - `agent resume` 이 고르는 "가장 최근 세션"이 그 워크트리로 한정되는지
-  - 스킬 이름에 `jw:` 가 붙지 않아 `/handoff` 로 불리는지, `allowed-tools` 를 읽지 않아 스크립트 실행 때 승인을 묻는지
-    (둘 다 3.30.8 데스크톱에서 본 것). 승인을 묻는다면 git·gh 명령을 여러 번 쓰는 pr-review 스킬은 명령마다 묻는다.
-    Cursor 의 허용 목록에 넣어야 줄어든다
+- Cursor 의 셸 도구가 `TMUX`·`TMUX_PANE` 을 스크립트까지 넘겨 주는지. 없으면 tmux 안에서도 윈도우를 열지 못하고 tmux 밖처럼
+  띄운다. Cursor 에이전트에게 `env | grep '^TMUX'` 를 시켜 보면 안다
+- Cursor 의 셸 도구에서 띄운 `claude --bg` 세션이 그 명령이 끝난 뒤에도 살아 있는지 (Cursor → `claude`, tmux 밖)
+- 처음 보는 워크트리에서 신뢰 여부를 물은 뒤에도 첫 메시지가 이어지는지
+- `agent resume` 이 고르는 "가장 최근 세션"이 그 워크트리로 한정되는지
+- 스킬 이름에 `jw:` 가 붙지 않아 `/handoff` 로 불리는지, `allowed-tools` 를 읽지 않아 스크립트 실행 때 승인을 묻는지
+  (둘 다 3.30.8 데스크톱에서 본 것). 승인을 묻는다면 git·gh 명령을 여러 번 쓰는 pr-review 스킬은 명령마다 묻는다.
+  Cursor 의 허용 목록에 넣어야 줄어든다
 
 ## 옮기기: path
 
@@ -189,7 +180,7 @@ git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base main
 | `root` | `WORKTREE_HANDOFF_ROOT` | `${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees` |
 | `open` | `WORKTREE_HANDOFF_OPEN` | `auto` |
 | `create` | `WORKTREE_HANDOFF_CREATE` | `git` |
-| `agent` | `WORKTREE_HANDOFF_AGENT` | `auto` |
+| `agent` | `WORKTREE_HANDOFF_AGENT` | `claude` |
 
 ```ini
 root=~/dev/worktrees
@@ -222,11 +213,10 @@ ln -s "$(pwd)/claude-plugins/jw/bin/worktree-handoff" "$(pwd)/claude-plugins/jw/
 ## 스크립트를 직접 쓰기
 
 ```sh
-worktree-handoff fork  --session <세션 ID> [--prompt-file <파일|->] [--base <ref>] [--open <방식>] [<스택>] <브랜치>
-worktree-handoff fresh --prompt-file <파일|->                     [--base <ref>] [--open <방식>] [<스택>] <브랜치>
-worktree-handoff path                                             [--base <ref>]                 [<스택>] <브랜치>
-# <스택> = --in-stack | --new-worktree
-# fork·fresh 는 [--agent auto|claude|cursor] 도 받는다
+worktree-handoff fork  --session <세션 ID> [--prompt-file <파일|->] [--base <ref>] [--open <방식>]                  [<스택>] <브랜치>
+worktree-handoff fresh --prompt-file <파일|->                     [--base <ref>] [--open <방식>] [--agent <도구>] [<스택>] <브랜치>
+worktree-handoff path                                             [--base <ref>]                                  [<스택>] <브랜치>
+# <스택> = --in-stack | --new-worktree,  <도구> = claude | cursor
 ```
 
 세션 ID 는 Claude 안의 `/status` 에서 확인한다. Claude 의 Bash 도구에서 부르면 `--session` 없이 `$CLAUDE_CODE_SESSION_ID` 를 쓴다. fork 에서 `--prompt-file` 이 없으면 기본 첫 메시지를 쓴다.
@@ -240,7 +230,8 @@ fresh 는 첫 메시지가 꼭 있어야 하고, 비어 있으면(공백뿐이�
 - 대화 중에 한 번만 허용한 권한은 새 프로세스로 넘어가지 않는다 (`settings.local.json` 에 저장된 승인은 워크트리가 공유).
 - **작업 폴더 신뢰**: `claude --bg` 는 신뢰하지 않은 폴더에서 바로 실패한다 (`Workspace not trusted`). 신뢰는 상위 디렉토리에서
   물려받으므로, 한 번 `root` 디렉토리(기본 `~/.local/share/worktree-handoff/worktrees`)에서 `claude` 를 열어 신뢰해 두면 그
-  아래 워크트리가 모두 신뢰된다. tmux·none 방식은 처음 보는 폴더면 새 세션이 신뢰 여부를 묻고, 답하면 첫 메시지가 이어진다.
+  아래 워크트리가 모두 신뢰된다. tmux·none 방식은 처음 보는 폴더면 새 세션이 신뢰 여부를 묻고, 답하면 첫 메시지가 이어진다
+  (`claude` 의 동작이다. `cursor` 도 신뢰 여부를 묻는데, 그 뒤 첫 메시지가 이어지는지는 확인하지 못했다).
 - 런처는 `sh` 스크립트라 사용자 셸(bash·zsh·fish)의 문법과 무관하다. 포크일 때는 앞에 `sleep 2` 를 둔다. 스킬에서 불렸을 때
   원본의 Bash 호출 결과가 기록에 써질 때까지 기다리는 경험값이다. 그래서 포크의 `bg` 는 분리된 프로세스로 띄운다.
 - Claude 는 세션 이름이 겹쳐도 막지 않고, `--resume <이름>` 은 정확히 하나가 일치할 때만 바로 연다. 그래서 같은 브랜치로

@@ -207,12 +207,15 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 | checkout | 지금 그 워크트리 안 | 안내 |
 |---|---|---|
 | `self` | 예 | "`/jw:pr-review-apply` 로 계획대로 고치고 답글·해결까지 한다. 일부만 하려면 수정 단위(A, B…)나 지적 번호를 붙인다." |
-| `self` | 아니오 | 그 워크트리의 파일은 이 세션에서 고치지 않는다. 이 세션을 그 워크트리로 옮기거나 (`${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff path <PR 브랜치>` 가 출력하는 `/cd`) `/jw:handoff <PR 브랜치> fork` 로 이 분석을 이어받은 세션을 연다. 거기서 `/jw:pr-review-apply` |
+| `self` | 아니오 | 그 워크트리의 파일은 이 세션에서 고치지 않는다. `/jw:handoff <PR 브랜치> fork` 로 이 분석을 이어받은 세션을 그 워크트리에 열고 거기서 `/jw:pr-review-apply` |
 | `stack` | 예 | `self`·예 와 같다. pr-review-apply 가 체크아웃을 바꾸지 않고 fixup 커밋 + autosquash 로 고친다 |
 | `stack` | 아니오 | `/jw:handoff <PR 브랜치> fork --in-stack` 으로 스택 워크트리에 세션을 연다. `--in-stack` 없이 부르면 스크립트가 멈춘다 (새 워크트리를 만들면 스택이 갈라진다) |
 | `none` | | 위 handoff 명령이 그 브랜치의 워크트리를 만든다고 안내한다 |
 
-fork 를 권하는 까닭: 수정 계획과 대응표가 이 대화에 있어야 pr-review-apply 가 분석을 다시 하지 않는다.
+fork 를 권하는 까닭: 이 분석이 넘겨받은 세션에 있어야 pr-review-apply 가 분석을 다시 하지 않는다. `fork` 가 안 되는
+조합이면 handoff 가 `fresh` 로 바꾼다. 그때는 지시서에 이 결과 전체(항목별 판정·근거·답글 초안, 수정 계획, 대응표)를 줄이지
+않고 넣고, 지적마다 `thread_id` 를 적는다. Claude Code 에서 `self`·아니오 면 넘기지 않고 이 세션을 그 워크트리로 옮겨도
+된다 (`${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff path <PR 브랜치>` 가 출력하는 `/cd`).
 
 `--stack` 이면 맨 위에 스택 요약을 두고 PR 마다 위 형식을 아래→위 순서로 반복한다. 다음 단계 안내는 스택 끝에 한 번
 쓴다. 보통 모든 PR 이 같은 스택 워크트리를 가리키니 (`local.worktree` 가 같다) 그 워크트리 하나에서 pr-review-apply 로
