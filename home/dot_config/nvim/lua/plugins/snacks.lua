@@ -111,13 +111,14 @@ end
 -- git_branches(브랜치 전환)·git_stash(apply) 의 Enter 는 그대로 둔다. 브랜치 전환은 로컬 변경이 덮어써질
 -- 상황이면 git 이 거부하고, stash apply 는 stash 를 지우지 않고 덮어써질 파일이 있으면 거부한다.
 --   git_log                      Enter  그 커밋을 gitsigns 리뷰 패널로 연다 (:Gitsigns diff --commit)
---   git_log_file, git_log_line   Enter  현재 파일 ↔ 그 커밋의 파일 diff (:Gitsigns diffthis <커밋>)
---                                <a-v>  그 커밋이 이 파일에 한 변경만 리뷰 패널로 (부모 ↔ 그 커밋)
+--   git_log_file, git_log_line   Enter  그 커밋이 이 파일에 한 변경만 리뷰 패널로 (부모 ↔ 그 커밋)
+--                                <a-v>  지금 파일 vs 그 커밋의 파일 diff (:Gitsigns diffthis <커밋>). v 는 versus.
 --                                <a-o>  그 커밋 시점의 파일을 읽기 전용 버퍼로 연다 (:Gitsigns show <커밋>:%)
 --   셋 다                        <a-CR> 원래 동작 (checkout), 확인 팝업 뒤에
 -- 다음 커밋을 보려면 <leader>sR (resume) 로 같은 목록을 다시 연다.
--- 한계: --follow 로 잡힌 "이름이 바뀌기 전" 커밋은 Enter·<a-o> 가 지금 경로로 찾으므로 파일이 없다고 나올
--- 수 있다. <a-v> 는 옛 이름까지 pathspec 으로 넘겨서 보인다.
+-- 한계: --follow 로 잡힌 "이름이 바뀌기 전" 커밋은 <a-v>·<a-o> 가 지금 경로로 찾으므로 파일이 없다고 나올
+-- 수 있다. Enter 는 옛 이름까지 pathspec 으로 넘겨서 보인다.
+-- 키는 snacks·LazyVim 이 피커에서 쓰지 않는 Alt 키만 쓴다 (기본 키를 덮어쓰지 않는다).
 -- :Gitsigns diff (리뷰 패널) 는 gitsigns 최신(2026-11) 기능이다. 없으면 :Gitsigns show 로 대신한다.
 
 -- 저장소 루트 기준 pathspec. item.files 의 첫째는 현재 파일 절대 경로, 나머지는 --follow 가 찾은 옛 이름
@@ -198,9 +199,9 @@ end
 
 local git_log_file_source = {
   focus = "list",
-  confirm = "git_diffthis",
+  confirm = "git_review_file",
   actions = git_log_actions,
-  win = git_log_win({ ["<a-v>"] = "git_review_file", ["<a-o>"] = "git_show_rev", ["<a-CR>"] = "git_checkout_confirm" }),
+  win = git_log_win({ ["<a-v>"] = "git_diffthis", ["<a-o>"] = "git_show_rev", ["<a-CR>"] = "git_checkout_confirm" }),
 }
 
 return {
