@@ -39,7 +39,7 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 - **로컬**: 로컬 PR 브랜치. 커밋된 상태는 체크아웃 여부와 상관없이 `git show <local.branch_head>:<path>` 로 읽는다.
   `local.ahead_of_pr_head > 0` 이면 아직 푸시하지 않은 커밋이 있다. 작업 트리는 `local.checkout` 에 따라 다르다:
   - `self`: PR 브랜치가 `local.worktree` 에 체크아웃돼 있다. 그 경로의 파일이 이 PR 의 작업 트리이고,
-    `local.uncommitted_changes` 가 이 PR 의 미커밋 변경이다. 지금 디렉토리(`local.cwd_root`)가 아닐 수 있다
+    `local.worktree_dirty` 가 이 PR 의 미커밋 변경이다. 지금 디렉토리(`local.cwd_root`)가 아닐 수 있다
     (handoff 흐름에서는 메인 체크아웃에서 부르고 PR 브랜치는 별도 워크트리에 있다).
   - `stack`: PR 브랜치는 어디에도 체크아웃돼 있지 않고, 그 브랜치를 품은 스택 워크트리 `local.worktree` 에
     위 브랜치 `local.worktree_branch` 가 체크아웃돼 있다 (워크트리 하나에서 브랜치를 바꿔 가며 쌓는 흐름). 그 작업 트리의
@@ -215,7 +215,7 @@ PR 에 달린 리뷰를 분석한다. 이 스킬은 **읽고 판단하고 설명
 fork 를 권하는 까닭: 이 분석이 넘겨받은 세션에 있어야 pr-review-apply 가 분석을 다시 하지 않는다. `fork` 가 안 되는
 조합이면 handoff 가 `fresh` 로 바꾼다. 그때는 지시서에 이 결과 전체(항목별 판정·근거·답글 초안, 수정 계획, 대응표)를 줄이지
 않고 넣고, 지적마다 `thread_id` 를 적는다. Claude Code 에서 `self`·아니오 면 넘기지 않고 이 세션을 그 워크트리로 옮겨도
-된다 (`${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff path <PR 브랜치>` 가 출력하는 `/cd`).
+된다 (`${CLAUDE_PLUGIN_ROOT}/bin/branch-worktree ensure <PR 브랜치>` 가 출력하는 `worktree:` 경로로 `/cd`).
 
 `--stack` 이면 맨 위에 스택 요약을 두고 PR 마다 위 형식을 아래→위 순서로 반복한다. 다음 단계 안내는 스택 끝에 한 번
 쓴다. 보통 모든 PR 이 같은 스택 워크트리를 가리키니 (`local.worktree` 가 같다) 그 워크트리 하나에서 pr-review-apply 로

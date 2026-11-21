@@ -1,0 +1,466 @@
+#!/bin/bash
+# test/run — jw 플러그인의 스크립트를 가짜 도구와 임시 저장소로 확인한다. 실제 claude·agent·gh 는 부르지 않는다.
+#
+#   test/run [worktree|handoff|tmux|fetch]…     인자가 없으면 전부
+#
+# 스크립트는 env -i 와 /bin/bash (macOS 의 3.2) 로 돌린다. tmux 절은 격리된 서버(-L)를 띄우고, tmux 가 없으면 건너뛴다.
+# fetch 절은 jq 가 있어야 한다. 실패한 항목이 있으면 종료 코드 1.
+BIN=$(cd "$(dirname "$0")/../bin" && pwd)
+BW=$BIN/branch-worktree; HO=$BIN/worktree-handoff; PF=$BIN/pr-review-fetch
+T=$(mktemp -d "${TMPDIR:-/tmp}/jwtest.XXXXXX"); T=$(cd "$T" && pwd -P)
+pass=0; fail=0
+ok() { pass=$((pass + 1)); printf 'ok   %s\n' "$1"; }
+no() { fail=$((fail + 1)); printf 'FAIL %s\n' "$1"; [ $# -lt 2 ] || printf '%s\n' "$2" | sed 's/^/       | /'; }
+has() { case $1 in *"$2"*) return 0 ;; esac; return 1; }
+expect() { if has "$out" "$2"; then ok "$1"; else no "$1" "$out"; fi; }          # expect <이름> <있어야 할 글자>
+expect_not() { if has "$out" "$2"; then no "$1" "$out"; else ok "$1"; fi; }
+expect_rc() { if [ "$rc" = "$2" ]; then ok "$1"; else no "$1 (rc=$rc)" "$out"; fi; }
+check() { local n=$1; shift; if "$@"; then ok "$n"; else no "$n"; fi; }           # check <이름> <명령…>
+g() { local r=$1; shift; git -C "$r" -c user.name=t -c user.email=t@example.invalid "$@"; }
+
+mkstub() {   # 받은 인자와 작업 디렉토리를 기록하고 끝나는 가짜 도구
+  cat >"$1" <<'STUB'
+#!/bin/sh
+log=${STUB_LOG_DIR:?}/$(basename "$0").log
+{
+  printf 'cwd=%s\n' "$(pwd -P)"
+  i=0
+  for a in "$@"; do i=$((i + 1)); printf 'arg%s=<<%s>>\n' "$i" "$a"; done
+  printf 'end\n'
+} >>"$log"
+STUB
+  chmod +x "$1"
+}
+mkroot() {   # mkroot <디렉토리> [가짜 도구…]   (기본: claude agent). 저장소는 <디렉토리>/repo, 커밋 하나짜리 main
+  local r=$1 t; shift
+  mkdir -p "$r/home" "$r/bin" "$r/log" "$r/tmp" "$r/state" "$r/config" "$r/data"
+  [ $# -gt 0 ] || set -- claude agent
+  for t in "$@"; do mkstub "$r/bin/$t"; done
+  git init -q -b main "$r/repo"
+  g "$r/repo" commit -q --allow-empty -m init
+  printf '%s\n' '- 첫 줄이 대시로 시작한다' \
+    "작업 디렉토리는 '작은따옴표' \"큰따옴표\" \$HOME \`backtick\` \\역슬래시" '  들여쓴 줄' '' '마지막 줄' >"$r/msg.txt"
+}
+# run <루트> [VAR=값…] -- <스크립트> <인자…>  → $out (stdout+stderr), $rc
+# 작업 디렉토리는 $CWD (기본 <루트>/repo), 표준 입력은 $STDIN 파일 (기본 /dev/null)
+CWD=""; STDIN=""
+run() {
+  local root=$1; shift
+  local envs=(HOME="$root/home" PATH="$root/bin:/usr/bin:/bin" XDG_STATE_HOME="$root/state"
+    XDG_CONFIG_HOME="$root/config" XDG_DATA_HOME="$root/data" STUB_LOG_DIR="$root/log" TMPDIR="$root/tmp"
+    LC_ALL=en_US.UTF-8)
+  while [ "$1" != -- ]; do envs+=("$1"); shift; done; shift
+  out=$(cd "${CWD:-$root/repo}" && env -i "${envs[@]}" /bin/bash "$@" <"${STDIN:-/dev/null}" 2>&1); rc=$?
+}
+val() { printf '%s\n' "$out" | sed -n "s/^$1: *//p" | head -1; }                  # val <키> : 출력의 "키: 값"
+wtdir() { echo "$1/data/worktree-handoff/worktrees/repo/$2"; }                    # 기본 위치의 워크트리 경로
+worktrees() { git -C "$1/repo" worktree list | wc -l | tr -d ' '; }
+state_files() { find "$1/state" -type f 2>/dev/null | wc -l | tr -d ' '; }
+launcher() { ls "$1"/state/worktree-handoff/prompt/"$2".*.sh 2>/dev/null | tail -1; }
+
+# === branch-worktree ===========================================================
+t_worktree() {
+  local R=$T/wt A top c1 c2 extra
+  mkroot "$R"
+
+  g "$R/repo" branch at-main
+  run "$R" -- "$BW" find at-main
+  expect "find: 기본 브랜치의 워크트리만 품은 브랜치는 none" 'kind: none'
+  expect "find: main 과 here 를 알려 준다" "main: $R/repo"
+  run "$R" -- "$BW" find main
+  expect "find: 메인 체크아웃도 self 다" 'kind: self'
+
+  run "$R" -- "$BW" ensure feat/a
+  expect_rc "ensure: 없는 브랜치는 만든다" 0
+  A=$(wtdir "$R" feat-a)
+  expect "ensure: <root>/<저장소>/<브랜치의 / 를 - 로>" "worktree: $A"
+  expect "ensure: 메인 체크아웃을 알려 준다" "main: $R/repo"
+  check "ensure: 그 자리에 워크트리가 생겼다" test -d "$A"
+  check "ensure: 브랜치가 체크아웃됐다" test "$(git -C "$A" symbolic-ref --short HEAD)" = feat/a
+  run "$R" -- "$BW" ensure feat/a
+  expect "ensure: 있으면 그대로 쓴다" "worktree: $A"
+  check "ensure: 다시 만들지 않았다" test "$(worktrees "$R")" = 2
+  run "$R" -- "$BW" find feat/a
+  expect "find: 체크아웃된 워크트리는 self" 'kind: self'
+  expect "find: 그 경로" "worktree: $A"
+
+  run "$R" -- "$BW" ensure main
+  expect_rc "ensure: 메인 체크아웃은 거부한다" 1
+  expect "ensure: 이유" '메인 체크아웃에 체크아웃돼 있습니다'
+
+  g "$A" commit -q --allow-empty -m a1
+  run "$R" -- "$BW" ensure --base feat/a feat/c
+  check "ensure --base: 그 ref 에서 새 브랜치" test "$(git -C "$R/repo" rev-parse feat/c)" = "$(git -C "$R/repo" rev-parse feat/a)"
+  g "$R/repo" branch local-only
+  g "$R/repo" update-ref refs/heads/local-only "$(git -C "$R/repo" commit-tree -p main -m x 'main^{tree}')"
+  run "$R" -- "$BW" ensure local-only
+  check "ensure: 로컬 브랜치가 있으면 그것을 체크아웃" test "$(git -C "$(wtdir "$R" local-only)" rev-parse HEAD)" = "$(git -C "$R/repo" rev-parse local-only)"
+
+  git init -q --bare "$R/origin.git"
+  g "$R/repo" remote add origin "$R/origin.git"
+  g "$R/repo" push -q origin main:main main:feat/remote
+  g "$R/repo" fetch -q origin
+  run "$R" -- "$BW" ensure feat/remote
+  check "ensure: 원격 하나에만 있으면 추적 브랜치" test "$(git -C "$(wtdir "$R" feat-remote)" rev-parse --abbrev-ref '@{u}' 2>/dev/null)" = origin/feat/remote
+
+  # 스택: 워크트리 하나(stk/top)가 아래 브랜치(stk/low)를 품고, stk/low 는 어디에도 체크아웃돼 있지 않다
+  run "$R" -- "$BW" ensure stk/top
+  top=$(wtdir "$R" stk-top)
+  g "$top" commit -q --allow-empty -m c1; c1=$(git -C "$top" rev-parse HEAD)
+  g "$top" branch stk/low
+  g "$top" commit -q --allow-empty -m c2; c2=$(git -C "$top" rev-parse HEAD)
+  run "$R" -- "$BW" find stk/low
+  expect "find: 품은 워크트리가 있으면 stack" 'kind: stack'
+  expect "find stack: 그 워크트리" "worktree: $top"
+  expect "find stack: 위 브랜치" 'checkout: stk/top'
+  expect "find stack: 로컬 브랜치 끝을 품었다" 'matched: branch'
+  run "$R" -- "$BW" ensure stk/low
+  expect_rc "ensure: 스택 워크트리에 든 브랜치는 멈춘다" 1
+  expect "ensure stack: 고르게 한다" '--in-stack, 그래도 새로 만들려면 --new-worktree'
+  check "ensure stack: 멈출 때 만든 것이 없다" test ! -e "$(wtdir "$R" stk-low)"
+  run "$R" -- "$BW" ensure --in-stack stk/low
+  expect "ensure --in-stack: 스택 워크트리를 쓴다" "worktree: $top"
+  expect "ensure --in-stack: 위 브랜치를 알려 준다" 'stack: stk/top'
+  run "$R" -- "$BW" ensure --in-stack feat/zzz
+  expect_rc "ensure --in-stack: 품은 워크트리가 없으면 거부" 1
+  check "ensure --in-stack: 거부할 때 만든 것이 없다" test ! -e "$(wtdir "$R" feat-zzz)"
+
+  # 로컬 브랜치에 스택 워크트리가 아직 품지 않은 커밋이 생겼다 → 로컬 끝으로는 못 찾고 --tip(원격의 끝)으로 찾는다
+  extra=$(git -C "$R/repo" commit-tree -p stk/low -m extra 'stk/low^{tree}')
+  g "$R/repo" update-ref refs/heads/stk/low "$extra"
+  run "$R" -- "$BW" find stk/low
+  expect "find: 로컬 끝을 품은 워크트리가 없으면 none" 'kind: none'
+  run "$R" -- "$BW" find --tip "$c1" stk/low
+  expect "find --tip: 그 커밋을 품은 워크트리" 'kind: stack'
+  expect "find --tip: tip 으로 찾았다 (다시 쌓아야 한다)" 'matched: tip'
+  run "$R" -- "$BW" find --tip 0000000000000000000000000000000000000000 stk/low
+  expect "find --tip: 로컬에 없는 커밋은 버린다" 'kind: none'
+  g "$R/repo" update-ref refs/heads/stk/low "$c1"
+  run "$R" -- "$BW" ensure --new-worktree stk/low
+  expect "ensure --new-worktree: 그래도 새로 만든다" "worktree: $(wtdir "$R" stk-low)"
+
+  # 지금 체크아웃이 후보면 그것을 고른다 (둘이 품었을 때)
+  g "$top" branch two-homes "$c1"
+  run "$R" -- "$BW" ensure --base "$c2" stk/other
+  CWD=$(wtdir "$R" stk-other); run "$R" -- "$BW" find two-homes; CWD=""
+  expect "find: 여럿이면 지금 체크아웃" "worktree: $(wtdir "$R" stk-other)"
+  expect "find: 후보를 모두 알려 준다" "candidates: "
+  run "$R" -- "$BW" find two-homes
+  expect "find: 지금 체크아웃이 후보가 아니면 커밋 차이가 가장 적은 것" "worktree: $(wtdir "$R" stk-low)"
+
+  run "$R" -- "$BW" ensure gone
+  /bin/rm -rf "$(wtdir "$R" gone)"
+  run "$R" -- "$BW" find gone
+  expect "find: 디렉토리가 사라진 등록을 알려 준다" "missing: $(wtdir "$R" gone)"
+  expect_not "find: 그것을 self 로 치지 않는다" 'kind: self'
+  run "$R" -- "$BW" ensure gone
+  expect_rc "ensure: 디렉토리가 사라진 등록은 거부" 1
+  expect "ensure: prune 을 안내한다" 'git worktree prune'
+
+  mkdir -p "$(wtdir "$R" feat-taken)"
+  run "$R" -- "$BW" ensure feat/taken
+  expect_rc "ensure: 만들 자리에 무엇이 있으면 거부" 1
+
+  run "$R" WORKTREE_HANDOFF_ROOT="$R/elsewhere" -- "$BW" ensure feat/env
+  expect "설정: 환경 변수의 root" "worktree: $R/elsewhere/repo/feat-env"
+  mkdir -p "$R/config/worktree-handoff"; printf 'root = "%s"  \n' "$R/fromfile" >"$R/config/worktree-handoff/config"
+  run "$R" -- "$BW" ensure feat/file
+  expect "설정: 파일의 root (따옴표·공백을 벗긴다)" "worktree: $R/fromfile/repo/feat-file"
+  run "$R" WORKTREE_HANDOFF_ROOT=relative/path -- "$BW" ensure feat/rel
+  expect_rc "설정: 상대 경로 root 는 거부" 1
+  run "$R" WORKTREE_HANDOFF_CREATE=bogus -- "$BW" ensure feat/rel
+  expect_rc "설정: 모르는 create 는 거부" 1
+  run "$R" WORKTREE_HANDOFF_CREATE=tmux-dev -- "$BW" ensure feat/td
+  expect "create=tmux-dev: 없으면 알리고 git 으로" 'tmux-dev 가 없어 git 으로 만듭니다'
+  expect_rc "create=tmux-dev: 그래도 만든다" 0
+  /bin/rm -f "$R/config/worktree-handoff/config"
+
+  run "$R" -- "$BW" ensure 'bad..name'
+  expect_rc "ensure: 브랜치 이름으로 쓸 수 없으면 거부" 1
+  CWD=$R/tmp; run "$R" -- "$BW" ensure feat/x; CWD=""
+  expect "저장소 밖에서는 거부" 'git 저장소 안에서 실행하세요'
+  CWD=$R/origin.git; run "$R" -- "$BW" ensure feat/x; CWD=""
+  expect "bare 저장소는 거부" 'bare 저장소는 지원하지 않습니다'
+}
+
+# === worktree-handoff ==========================================================
+t_handoff() {
+  local R=$T/ho L want n0 s0 old
+  mkroot "$R"
+
+  # --- claude ---
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open none -- feat/a
+  expect_rc "claude fresh: 성공" 0
+  expect "claude fresh: worktree 줄" "worktree: $(wtdir "$R" feat-a)"
+  expect "claude fresh: 세션 이름은 <브랜치>@<MMDD-HHMM>" 'session:  feat/a@'
+  expect "claude fresh: none 이면 run 줄" 'run:      sh '
+  expect "claude fresh: resume 줄" "resume:   cd '$(wtdir "$R" feat-a)' && claude --resume 'feat/a@"
+  expect_not "claude fresh: none 이면 attach 줄 없음" 'attach:'
+  L=$(launcher "$R" feat-a); out=$(cat "$L")
+  expect "claude 런처: 워크트리로 들어간다" "cd '$(wtdir "$R" feat-a)' || exit 1"
+  expect "claude 런처: 이름과 첫 메시지" "exec claude \"\$@\" -n 'feat/a@"
+  expect_not "claude 런처: fresh 는 기다리지 않는다" 'sleep'
+  ( cd / && env -i HOME="$R/home" PATH="$R/bin:/usr/bin:/bin" STUB_LOG_DIR="$R/log" sh "$L" --extra )
+  out=$(cat "$R/log/claude.log")
+  expect "가짜 claude: 워크트리에서 실행" "cwd=$(wtdir "$R" feat-a)"
+  expect "가짜 claude: 런처 인자가 앞에" 'arg1=<<--extra>>'
+  want=$(printf 'arg5=<<%s>>' "$(cat "$R/msg.txt")")
+  expect "가짜 claude: 첫 메시지가 글자 그대로 한 인자" "$want"
+
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt -- feat/bg
+  expect "claude: tmux 밖이면 bg" 'open:     background'
+  expect "claude bg: attach 줄" "attach:   claude attach 'feat/bg@"
+  expect_not "claude bg: run 줄 없음" 'run:'
+  out=$(cat "$R/log/claude.log")
+  expect "claude bg: --bg 로 띄웠다" 'arg1=<<--bg>>'
+
+  run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork --open none -- feat/fk
+  expect_rc "claude fork: 세션 ID 는 환경 변수에서" 0
+  L=$(launcher "$R" feat-fk); out=$(cat "$L")
+  expect "fork 런처: 포크 옵션" "exec claude \"\$@\" --resume sid-9 --fork-session -n 'feat/fk@"
+  expect "fork 런처: 원본의 기록이 써지길 기다린다" 'sleep 2'
+  out=$(cat "${L%.sh}")
+  expect "fork: 기본 첫 메시지에 워크트리" "작업 디렉토리: $(wtdir "$R" feat-fk) (브랜치 feat/fk)"
+  expect "fork: 기본 첫 메시지에 메인 체크아웃" "메인 체크아웃($R/repo)"
+  run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork --session other-1 --open none -- feat/fk2
+  out=$(cat "$(launcher "$R" feat-fk2)")
+  expect "fork: --session 이 환경 변수보다 먼저" '--resume other-1 --fork-session'
+  run "$R" -- "$HO" fork --open none -- feat/fk3
+  expect "fork: 세션 ID 가 없으면 거부" '세션 ID 를 주세요'
+  run "$R" -- "$HO" fork --session 'bad id;' --open none -- feat/fk3
+  expect "fork: 세션 ID 형식이 아니면 거부" '세션 ID 형식이 아닙니다'
+  run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork -- feat/fkbg
+  expect "fork bg: 분리해서 띄운다" 'open:     background, 2초 뒤 시작'
+  sleep 3.5; out=$(cat "$R/log/claude.log")
+  expect "fork bg: 2초 뒤 가짜 claude 가 --bg 와 포크 옵션을 받았다" 'arg3=<<sid-9>>'
+
+  printf 'from stdin\n' >"$R/stdin.txt"
+  STDIN=$R/stdin.txt; run "$R" -- "$HO" fresh --prompt-file - --open none -- feat/stdin; STDIN=""
+  expect_rc "첫 메시지를 표준 입력에서" 0
+  check "  그 내용이 첫 메시지 파일로 남았다" grep -qx 'from stdin' "$(launcher "$R" feat-stdin | sed 's/\.sh$//')"
+
+  # --- 거절: 아무것도 남기지 않는다 ---
+  n0=$(worktrees "$R"); s0=$(state_files "$R")
+  run "$R" -- "$HO" fresh --open none -- feat/no
+  expect "fresh: 첫 메시지가 없으면 거부" 'fresh 에는 첫 메시지가 필요합니다'
+  printf '  \n\n' >"$R/blank.txt"
+  run "$R" -- "$HO" fresh --prompt-file ../blank.txt --open none -- feat/no
+  expect "fresh: 공백뿐인 첫 메시지는 거부" '첫 메시지가 비어 있습니다'
+  run "$R" -- "$HO" fresh --prompt-file ../nope.txt --open none -- feat/no
+  expect "첫 메시지 파일이 없으면 거부" '프롬프트 파일을 읽을 수 없습니다'
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open tmux -- feat/no
+  expect "--open tmux: tmux 밖이면 거부" 'tmux 안에서만 됩니다'
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --agent auto -- feat/no
+  expect_rc "--agent: 모르는 도구는 거부" 1
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open bogus -- feat/no
+  expect_rc "--open: 모르는 방식은 거부" 1
+  run "$R" -- "$HO" path feat/no
+  expect_rc "path 동작은 없다 (branch-worktree ensure 를 쓴다)" 1
+  run "$R" PATH=/usr/bin:/bin -- "$HO" fresh --prompt-file ../msg.txt -- feat/no
+  expect "claude 가 없으면 거부" 'claude 가 PATH 에 없습니다'
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --agent cursor --open bg -- feat/no
+  expect "cursor --open bg: 거부" 'cursor 세션은 bg 로 띄울 수 없습니다 (agent persist'
+  run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork --agent cursor -- feat/no
+  expect "cursor fork: 거부" 'Cursor CLI 에는 대화를 포크하는 옵션이 없습니다'
+  run "$R" TMUX=fake PATH=/usr/bin:/bin -- "$HO" fresh --prompt-file ../msg.txt --agent cursor --open tmux -- feat/no
+  expect "cursor: CLI 가 없으면 거부" 'Cursor CLI(agent) 가 PATH 에 없습니다'
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open none -- main
+  expect "메인 체크아웃은 branch-worktree 가 거부하고 그 오류가 그대로 나온다" 'branch-worktree: main 는 메인 체크아웃에'
+  expect_rc "  종료 코드도 그대로" 1
+  CWD=$(wtdir "$R" feat-a); run "$R" -- "$HO" fresh --prompt-file "$R/msg.txt" --open none -- feat/a; CWD=""
+  expect "이 세션이 있는 체크아웃으로는 넘기지 않는다" '지금 이 세션이 있는 체크아웃입니다'
+  check "거절된 호출은 워크트리를 만들지 않았다" test "$(worktrees "$R")" = "$n0"
+  check "거절된 호출은 첫 메시지·런처를 남기지 않았다" test "$(state_files "$R")" = "$s0"
+
+  # --- cursor ---
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --agent cursor -- feat/cu
+  expect_rc "cursor fresh: 성공" 0
+  expect "cursor: tmux 밖이면 none" 'open:     none'
+  expect "cursor: session 줄" 'session:  Cursor CLI (이름 없음)'
+  expect "cursor: resume 줄" "resume:   cd '$(wtdir "$R" feat-cu)' && agent resume"
+  expect_not "cursor: attach 줄 없음" 'attach:'
+  L=$(launcher "$R" feat-cu); out=$(cat "$L")
+  expect "cursor 런처: agent -- 첫 메시지" 'exec agent "$@" -- "$(cat '
+  ( cd / && env -i HOME="$R/home" PATH="$R/bin:/usr/bin:/bin" STUB_LOG_DIR="$R/log" sh "$L" --extra )
+  out=$(cat "$R/log/agent.log")
+  expect "가짜 agent: -- 가 첫 메시지 앞에" 'arg2=<<-->>'
+  want=$(printf 'arg3=<<%s>>' "$(cat "$R/msg.txt")")
+  expect "가짜 agent: 첫 메시지가 글자 그대로 한 인자" "$want"
+  run "$R" WORKTREE_HANDOFF_OPEN=bg -- "$HO" fresh --prompt-file ../msg.txt --agent cursor -- feat/cu2
+  expect "cursor, 설정의 open=bg: 알리고" '설정의 open=bg 는 cursor 세션에 쓸 수 없어'
+  expect "cursor, 설정의 open=bg: auto 로 띄운다" 'open:     none'
+  run "$R" CURSOR_AGENT=1 -- "$HO" fresh --prompt-file ../msg.txt --open none -- feat/env
+  expect "부른 곳을 환경 변수로 짐작하지 않는다" "claude --resume 'feat/env@"
+  mkdir -p "$R/config/worktree-handoff"; printf 'agent=cursor\n' >"$R/config/worktree-handoff/config"
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt -- feat/cf
+  expect "설정 파일의 agent" 'session:  Cursor CLI'
+  run "$R" WORKTREE_HANDOFF_AGENT=claude -- "$HO" fresh --prompt-file ../msg.txt --open none -- feat/cf2
+  expect "환경 변수가 설정 파일보다 먼저" 'session:  feat/cf2@'
+  /bin/rm -f "$R/config/worktree-handoff/config"
+  local O=$T/ho-old; mkroot "$O" cursor-agent
+  run "$O" -- "$HO" fresh --prompt-file ../msg.txt --agent cursor -- feat/o
+  expect "cursor: agent 가 없으면 옛 이름 cursor-agent" 'cursor-agent resume'
+
+  # --- 스택 워크트리 ---
+  g "$(wtdir "$R" feat-a)" commit -q --allow-empty -m c1
+  g "$(wtdir "$R" feat-a)" branch low
+  g "$(wtdir "$R" feat-a)" commit -q --allow-empty -m c2
+  s0=$(state_files "$R")
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open none -- low
+  expect_rc "스택 워크트리에 든 브랜치: 멈춘다" 1
+  check "  멈출 때 읽어 둔 첫 메시지를 지운다" test "$(state_files "$R")" = "$s0"
+  run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork --open none --in-stack -- low
+  expect "--in-stack: 스택 워크트리를 쓴다" "branch:   low (스택 워크트리, 체크아웃: feat/a)"
+  out=$(cat "$(launcher "$R" low | sed 's/\.sh$//')")
+  expect "--in-stack: 포크의 기본 첫 메시지에 고치는 방법" 'rebase -i --autosquash --update-refs --keep-base'
+  CWD=$(wtdir "$R" feat-a); run "$R" -- "$HO" fresh --prompt-file "$R/msg.txt" --open none --in-stack -- low; CWD=""
+  expect "--in-stack: 그 워크트리가 이 세션의 체크아웃이면 넘기지 않는다" '스택 워크트리가 지금 이 세션이 있는 체크아웃입니다'
+
+  # --- 띄우다 실패해도 안내는 나온다 ---
+  printf '#!/bin/sh\necho "tmux: boom" >&2\nexit 1\n' >"$R/bin/tmux"; chmod +x "$R/bin/tmux"
+  run "$R" TMUX=fake -- "$HO" fresh --prompt-file ../msg.txt -- feat/tf
+  expect_rc "tmux 가 실패하면 종료 코드 1" 1
+  expect "tmux 실패: worktree 줄은 나온다" "worktree: $(wtdir "$R" feat-tf)"
+  expect "tmux 실패: run 줄로 이어 갈 수 있다" 'run:      sh '
+  /bin/rm -f "$R/bin/tmux"
+  printf '#!/bin/sh\necho "not trusted" >&2\nexit 3\n' >"$R/bin/claude"
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt -- feat/bf
+  expect_rc "bg 가 실패하면 종료 코드 1" 1
+  expect "bg 실패: 도구의 오류를 보여 준다" 'claude: not trusted'
+  expect "bg 실패: run 줄" 'run:      sh '
+  mkstub "$R/bin/claude"
+
+  # --- 상태 디렉토리 ---
+  old=$R/state/worktree-handoff/prompt/old.AAAAAA; : >"$old"; touch -t 202001010000 "$old"
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open none -- feat/gc
+  check "7일 지난 첫 메시지·런처는 지운다" test ! -e "$old"
+}
+
+# === tmux (격리된 서버) =========================================================
+t_tmux() {
+  local TMUX_BIN M sock i wtp want
+  TMUX_BIN=$(command -v tmux || true)
+  [ -n "$TMUX_BIN" ] || { echo "skip tmux (tmux 없음)"; return 0; }
+  M=$T/tm; mkroot "$M"; sock="jwtest$$"
+  tm() { "$TMUX_BIN" -L "$sock" -f /dev/null "$@"; }
+  ( cd "$M/repo" && env -i HOME="$M/home" PATH="$M/bin:$(dirname "$TMUX_BIN"):/usr/bin:/bin" SHELL=/bin/sh TERM=xterm-256color \
+      XDG_STATE_HOME="$M/state" XDG_CONFIG_HOME="$M/config" XDG_DATA_HOME="$M/data" STUB_LOG_DIR="$M/log" \
+      LC_ALL=en_US.UTF-8 "$TMUX_BIN" -L "$sock" -f /dev/null new-session -d -s main -x 200 -y 50 )
+  tm new-session -d -s other -x 80 -y 24   # 가장 최근 세션은 other. 윈도우는 부른 패널의 세션(main)에 생겨야 한다
+  inside() {   # inside <브랜치> <가짜 도구 로그> <worktree-handoff 인자…> : main 세션의 첫 패널에서 돌리고 끝나길 기다린다
+    local br=$1 logname=$2; shift 2
+    wtp=$(wtdir "$M" "${br//\//-}"); i=0
+    /bin/rm -f "$M/done"
+    tm send-keys -t main:0.0 "/bin/bash '$HO' fresh --prompt-file ../msg.txt $* -- '$br' >'$M/out.txt' 2>&1; echo \$? >'$M/done'" Enter
+    while [ ! -s "$M/done" ] && [ $i -lt 50 ]; do sleep 0.2; i=$((i + 1)); done
+    i=0; while ! grep -qF "cwd=$wtp" "$M/log/$logname.log" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.2; i=$((i + 1)); done
+    sleep 0.3
+    out=$(cat "$M/out.txt" 2>/dev/null); rc=$(cat "$M/done" 2>/dev/null)
+  }
+  inside feat/t1 claude
+  expect_rc "tmux 안의 claude: 성공" 0
+  expect "tmux: 부른 패널의 세션에 윈도우를 연다" 'open:     tmux main:1 (feat/t1)'
+  expect_not "tmux: run 줄 없음" 'run:'
+  out=$(tm list-windows -t main -F '#{window_name}|#{@worktree}')
+  expect "tmux: 윈도우 이름과 @worktree" "feat/t1|$(wtdir "$M" feat-t1)"
+  out=$(cat "$M/log/claude.log")
+  expect "tmux: 가짜 claude 가 그 워크트리에서 실행" "cwd=$(wtdir "$M" feat-t1)"
+  expect "tmux: 세션 이름을 받았다" 'arg2=<<feat/t1@'
+  check "tmux: 지금 보는 윈도우는 그대로다 (-d)" test "$(tm display -p -t main '#{window_index}')" = 0
+
+  inside feat/t1 claude
+  expect "tmux: 그 워크트리의 윈도우가 있으면 새 윈도우를 열지 않는다" 'open:     tmux main:1 (feat/t1)'
+  check "tmux: 대신 거기에 패널을 연다" test "$(tm list-panes -t main:1 | wc -l | tr -d ' ')" = 2
+  check "tmux: 윈도우 수는 그대로" test "$(tm list-windows -t main | wc -l | tr -d ' ')" = 2
+
+  inside feat/t2 agent --agent cursor
+  expect_rc "tmux 안의 cursor: 성공" 0
+  out=$(cat "$M/log/agent.log")
+  expect "tmux: 가짜 agent 가 -- 다음에 첫 메시지를 받았다" 'arg1=<<-->>'
+  want=$(printf 'arg2=<<%s>>' "$(cat "$M/msg.txt")")
+  expect "tmux: 첫 메시지가 글자 그대로" "$want"
+
+  inside 'fix/#H' claude
+  out=$(tm list-windows -t main -F '#{window_name}|#{@worktree}')
+  expect "tmux: 브랜치의 # 을 형식 문자로 읽지 않는다" "fix/#H|$(wtdir "$M" 'fix-#H')"
+  tm kill-server 2>/dev/null
+}
+
+# === pr-review-fetch 의 local (가짜 gh) ========================================
+t_fetch() {
+  local JQ R W1 top c1 extra
+  JQ=$(command -v jq || true)
+  [ -n "$JQ" ] || { echo "skip fetch (jq 없음)"; return 0; }
+  R=$T/pf; mkroot "$R" claude
+  cat >"$R/bin/gh" <<'GH'
+#!/bin/sh
+# 가짜 gh: PR 하나(#7)와 빈 리뷰를 돌려준다. head 는 STUB_HEAD(브랜치)·STUB_OID(커밋)
+empty() { printf '{"data":{"repository":{"pullRequest":{"%s":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}\n' "$1"; }
+case "$1 $2" in
+  "pr view")
+    printf '{"number":7,"url":"https://github.com/o/r/pull/7","title":"t","body":"","author":{"login":"me"},"state":"OPEN","baseRefName":"main","headRefName":"%s","headRefOid":"%s","isCrossRepository":false}\n' "$STUB_HEAD" "$STUB_OID" ;;
+  "api graphql")
+    case "$*" in
+      *reviewThreads*) empty reviewThreads ;;
+      *"reviews(first"*) empty reviews ;;
+      *) empty comments ;;
+    esac ;;
+  *) echo "가짜 gh: 모르는 호출: $*" >&2; exit 1 ;;
+esac
+GH
+  chmod +x "$R/bin/gh"
+  g "$R/repo" remote add origin https://github.com/o/r.git
+  fetch() {   # fetch <브랜치> <커밋> : $out 에 local 블록 (JSON 한 줄)
+    run "$R" PATH="$R/bin:$(dirname "$JQ"):/usr/bin:/bin" STUB_HEAD="$1" STUB_OID="$2" -- "$PF" 7
+    [ "$rc" = 0 ] || { no "pr-review-fetch 실행 ($1)" "$out"; return; }
+    out=$(printf '%s\n' "$out" | "$JQ" -c .local)
+  }
+
+  run "$R" -- "$BW" ensure pr/self; W1=$(wtdir "$R" pr-self)
+  fetch pr/self "$(git -C "$R/repo" rev-parse pr/self)"
+  expect "self: PR 브랜치가 체크아웃된 워크트리" "\"checkout\":\"self\",\"worktree\":\"$W1\",\"worktree_branch\":\"pr/self\""
+  expect "self: 지금 그 안은 아니다" '"in_worktree":false'
+  expect "self: 미커밋 변경 없음" '"worktree_dirty":false'
+  expect "self: PR head 와 같다" '"ahead_of_pr_head":0,"behind_pr_head":0'
+  expect_not "안 쓰던 필드는 없다 (pr_worktree)" 'pr_worktree'
+  expect_not "뜻이 겹치던 필드는 없다 (uncommitted_changes)" 'uncommitted_changes'
+  : >"$W1/untracked"
+  CWD=$W1; fetch pr/self "$(git -C "$R/repo" rev-parse pr/self)"; CWD=""
+  expect "self: 그 워크트리 안에서 부르면" '"in_worktree":true'
+  expect "self: 미커밋 변경이 있으면" '"worktree_dirty":true'
+
+  run "$R" -- "$BW" ensure pr/top; top=$(wtdir "$R" pr-top)
+  g "$top" commit -q --allow-empty -m c1; c1=$(git -C "$top" rev-parse HEAD)
+  g "$top" branch pr/low
+  g "$top" commit -q --allow-empty -m c2
+  fetch pr/low "$c1"
+  expect "stack: 그 브랜치를 품은 워크트리와 위 브랜치" "\"checkout\":\"stack\",\"worktree\":\"$top\",\"worktree_branch\":\"pr/top\""
+  expect "stack: 다시 쌓을 것 없음" '"stack_needs_restack":false'
+  expect "stack: 위 브랜치의 작업 트리 상태" '"worktree_dirty":false'
+
+  extra=$(git -C "$R/repo" commit-tree -p pr/low -m extra 'pr/low^{tree}')
+  g "$R/repo" update-ref refs/heads/pr/low "$extra"
+  fetch pr/low "$c1"
+  expect "stale: 로컬 브랜치에만 새 커밋이 있어도 PR head 로 스택 워크트리를 찾는다" "\"checkout\":\"stack\",\"worktree\":\"$top\""
+  expect "stale: 다시 쌓아야 한다" '"stack_needs_restack":true'
+  expect "stale: 로컬이 PR head 보다 한 커밋 앞" '"ahead_of_pr_head":1'
+
+  g "$R/repo" update-ref refs/heads/pr/alone "$(git -C "$R/repo" commit-tree -p main -m alone 'main^{tree}')"
+  fetch pr/alone "$(git -C "$R/repo" rev-parse pr/alone)"
+  expect "none: 체크아웃도 품은 워크트리도 없다" '"checkout":"none","worktree":null'
+  expect "none: 작업 트리 상태는 없다" '"worktree_dirty":null'
+  fetch pr/nowhere "$(git -C "$R/repo" rev-parse main)"
+  expect "로컬에 브랜치가 없으면 branch_head 가 없다" '"branch_head":null'
+}
+
+[ $# -gt 0 ] || set -- worktree handoff tmux fetch
+for s in "$@"; do
+  case $s in
+    worktree|handoff|tmux|fetch) echo "== $s"; "t_$s" ;;
+    *) echo "모르는 절: $s (worktree | handoff | tmux | fetch)" >&2; exit 2 ;;
+  esac
+done
+echo
+echo "pass=$pass fail=$fail"
+[ "$fail" = 0 ] && /bin/rm -rf "$T" || echo "임시 디렉토리를 남겼다: $T"
+[ "$fail" = 0 ]

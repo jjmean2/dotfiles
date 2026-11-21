@@ -12,15 +12,18 @@
 #
 # 출력 (JSON 하나):
 #   pr        번호·URL·제목·본문·작성자·base/head·head 커밋
-#   local     지금 디렉토리가 그 저장소인지, 로컬 PR 브랜치의 끝(branch_head)과 PR head 와의 앞섬/뒤처짐,
-#             고칠 워크트리(worktree)와 checkout 종류:
-#               self   PR 브랜치가 체크아웃된 워크트리. uncommitted_changes 는 이 PR 의 미커밋 변경
+#   local     로컬 저장소에서 본 것. 지금 디렉토리가 그 저장소가 아니면 repo_match: false 뿐이다
+#             branch_head        로컬 PR 브랜치의 끝. ahead_of_pr_head·behind_pr_head 는 PR head 와의 앞섬·뒤처짐
+#             checkout           고칠 워크트리가 어떤 것인가 (branch-worktree find 의 kind)
+#               self   PR 브랜치가 체크아웃된 워크트리. worktree_dirty 는 이 PR 의 미커밋 변경이다
 #               stack  PR 브랜치는 체크아웃돼 있지 않고, 그 브랜치를 조상으로 품은 워크트리(스택 워크트리)가 있다.
-#                      그 작업 트리는 worktree_branch(위 브랜치)의 코드다. worktree_dirty 는 그 위 브랜치의 변경
+#                      그 작업 트리는 worktree_branch(위 브랜치)의 코드이고 worktree_dirty 도 위 브랜치의 변경이다
 #               none   둘 다 없다
-#             pr_worktree·in_pr_worktree 는 self 일 때만 (이전 출력과 같은 뜻),
-#             로컬에 없는 커밋 (PR head 가 없으면 refs/pull/<N>/head 를, 지난 댓글의 당시 커밋이 없으면
-#             그 커밋을 원격에서 받아 본다. 작업 트리와 브랜치는 건드리지 않는다)
+#             worktree·worktree_branch·worktree_head·worktree_dirty  그 워크트리. in_worktree 는 지금 거기 있는가
+#             stack_needs_restack        stack 일 때, 로컬 PR 브랜치에 그 워크트리가 아직 품지 않은 커밋이 있다
+#             stack_worktree_candidates  stack 일 때, 그 브랜치를 품은 워크트리가 여럿이면 전부
+#             missing_commits    로컬에 없는 커밋. PR head 가 없으면 refs/pull/<N>/head 를, 지난 댓글의 당시 커밋이 없으면
+#                                그 커밋을 원격에서 받아 본 뒤에도 없는 것 (작업 트리와 브랜치는 건드리지 않는다)
 #   threads   리뷰 스레드 (기본: 해결 안 된 것). id 는 출력 안의 순번 (해결 상태가 바뀌면 달라진다),
 #             thread_id 는 GitHub 노드 ID (PRRT_…, 바뀌지 않는다. 답글·해결 처리의 키),
 #             comment_database_id 는 첫 댓글의 REST ID (GraphQL 을 못 쓸 때 REST 답글에 쓴다),
@@ -60,6 +63,10 @@ while [ $# -gt 0 ]; do
 done
 command -v gh >/dev/null || die "gh 가 PATH 에 없습니다 (설치 후 gh auth login)"
 command -v jq >/dev/null || die "jq 가 PATH 에 없습니다"
+# 워크트리 판정을 맡길 branch-worktree: 이 스크립트 옆에 있다. 없으면 PATH 에서 찾는다
+bw="$(cd "$(dirname "$0")" && pwd)/branch-worktree"
+[ -x "$bw" ] || bw=$(command -v branch-worktree || true)
+[ -n "$bw" ] || die "branch-worktree 를 찾지 못했습니다 (pr-review-fetch 와 같은 디렉토리에 있어야 합니다)"
 
 # --- 스레드 재확인 (--threads) -------------------------------------------------
 # 답글·해결 처리 직전에 고른 스레드의 지금 상태만 받는다. 저장해 둔 thread_id 는 바뀌지 않지만 상태(해결 여부, 새 답글)는 바뀐다
@@ -231,38 +238,18 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
     done
     missing=()
     for o in $head_oid $orig_oids; do has_commit "$o" || missing+=("$o"); done
-    # "로컬" = 로컬 PR 브랜치. 고칠 곳은 그 브랜치가 체크아웃된 워크트리(self), 없으면 그 브랜치를 조상으로 품은 워크트리
-    # (stack: 워크트리 하나에서 브랜치를 바꿔 가며 쌓는 흐름에서 하위 브랜치는 어디에도 체크아웃돼 있지 않다).
-    # 기본 브랜치가 체크아웃된 워크트리는 스택 워크트리로 보지 않는다 (머지된 브랜치를 품을 뿐이다)
+    # "로컬" = 로컬 PR 브랜치. 고칠 곳은 branch-worktree find 가 알려 준다 (self·stack·none 의 뜻과 스택 워크트리 규칙은
+    # branch-worktree --help). 로컬 브랜치 끝으로 먼저 보고, 없으면 PR head 로 본다: PR head 만 품었다면 로컬 브랜치에
+    # 새 커밋이 있는데 위 브랜치들이 아직 그 위로 다시 쌓이지 않은 것이다 (stale)
     here=$(git rev-parse --show-toplevel)
     branch_head=$(git rev-parse -q --verify "refs/heads/$head_branch^{commit}" 2>/dev/null || true)
-    # 품었는지 볼 커밋: 로컬 브랜치 끝, 안 되면 PR head (로컬 브랜치에만 새 커밋이 있고 위 브랜치를 아직 다시 쌓지 않았을 때)
-    tips=(); [ -z "$branch_head" ] || tips+=("$branch_head")
-    if has_commit "$head_oid" && [ "$head_oid" != "$branch_head" ]; then tips+=("$head_oid"); fi
-    defb=$(git symbolic-ref -q --short "refs/remotes/$remote/HEAD" 2>/dev/null || true); defb=${defb#"$remote"/}
-    # 워크트리 표: 경로 \t HEAD \t 브랜치 (detached 면 빈 칸)
-    wts=$(git worktree list --porcelain | awk '
-      /^worktree /{p=substr($0,10); h=""; b=""} /^HEAD /{h=$2} /^branch /{b=substr($0,8); sub("^refs/heads/","",b)}
-      /^$/{if (p!="") print p "\t" h "\t" b; p=""} END{if (p!="") print p "\t" h "\t" b}')
-    checkout=none; wt=""; wt_branch=""; cands=(); stale=false
-    self_wt=$(awk -F'\t' -v b="$head_branch" '$3==b {print $1; exit}' <<<"$wts")
-    if [ -n "$self_wt" ] && [ -d "$self_wt" ]; then
-      checkout=self; wt=$self_wt; wt_branch=$head_branch
-    else
-      for tip in ${tips[@]+"${tips[@]}"}; do
-        bestn=""; cands=()
-        while IFS=$'\t' read -r p h b; do
-          [ -n "$p" ] && [ -d "$p" ] && [ -n "$h" ] || continue
-          if [ -n "$b" ] && { [ "$b" = "$defb" ] || [ "$b" = main ] || [ "$b" = master ]; }; then continue; fi
-          git merge-base --is-ancestor "$tip" "$h" 2>/dev/null || continue
-          n=$(git rev-list --count "$tip..$h"); cands+=("$p")
-          # 지금 디렉토리가 후보면 그것, 아니면 이 브랜치 바로 위(커밋 차이가 가장 적은) 워크트리
-          if [ "$p" = "$here" ]; then wt=$p; wt_branch=$b; bestn=-1
-          elif [ "$bestn" != -1 ] && { [ -z "$wt" ] || [ "$n" -lt "$bestn" ]; }; then wt=$p; wt_branch=$b; bestn=$n; fi
-        done <<<"$wts"
-        if [ -n "$wt" ]; then checkout=stack; [ -z "$branch_head" ] || [ "$tip" = "$branch_head" ] || stale=true; break; fi
-      done
-    fi
+    found=$("$bw" find --tip "$head_oid" -- "$head_branch") || die "워크트리를 찾지 못했습니다 (branch-worktree find)"
+    checkout=$(sed -n 's/^kind: //p' <<<"$found")
+    wt=$(sed -n 's/^worktree: //p' <<<"$found")
+    wt_branch=$(sed -n 's/^checkout: //p' <<<"$found")
+    cands=(); IFS=$'\t' read -r -a cands <<<"$(sed -n 's/^candidates: //p' <<<"$found")" || true
+    stale=false
+    [ "$(sed -n 's/^matched: //p' <<<"$found")" != tip ] || [ -z "$branch_head" ] || stale=true
     wt_head=""; dirty=null; ahead=null; behind=null
     if [ -n "$wt" ]; then
       wt_head=$(git -C "$wt" rev-parse HEAD)
@@ -283,11 +270,9 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
         branch_head: ($bh | nul), ahead_of_pr_head: $ahead, behind_pr_head: $behind,
         checkout: $co, worktree: ($wt | nul), worktree_branch: ($wtb | nul), worktree_head: ($wth | nul),
         in_worktree: ($wt != "" and $wt == $here),
-        uncommitted_changes: (if $co == "self" then $dirty else null end),
-        worktree_dirty: (if $co == "stack" then $dirty else null end),
+        worktree_dirty: $dirty,
         stack_worktree_candidates: (if $co == "stack" then $cands else [] end),
         stack_needs_restack: (if $co == "stack" then $stale else null end),
-        pr_worktree: (if $co == "self" then $wt else null end), in_pr_worktree: ($co == "self" and $wt == $here),
         missing_commits: ($missing | split(" ") | map(select(. != "")))}')
   fi
 fi

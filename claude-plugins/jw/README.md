@@ -8,6 +8,10 @@
 | `/jw:pr-review-handle [PR] [--all] [--stack]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 원인을 따져 수정 계획(개별 수정, 근거가 있을 때만 공통 원인·구조 개선)과 배경 원리를 설명한다 |
 | `/jw:pr-review-apply [수정 단위\|지적…] [--no-push] [--no-reply]` | pr-review-handle 의 수정 계획을 구현·커밋·푸시하고, 스레드마다 답글을 달고 해결 처리한다. 사용자만 부른다 |
 
+0.11.0 에서 워크트리를 찾고 만드는 일을 `bin/branch-worktree` 로 떼었다. `worktree-handoff` 는 세션 띄우기만 하고
+`pr-review-fetch` 도 같은 판정을 쓴다. `worktree-handoff path` 는 `branch-worktree ensure` 가 대신하고, `pr-review-fetch` 의
+`local` 에서 `uncommitted_changes` 는 `worktree_dirty` 로 합쳤다. `test/run` 으로 스크립트를 확인한다 (아래 "스크립트의 구조").
+
 0.10.0 에서 handoff 가 Cursor CLI 세션도 열게 했다. Claude 와 Cursor 어느 쪽에서 부르든 돌고, 어느 도구로 열지는 확인 단계에서
 고른다 (아래 "세션을 여는 도구"). 세 스킬 모두 Cursor 에서도 스크립트를 찾도록 `bin/` 경로로 부른다 (아래 "Cursor 에서 쓰기").
 
@@ -24,14 +28,13 @@
 Claude 나 Cursor 와 대화하다가 작업 방향이 정해지면 그 작업의 브랜치와 워크트리를 만들고, 그 워크트리에서 일할 세션을 준비한다.
 
 ```
-워크트리 확보 ──▶ 세션 ─────────────────────────▶ 띄우기 ──────────▶ 안내 출력
-(git worktree)   방식: fork | fresh | (path)      bg | tmux | none    attach / run / resume / /cd
-                 도구: claude | cursor
+워크트리 확보 ──▶ 세션 ─────────────────▶ 띄우기 ──────────▶ 안내 출력
+(branch-worktree)  방식: fork | fresh       bg | tmux | none    attach / run / resume
+                   도구: claude | cursor
 ```
 
 - **fork**: 대화를 포크한다. 시행착오·기각한 안까지 넘겨야 할 때.
 - **fresh**: 결론만 담은 지시서로 깨끗한 맥락에서 시작한다. 원본 대화가 길어 컨텍스트가 아까울 때도.
-- **path** (스크립트만): 세션을 둘로 나누지 않고 지금 세션을 워크트리로 옮길 `/cd` 명령을 출력한다.
 
 원본 세션은 남아 설계와 질의를 계속한다. 스크립트는 세션을 띄우고 들어가는 명령을
 출력하는 데까지만 한다. 그 세션에 들어가는 것은 사용자가 한다.
@@ -86,8 +89,8 @@ attach:   claude attach 'feat/x@1111-1530'
 resume:   cd '…/feat-x' && claude --resume 'feat/x@1111-1530'
 ```
 
-`bg` 로 띄우지 못하면(작업 폴더를 신뢰하지 않음 등) claude 의 오류와 `run:` 줄을 출력하고 종료 코드 1 로 끝난다.
-워크트리는 남아 있으니 `run:` 줄을 터미널에서 실행하면 된다. 포크는 원본의 기록이 써지도록 2초 뒤에 띄우므로
+띄우지 못하면(`bg`: 작업 폴더를 신뢰하지 않음 등, `tmux`: tmux 명령 실패) 그 오류와 `worktree:`·`run:` 줄을 출력하고
+종료 코드 1 로 끝난다. 워크트리는 남아 있으니 `run:` 줄을 터미널에서 실행하면 된다. 포크는 원본의 기록이 써지도록 2초 뒤에 띄우므로
 실패가 그 자리에서 보이지 않는다. `open:` 줄의 로그 파일을 본다.
 
 ## 모델이 부르는 handoff
@@ -125,20 +128,23 @@ Cursor(데스크톱·CLI)는 설치된 Claude 플러그인을 `~/.claude/plugins
   (둘 다 3.30.8 데스크톱에서 본 것). 승인을 묻는다면 git·gh 명령을 여러 번 쓰는 pr-review 스킬은 명령마다 묻는다.
   Cursor 의 허용 목록에 넣어야 줄어든다
 
-## 옮기기: path
+## 지금 세션을 옮기기
 
-예전 `handoff-move` 스킬은 없앴다. 지금 세션을 워크트리로 옮기는 일은 규칙에 따라 모델이 `EnterWorktree` 로 한다
-(`.claude/worktrees/` 아래). 이 플러그인의 워크트리 위치로 옮기고 싶으면 스크립트를 직접 쓴다.
+지금 세션을 워크트리로 옮기는 일은 규칙에 따라 모델이 `EnterWorktree` 로 한다 (`.claude/worktrees/` 아래).
+이 플러그인의 워크트리 위치로 옮기고 싶으면 스크립트를 직접 쓴다.
 
-`worktree-handoff path <브랜치>` 가 워크트리를 확보하고 `move: /cd <경로>` 를 출력한다. 사용자가 그 `/cd` 를 입력하면
+`branch-worktree ensure <브랜치>` 가 워크트리를 확보하고 `worktree: <경로>` 를 출력한다. 사용자가 `/cd <경로>` 를 입력하면
 세션 기록(`~/.claude/projects/` 아래)·설정·훅·스킬·CLAUDE.md 가 새 디렉토리 기준으로 바뀐다. 세션 ID 는 그대로이고,
 이후 `claude --resume` 목록에는 그 워크트리에서 보인다. 모델은 `/cd` 를 부를 수 없다.
 
 ## 워크트리
 
+워크트리는 `branch-worktree ensure` 가 확보한다. handoff 는 그 결과를 받아 쓰고, 그 워크트리가 지금 세션이 있는
+체크아웃이면 넘기지 않는다 (한 작업 트리는 한 세션만 고친다).
+
 | 상황 | 워크트리 |
 |---|---|
-| 그 브랜치의 워크트리가 이미 있음 | 그대로 쓴다 (메인 체크아웃이나 지금 세션이 있는 체크아웃이면 거부) |
+| 그 브랜치의 워크트리가 이미 있음 | 그대로 쓴다 (메인 체크아웃이면 거부) |
 | 없음, 그 브랜치를 품은 스택 워크트리가 있음 | 멈춘다. `--in-stack` 이면 그 워크트리, `--new-worktree` 면 아래처럼 새로 (아래 스택 워크트리) |
 | 없음 | `git worktree add` 로 `<root>/<저장소>/<브랜치의 / 를 - 로>` |
 | 없음, `create=tmux-dev` | `tmux-dev worktree [--base <ref>] --hook-create` (그 위치·셋업 훅). tmux-dev·jq 가 없거나 실패하면 git 으로 |
@@ -175,12 +181,12 @@ git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base main
 `${XDG_CONFIG_HOME:-~/.config}/worktree-handoff/config` 에 `key=value` (`#` 주석). 실행하지 않고 값만 읽는다.
 같은 이름의 환경 변수가 먼저다. `root` 는 절대 경로나 `~/` 로 시작해야 한다.
 
-| 키 | 환경 변수 | 기본 |
-|---|---|---|
-| `root` | `WORKTREE_HANDOFF_ROOT` | `${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees` |
-| `open` | `WORKTREE_HANDOFF_OPEN` | `auto` |
-| `create` | `WORKTREE_HANDOFF_CREATE` | `git` |
-| `agent` | `WORKTREE_HANDOFF_AGENT` | `claude` |
+| 키 | 환경 변수 | 기본 | 읽는 스크립트 |
+|---|---|---|---|
+| `root` | `WORKTREE_HANDOFF_ROOT` | `${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees` | `branch-worktree` |
+| `create` | `WORKTREE_HANDOFF_CREATE` | `git` | `branch-worktree` |
+| `open` | `WORKTREE_HANDOFF_OPEN` | `auto` | `worktree-handoff` |
+| `agent` | `WORKTREE_HANDOFF_AGENT` | `claude` | `worktree-handoff` |
 
 ```ini
 root=~/dev/worktrees
@@ -206,17 +212,35 @@ claude plugin install jw@justwonder
 플러그인의 `bin/` 은 Claude 의 Bash 도구 PATH 에만 붙는다. 터미널에서도 쓰려면 링크를 둔다.
 
 ```sh
-ln -s "$(pwd)/claude-plugins/jw/bin/worktree-handoff" "$(pwd)/claude-plugins/jw/bin/pr-review-fetch" \
-      "$(pwd)/claude-plugins/jw/bin/pr-review-reply" ~/.local/bin/
+ln -s "$(pwd)"/claude-plugins/jw/bin/{branch-worktree,worktree-handoff,pr-review-fetch,pr-review-reply} ~/.local/bin/
 ```
 
-## 스크립트를 직접 쓰기
+`worktree-handoff` 와 `pr-review-fetch` 는 `branch-worktree` 를 자기 옆에서 먼저 찾고, 없으면 PATH 에서 찾는다. 넷을 함께 링크한다.
+
+## 스크립트의 구조
+
+```
+스킬 handoff ──▶ worktree-handoff ──▶ branch-worktree ensure      워크트리 확보 (git 만 다룬다. 도구를 모른다)
+                 세션 띄우기                ▲
+스킬 pr-review-* ──▶ pr-review-fetch ──────┘ branch-worktree find  그 브랜치를 고칠 워크트리가 어디인가
+                 └─▶ pr-review-reply
+```
+
+- **`branch-worktree`**: 브랜치의 워크트리를 찾고(`find`, 읽기만) 확보한다(`ensure`). 스택 워크트리 판정이 여기 한 곳에 있다.
+  저장소를 바꾸는 것은 `ensure` 가 워크트리를 만드는 한 곳뿐이다.
+- **`worktree-handoff`**: 세션 띄우기. 도구마다 다른 것(실행 줄, fork·bg 가능 여부, 다시 여는 명령)은 스크립트 위쪽의
+  "도구 어댑터" 절에 도구별 함수 하나씩으로 모여 있고, 그 아래 본문은 도구 이름을 모른다.
+  하는 순서는 확인 → 첫 메시지 읽기 → 워크트리 확보 → 런처 쓰기 → 띄우기 → 안내다. 확인은 아무것도 바꾸지 않고,
+  워크트리를 확보하기 전에 실패하면 남기는 것이 없다.
+- **`test/run`**: 가짜 `claude`·`agent`·`gh` 와 임시 저장소, 격리된 tmux 서버로 위 스크립트를 확인한다.
+  실제 도구는 부르지 않는다. 스크립트를 고치면 돌린다: `claude-plugins/jw/test/run` (일부만: `test/run worktree handoff`).
 
 ```sh
+branch-worktree find   [--tip <커밋>]                             <브랜치>
+branch-worktree ensure [--base <ref>] [--in-stack|--new-worktree] <브랜치>
 worktree-handoff fork  --session <세션 ID> [--prompt-file <파일|->] [--base <ref>] [--open <방식>]                  [<스택>] <브랜치>
 worktree-handoff fresh --prompt-file <파일|->                     [--base <ref>] [--open <방식>] [--agent <도구>] [<스택>] <브랜치>
-worktree-handoff path                                             [--base <ref>]                                  [<스택>] <브랜치>
-# <스택> = --in-stack | --new-worktree,  <도구> = claude | cursor
+# <스택> = --in-stack | --new-worktree,  <도구> = claude | cursor.  자세한 것은 각 스크립트의 --help
 ```
 
 세션 ID 는 Claude 안의 `/status` 에서 확인한다. Claude 의 Bash 도구에서 부르면 `--session` 없이 `$CLAUDE_CODE_SESSION_ID` 를 쓴다. fork 에서 `--prompt-file` 이 없으면 기본 첫 메시지를 쓴다.
@@ -249,8 +273,8 @@ PR 에 이미 달린 리뷰 댓글을 처리한다. 코드를 직접 리뷰하�
 1. `pr-review-fetch` 가 GitHub GraphQL 로 리뷰 스레드(해결·지난 댓글 여부, 당시 커밋, 스레드의 모든 댓글), 리뷰 본문,
    PR 댓글을 끝까지 받아 JSON 하나로 낸다. 기본은 해결 안 된 스레드만, `--all` 이면 전부.
    로컬에 PR head 나 지난 댓글의 당시 커밋이 없으면 `refs/pull/<N>/head`·그 커밋을 원격에서 받는다 (작업 트리는 그대로).
-   로컬 상태는 워크트리가 아니라 로컬 PR 브랜치 기준이다. 고칠 곳(`local.checkout`)은 PR 브랜치가 체크아웃된 워크트리
-   (`self`), 없으면 그 브랜치를 품은 스택 워크트리(`stack`), 둘 다 없으면 `none`. `stack` 이면 그 작업 트리는 위 브랜치의
+   로컬 상태는 워크트리가 아니라 로컬 PR 브랜치 기준이다. 고칠 곳(`local.checkout`)은 `branch-worktree find` 로 정한다:
+   PR 브랜치가 체크아웃된 워크트리(`self`), 없으면 그 브랜치를 품은 스택 워크트리(`stack`), 둘 다 없으면 `none`. `stack` 이면 그 작업 트리는 위 브랜치의
    코드라 이 PR 의 로컬로 쓰지 않고, 다음 단계는 `--in-stack` handoff 나 그 자리의 fixup 으로 안내한다.
    지금 브랜치에 PR 이 없으면 (스택 맨 위의 작업 중 브랜치) 그 아래 쌓인 PR 을 찾는다: `--stack` 이면 가장 가까운 PR 부터
    스택을 모으고, 아니면 목록을 보여 주고 멈춘다.
