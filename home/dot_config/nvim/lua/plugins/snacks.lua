@@ -104,12 +104,17 @@ end
 -- git 로그 피커 (<leader>gl gL: git_log, <leader>gf: git_log_file, <leader>gb: git_log_line).
 -- snacks 기본 confirm(Enter) 은 git_checkout 이다. git_log 는 커밋을 checkout 해 detached HEAD 가 되고,
 -- git_log_file·git_log_line 은 `git checkout <커밋> -- <파일>` 이라 저장 안 한 수정·커밋 안 한 변경을
--- 경고 없이 덮어쓴다. 보기만 하도록 바꾸고 checkout 은 <a-g> 로 일부러 누를 때만 한다.
+-- 경고 없이 덮어쓴다. 보기만 하도록 바꾸고 checkout 은 <a-CR> 로 옮긴 뒤 확인 팝업까지 거친다.
+-- 규칙: 원래 Enter 가 위험한 동작이던 피커는 Alt+Enter 가 그 동작이다.
+-- 확인 팝업은 snacks 의 Snacks.picker.util.confirm (No·Yes 선택창, No 가 먼저라 Enter 연타는 취소된다).
+-- No 를 고르면 로그 피커로 돌아온다.
+-- git_branches(브랜치 전환)·git_stash(apply) 의 Enter 는 그대로 둔다. 브랜치 전환은 로컬 변경이 덮어써질
+-- 상황이면 git 이 거부하고, stash apply 는 stash 를 지우지 않고 덮어써질 파일이 있으면 거부한다.
 --   git_log                      Enter  그 커밋을 gitsigns 리뷰 패널로 연다 (:Gitsigns diff --commit)
 --   git_log_file, git_log_line   Enter  현재 파일 ↔ 그 커밋의 파일 diff (:Gitsigns diffthis <커밋>)
 --                                <a-v>  그 커밋이 이 파일에 한 변경만 리뷰 패널로 (부모 ↔ 그 커밋)
 --                                <a-o>  그 커밋 시점의 파일을 읽기 전용 버퍼로 연다 (:Gitsigns show <커밋>:%)
---   셋 다                        <a-g>  원래 동작 (checkout)
+--   셋 다                        <a-CR> 원래 동작 (checkout), 확인 팝업 뒤에
 -- 다음 커밋을 보려면 <leader>sR (resume) 로 같은 목록을 다시 연다.
 -- 한계: --follow 로 잡힌 "이름이 바뀌기 전" 커밋은 Enter·<a-o> 가 지금 경로로 찾으므로 파일이 없다고 나올
 -- 수 있다. <a-v> 는 옛 이름까지 pathspec 으로 넘겨서 보인다.
@@ -163,6 +168,21 @@ local git_log_actions = {
       require("gitsigns").show(item.commit .. ":%")
     end
   end,
+  -- 확인 뒤 snacks 원래 git_checkout (피커를 닫고 checkout). 피커는 확인하는 동안 열어 둔다.
+  git_checkout_confirm = function(picker, item)
+    if not item then
+      return
+    end
+    local prompt = item.file
+        and ("%s 를 %s 시점으로 덮어쓸까요? (커밋 안 한 변경이 사라집니다)"):format(
+          vim.fn.fnamemodify(item.file, ":t"),
+          item.commit
+        )
+      or ("%s 를 checkout 할까요? (detached HEAD)"):format(item.commit)
+    Snacks.picker.util.confirm(prompt, function()
+      require("snacks.picker.actions").git_checkout(picker, item)
+    end)
+  end,
 }
 
 -- 목록 포커스로 여니 list 창에도 같은 키를 건다.
@@ -180,7 +200,7 @@ local git_log_file_source = {
   focus = "list",
   confirm = "git_diffthis",
   actions = git_log_actions,
-  win = git_log_win({ ["<a-v>"] = "git_review_file", ["<a-o>"] = "git_show_rev", ["<a-g>"] = "git_checkout" }),
+  win = git_log_win({ ["<a-v>"] = "git_review_file", ["<a-o>"] = "git_show_rev", ["<a-CR>"] = "git_checkout_confirm" }),
 }
 
 return {
@@ -233,7 +253,7 @@ return {
             focus = "list",
             confirm = "git_review_commit",
             actions = git_log_actions,
-            win = git_log_win({ ["<a-g>"] = "git_checkout" }),
+            win = git_log_win({ ["<a-CR>"] = "git_checkout_confirm" }),
           },
           git_log_file = git_log_file_source,
           git_log_line = git_log_file_source,
