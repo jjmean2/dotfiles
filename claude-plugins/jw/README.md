@@ -9,7 +9,7 @@
 | `/jw:pr-review-apply [수정 단위\|지적…] [--no-push] [--no-reply]` | pr-review-handle 의 수정 계획을 구현·커밋·푸시하고, 스레드마다 답글을 달고 해결 처리한다. 사용자만 부른다 |
 
 0.10.0 에서 handoff 가 Cursor CLI 세션도 열게 했다. Claude 와 Cursor 어느 쪽에서 부르든 돌고, 어느 도구로 열지는 확인 단계에서
-고른다 (아래 "Cursor 에서 쓰기").
+고른다. 세 스킬 모두 Cursor 에서도 스크립트를 찾도록 `bin/` 경로로 부른다 (아래 "Cursor 에서 쓰기").
 
 0.9.0 에서 pr-review-handle 이 지적마다 따로 수정안을 내는 대신 원인을 따진 수정 계획(공통 원인은 근거가 있을 때만 묶음)을 내고, 그 계획을 구현하고
 답글·해결까지 하는 `pr-review-apply` 와 `bin/pr-review-reply` 를 더했다 (아래 "pr-review-apply").
@@ -75,14 +75,16 @@ resume:   cd '…/feat-x' && claude --resume 'feat/x@1111-1530'
   그 도구는 Claude 세션만 열므로, Cursor 세션으로 넘길 때는 이 스킬을 쓴다.
 - 첫 메시지는 heredoc 대신 임시 파일로 넘긴다. 워크트리 세션의 Bash 가드가 heredoc 이 섞인 명령을 거절하기 때문이다.
 - fork 의 세션 ID 는 스크립트가 `$CLAUDE_CODE_SESSION_ID` (Claude Code 가 Bash 셸에 넣어 줌)에서 읽는다.
-- 스킬은 스크립트를 `${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff` 로 부른다. Claude Code 와 Cursor 모두 플러그인 스킬 본문에서
-  이 변수를 설치 경로로 바꾼다. Claude Code 는 `allowed-tools` 에서도 바꾸므로 권한 프롬프트 없이 돈다.
 
 ## Cursor 에서 쓰기
 
 Cursor(데스크톱·CLI)는 설치된 Claude 플러그인을 `~/.claude/plugins/installed_plugins.json` 과 `~/.claude/settings.json` 의
 `enabledPlugins` 로 찾아 그 캐시 경로에서 그대로 불러온다. 따로 설치할 것은 없고, Claude 쪽에서 플러그인을 갱신하면 Cursor 에도
 반영된다.
+
+세 스킬(handoff·pr-review-handle·pr-review-apply)은 스크립트를 `${CLAUDE_PLUGIN_ROOT}/bin/<이름>` 으로 부른다. 플러그인
+`bin/` 을 PATH 에 넣어 주는 것은 Claude Code 뿐이라, 맨이름으로 부르면 Cursor 에서는 찾지 못한다. Claude Code 와 Cursor 모두
+플러그인 스킬 본문에서 이 변수를 설치 경로로 바꾼다. Claude Code 는 `allowed-tools` 에서도 바꾸므로 권한 프롬프트 없이 돈다.
 
 ### 어느 도구로 열지
 
@@ -129,7 +131,8 @@ Cursor(데스크톱·CLI)는 설치된 Claude 플러그인을 `~/.claude/plugins
   - 처음 보는 워크트리에서 신뢰 여부를 물은 뒤에도 첫 메시지가 이어지는지
   - `agent resume` 이 고르는 "가장 최근 세션"이 그 워크트리로 한정되는지
   - 스킬 이름에 `jw:` 가 붙지 않아 `/handoff` 로 불리는지, `allowed-tools` 를 읽지 않아 스크립트 실행 때 승인을 묻는지
-    (둘 다 3.30.8 데스크톱에서 본 것)
+    (둘 다 3.30.8 데스크톱에서 본 것). 승인을 묻는다면 git·gh 명령을 여러 번 쓰는 pr-review 스킬은 명령마다 묻는다.
+    Cursor 의 허용 목록에 넣어야 줄어든다
 
 ## 옮기기: path
 
