@@ -8,6 +8,8 @@
 | `/jw:pr-review-handle [PR] [--all] [--stack]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 원인을 따져 수정 계획(개별 수정, 근거가 있을 때만 공통 원인·구조 개선)과 배경 원리를 설명한다 |
 | `/jw:pr-review-apply [수정 단위\|지적…] [--no-push] [--no-reply]` | pr-review-handle 의 수정 계획을 구현·커밋·푸시하고, 스레드마다 답글을 달고 해결 처리한다. 사용자만 부른다 |
 
+0.10.0 에서 handoff 가 Cursor 에서 불리면 Cursor CLI 세션을 열게 했다 (아래 "Cursor 에서 쓰기").
+
 0.9.0 에서 pr-review-handle 이 지적마다 따로 수정안을 내는 대신 원인을 따진 수정 계획(공통 원인은 근거가 있을 때만 묶음)을 내고, 그 계획을 구현하고
 답글·해결까지 하는 `pr-review-apply` 와 `bin/pr-review-reply` 를 더했다 (아래 "pr-review-apply").
 
@@ -38,8 +40,8 @@ tmux 는 필요 없다. tmux 안에서 부르면 워크트리의 윈도우를 �
 
 | 값 | 동작 | 들어가기 |
 |---|---|---|
-| `auto` (기본) | `$TMUX` 가 있으면 `tmux`, 없으면 `bg` | |
-| `bg` | 워크트리에서 `claude --bg` 로 백그라운드 세션을 띄운다 | `claude attach <세션 이름>` |
+| `auto` (기본) | `$TMUX` 가 있으면 `tmux`, 없으면 `bg` (Cursor 세션은 `none`) | |
+| `bg` | 워크트리에서 `claude --bg` 로 백그라운드 세션을 띄운다. Claude 세션만 | `claude attach <세션 이름>` |
 | `tmux` | 호출한 패널의 tmux 세션에 윈도우를 `-d` 로 열고 그 안에서 실행 | 그 윈도우로 이동 |
 | `none` | 띄우지 않는다 | 출력의 `run:` 줄을 원하는 터미널에서 실행 |
 
@@ -71,6 +73,44 @@ resume:   cd '…/feat-x' && claude --resume 'feat/x@1111-1530'
 - `start_session` 도구가 있는 Claude 데스크톱 앱에서는 이 스킬 대신 그 도구를 쓴다 (원본 세션과 연결되고 보고가 돌아온다).
 - 첫 메시지는 heredoc 대신 임시 파일로 넘긴다. 워크트리 세션의 Bash 가드가 heredoc 이 섞인 명령을 거절하기 때문이다.
 - fork 의 세션 ID 는 스크립트가 `$CLAUDE_CODE_SESSION_ID` (Claude Code 가 Bash 셸에 넣어 줌)에서 읽는다.
+- 스킬은 스크립트를 `${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff` 로 부른다. Claude Code 와 Cursor 모두 플러그인 스킬 본문에서
+  이 변수를 설치 경로로 바꾼다. Claude Code 는 `allowed-tools` 에서도 바꾸므로 권한 프롬프트 없이 돈다.
+
+## Cursor 에서 쓰기
+
+Cursor(데스크톱·CLI)는 설치된 Claude 플러그인을 `~/.claude/plugins/installed_plugins.json` 과 `~/.claude/settings.json` 의
+`enabledPlugins` 로 찾아 그 캐시 경로에서 그대로 불러온다. 따로 설치할 것은 없고, Claude 쪽에서 플러그인을 갱신하면 Cursor 에도
+반영된다.
+
+스크립트는 부른 곳을 보고 어느 도구의 세션을 열지 정한다 (`--agent auto`, 기본).
+
+| 환경 변수 | 여는 세션 |
+|---|---|
+| `CLAUDE_CODE_SESSION_ID` 가 있음 (Claude Code 의 Bash 도구) | Claude |
+| 위가 없고 `CURSOR_AGENT` 가 있음 (Cursor 의 셸 도구) | Cursor CLI |
+| 둘 다 없음 (터미널에서 직접) | Claude |
+
+`--agent claude|cursor`, 설정의 `agent`, `WORKTREE_HANDOFF_AGENT` 로 정해 둘 수 있다. Cursor 세션은 다음이 다르다.
+
+| | Claude | Cursor CLI |
+|---|---|---|
+| 실행 | `claude -n <이름> -- "<첫 메시지>"` | `agent -- "<첫 메시지>"` (`agent` 가 없으면 `cursor-agent`) |
+| fork | `--resume <id> --fork-session` | 없음. CLI 에 포크 옵션이 없어 거절한다 (대화 안의 `/fork` 뿐) |
+| `--open` | `bg` · `tmux` · `none` | `tmux` · `none`. `auto` 는 tmux 밖이면 `none` |
+| 세션 이름 | `<브랜치>@<MMDD-HHMM>` | 붙일 수 없다 |
+| `resume:` 줄 | `claude --resume <이름>` | `agent resume` (그 워크트리의 가장 최근 세션. 고르려면 `agent ls`) |
+
+- `bg` 가 없는 이유: `agent persist` 는 tmux 안에서는 그냥 `agent` 를 실행하고, 밖에서는 터미널이 있어야 해서 스크립트가 띄울 수
+  없다. `--open bg` 는 거절하고, 설정의 `open=bg` 는 알림을 내고 `auto` 로 띄운다.
+- 번들 코드(CLI 2026.11.13, 데스크톱 3.31.11)와 가짜 `agent` 로 확인한 것이고, 실제 Cursor 세션에서 돌려 보지는 않았다.
+  확인하지 못한 것:
+  - Cursor 의 셸 도구가 `CURSOR_AGENT`·`TMUX`·`TMUX_PANE` 을 스크립트까지 넘겨 주는지. `CURSOR_AGENT` 가 없으면 Claude 세션이
+    열리고, `TMUX` 가 없으면 `auto` 가 `none` 이 되어 `run:` 줄만 나온다. Cursor 에이전트에게
+    `env | grep -E '^(CURSOR_AGENT|TMUX)'` 를 시켜 보면 안다
+  - 처음 보는 워크트리에서 신뢰 여부를 물은 뒤에도 첫 메시지가 이어지는지
+  - `agent resume` 이 고르는 "가장 최근 세션"이 그 워크트리로 한정되는지
+  - 스킬 이름에 `jw:` 가 붙지 않아 `/handoff` 로 불리는지, `allowed-tools` 를 읽지 않아 스크립트 실행 때 승인을 묻는지
+    (둘 다 3.30.8 데스크톱에서 본 것)
 
 ## 옮기기: path
 
@@ -127,6 +167,7 @@ git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base main
 | `root` | `WORKTREE_HANDOFF_ROOT` | `${XDG_DATA_HOME:-~/.local/share}/worktree-handoff/worktrees` |
 | `open` | `WORKTREE_HANDOFF_OPEN` | `auto` |
 | `create` | `WORKTREE_HANDOFF_CREATE` | `git` |
+| `agent` | `WORKTREE_HANDOFF_AGENT` | `auto` |
 
 ```ini
 root=~/dev/worktrees
@@ -135,8 +176,8 @@ open=bg
 
 ## 필요한 것
 
-- handoff: `claude`, git. `create=tmux-dev` 면 [tmux-dev](../../docs/tmux-dev/design/claude-code.md) 와 jq,
-  `--open tmux` 면 tmux.
+- handoff: `claude` (Cursor 세션이면 Cursor CLI `agent`), git. `create=tmux-dev` 면
+  [tmux-dev](../../docs/tmux-dev/design/claude-code.md) 와 jq, `--open tmux` 면 tmux.
 - pr-review-handle·pr-review-apply: git, `gh` (`gh auth login` 한 번), jq.
 
 ## 설치
@@ -163,6 +204,7 @@ worktree-handoff fork  --session <세션 ID> [--prompt-file <파일|->] [--base 
 worktree-handoff fresh --prompt-file <파일|->                     [--base <ref>] [--open <방식>] [<스택>] <브랜치>
 worktree-handoff path                                             [--base <ref>]                 [<스택>] <브랜치>
 # <스택> = --in-stack | --new-worktree
+# fork·fresh 는 [--agent auto|claude|cursor] 도 받는다
 ```
 
 세션 ID 는 Claude 안의 `/status` 에서 확인한다. Claude 의 Bash 도구에서 부르면 `--session` 없이 `$CLAUDE_CODE_SESSION_ID` 를 쓴다. fork 에서 `--prompt-file` 이 없으면 기본 첫 메시지를 쓴다.
