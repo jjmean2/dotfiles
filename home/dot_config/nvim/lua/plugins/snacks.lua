@@ -126,6 +126,28 @@ return {
       notifier = { timeout = 5000 },
       picker = {
         sources = {
+          -- 처음 열 때 목록에 포커스 (snacks 기본은 입력창, explorer 만 목록).
+          -- 결과가 적거나 미리 정해져 있어서 검색보다 위아래로 훑어보는 일이 많은 피커들이다.
+          -- 거르고 싶으면 / 나 i 로 입력창에 간다.
+          -- LSP: gd gy gI gr gai gao. gd·gy 는 결과가 하나면 피커 없이 바로 점프한다.
+          lsp_definitions = { focus = "list" },
+          lsp_type_definitions = { focus = "list" },
+          lsp_implementations = { focus = "list" },
+          lsp_references = { focus = "list" },
+          lsp_incoming_calls = { focus = "list" },
+          lsp_outgoing_calls = { focus = "list" },
+          -- 진단·목록: <leader>sD <leader>sq <leader>sl
+          diagnostics_buffer = { focus = "list" },
+          qflist = { focus = "list" },
+          loclist = { focus = "list" },
+          -- Git: <leader>gs <leader>gd <leader>gD <leader>gS
+          git_status = { focus = "list" },
+          git_diff = { focus = "list" },
+          git_stash = { focus = "list" },
+          -- 시간순 기록 (최근 것이 위): <leader>su <leader>sj <leader>n
+          undo = { focus = "list" },
+          jumps = { focus = "list" },
+          notifications = { focus = "list" },
           projects = { dev = expand_project_parents(patterns) },
           explorer = {
             actions = {
