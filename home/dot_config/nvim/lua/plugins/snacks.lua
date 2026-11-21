@@ -101,6 +101,88 @@ local function pick_filetype()
   })
 end
 
+-- git 로그 피커 (<leader>gl gL: git_log, <leader>gf: git_log_file, <leader>gb: git_log_line).
+-- snacks 기본 confirm(Enter) 은 git_checkout 이다. git_log 는 커밋을 checkout 해 detached HEAD 가 되고,
+-- git_log_file·git_log_line 은 `git checkout <커밋> -- <파일>` 이라 저장 안 한 수정·커밋 안 한 변경을
+-- 경고 없이 덮어쓴다. 보기만 하도록 바꾸고 checkout 은 <a-g> 로 일부러 누를 때만 한다.
+--   git_log                      Enter  그 커밋을 gitsigns 리뷰 패널로 연다 (:Gitsigns diff --commit)
+--   git_log_file, git_log_line   Enter  현재 파일 ↔ 그 커밋의 파일 diff (:Gitsigns diffthis <커밋>)
+--                                <a-v>  그 커밋이 이 파일에 한 변경만 리뷰 패널로 (부모 ↔ 그 커밋)
+--                                <a-o>  그 커밋 시점의 파일을 읽기 전용 버퍼로 연다 (:Gitsigns show <커밋>:%)
+--   셋 다                        <a-g>  원래 동작 (checkout)
+-- 다음 커밋을 보려면 <leader>sR (resume) 로 같은 목록을 다시 연다.
+-- 한계: --follow 로 잡힌 "이름이 바뀌기 전" 커밋은 Enter·<a-o> 가 지금 경로로 찾으므로 파일이 없다고 나올
+-- 수 있다. <a-v> 는 옛 이름까지 pathspec 으로 넘겨서 보인다.
+-- :Gitsigns diff (리뷰 패널) 는 gitsigns 최신(2026-11) 기능이다. 없으면 :Gitsigns show 로 대신한다.
+
+-- 저장소 루트 기준 pathspec. item.files 의 첫째는 현재 파일 절대 경로, 나머지는 --follow 가 찾은 옛 이름
+-- (루트 기준). :(top) 을 붙여 nvim 의 cwd 가 저장소 하위 디렉터리여도 루트에서 찾게 한다.
+local function git_item_pathspecs(item)
+  local specs = {}
+  for _, f in ipairs(item.files or { item.file }) do
+    if item.cwd and vim.startswith(f, item.cwd .. "/") then
+      f = f:sub(#item.cwd + 2)
+    end
+    specs[#specs + 1] = ":(top)" .. f
+  end
+  return specs
+end
+
+-- 리뷰 패널로 커밋 보기. paths 가 있으면 그 파일들만.
+local function git_review_commit(commit, paths)
+  local gs = require("gitsigns")
+  if gs.diff then
+    gs.diff(commit, paths, { commit = true })
+  else
+    gs.show(commit)
+  end
+end
+
+local git_log_actions = {
+  git_review_commit = function(picker, item)
+    picker:close()
+    if item then
+      git_review_commit(item.commit)
+    end
+  end,
+  git_diffthis = function(picker, item)
+    picker:close()
+    if item then
+      require("gitsigns").diffthis(item.commit)
+    end
+  end,
+  git_review_file = function(picker, item)
+    picker:close()
+    if item then
+      git_review_commit(item.commit, git_item_pathspecs(item))
+    end
+  end,
+  git_show_rev = function(picker, item)
+    picker:close()
+    if item then
+      require("gitsigns").show(item.commit .. ":%")
+    end
+  end,
+}
+
+-- 목록 포커스로 여니 list 창에도 같은 키를 건다.
+---@param keys table<string, string>
+local function git_log_win(keys)
+  local input, list = {}, {}
+  for lhs, action in pairs(keys) do
+    input[lhs] = { action, mode = { "n", "i" } }
+    list[lhs] = action
+  end
+  return { input = { keys = input }, list = { keys = list } }
+end
+
+local git_log_file_source = {
+  focus = "list",
+  confirm = "git_diffthis",
+  actions = git_log_actions,
+  win = git_log_win({ ["<a-v>"] = "git_review_file", ["<a-o>"] = "git_show_rev", ["<a-g>"] = "git_checkout" }),
+}
+
 return {
   "folke/snacks.nvim",
   keys = {
@@ -140,14 +222,45 @@ return {
           diagnostics_buffer = { focus = "list" },
           qflist = { focus = "list" },
           loclist = { focus = "list" },
+          diagnostics = { focus = "list" }, -- <leader>sd
+          todo_comments = { focus = "list" }, -- <leader>st <leader>sT
           -- Git: <leader>gs <leader>gd <leader>gD <leader>gS
           git_status = { focus = "list" },
           git_diff = { focus = "list" },
           git_stash = { focus = "list" },
-          -- 시간순 기록 (최근 것이 위): <leader>su <leader>sj <leader>n
+          -- git 로그: <leader>gl <leader>gL <leader>gf <leader>gb. Enter 를 checkout 대신 보기로 (위 설명 참고).
+          git_log = {
+            focus = "list",
+            confirm = "git_review_commit",
+            actions = git_log_actions,
+            win = git_log_win({ ["<a-g>"] = "git_checkout" }),
+          },
+          git_log_file = git_log_file_source,
+          git_log_line = git_log_file_source,
+          git_branches = { focus = "list" }, -- LazyVim 키 없음 (:lua Snacks.picker.git_branches())
+          -- GitHub: <leader>gi <leader>gI <leader>gp <leader>gP. Enter 는 동작 메뉴(gh_actions)다.
+          gh_issue = { focus = "list" },
+          gh_pr = { focus = "list" },
+          -- 시간순 기록 (최근 것이 위): <leader>su <leader>sj <leader>n <leader>fr <leader>fR
+          -- <leader>: <leader>sc <leader>s/
           undo = { focus = "list" },
           jumps = { focus = "list" },
           notifications = { focus = "list" },
+          recent = { focus = "list" },
+          command_history = { focus = "list" },
+          search_history = { focus = "list" },
+          -- 몇 개 안 되는 목록: <leader>, <leader>fb <leader>fB <leader>sm <leader>s" <leader>cl
+          buffers = { focus = "list" },
+          marks = { focus = "list" },
+          registers = { focus = "list" },
+          lsp_config = { focus = "list" },
+          -- 미리보기를 보며 고른다: <leader>uC (목록을 움직이면 바로 적용해 본다)
+          colorschemes = { focus = "list" },
+          -- vim.ui.select (코드 액션 <leader>ca, 각종 선택창). 대부분 몇 개 안 되는 선택지다.
+          select = { focus = "list" },
+          -- 입력창 그대로 (검색어 입력이 주 기능): files git_files grep live_grep grep_word grep_buffers lines
+          -- lsp_symbols lsp_workspace_symbols projects help keymaps commands highlights autocmds icons man lazy
+          -- 와 <leader>fc(설정 파일), <leader>sF(filetype).
           projects = { dev = expand_project_parents(patterns) },
           explorer = {
             actions = {
