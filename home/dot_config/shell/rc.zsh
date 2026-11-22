@@ -206,6 +206,29 @@ zle -N jw-insert-last-word _jw-insert-last-word
 bindkey '^[.' jw-insert-last-word
 bindkey '^[_' jw-insert-last-word
 
+# Ctrl-G g (Ctrl-G Ctrl-G 도 같다): 입력 중인 줄을 그대로 둔 채 git status -sb 를 프롬프트 위에 찍는다.
+# 프롬프트의 git 표식은 "뭔가 있다" 만 알려 주므로(prompt.zsh 머리말) 무엇인지는 이 키로 본다.
+# 예: `git commit -m "` 까지 치다가 무엇이 stage 됐는지 보고 싶을 때. 치던 줄과 커서는 그대로 남는다.
+# 누른 순간의 줄(프롬프트 + 치던 내용)은 출력 위에 한 번 더 남는다. 프롬프트의 git 칸은 다시 계산하지 않는다.
+# Ctrl-G 는 fzf-git 의 git 접두 키다 (rc.d/fzf-git.sh. 거기서 쓰지 않는 g 를 골랐다).
+# 위젯: 줄 편집기(ZLE)가 입력을 받는 중에 키로 부르는 함수. 보통 함수와 달리 입력 줄($BUFFER, 커서)을 읽고 고칠 수
+#   있고 화면을 ZLE 와 나눠 써야 한다. zle -I 가 "여기부터 내가 출력한다" 고 알리는 것으로, ZLE 가 프롬프트 줄을
+#   비켜 주고 함수가 끝나면 프롬프트와 입력 줄을 출력 아래에 다시 그린다. 이것 없이 출력하면 프롬프트 위에 겹쳐 찍힌다.
+_jw-git-status() {
+	local out
+	# 출력을 변수로 받으면 git 이 터미널이 아니라고 보고 색을 끄므로 켜 준다
+	if out=$(git -c color.status=always status -sb 2>&1); then
+		zle -I
+		print -r -- $out
+	else
+		# 저장소 밖이거나 git 이 실패했다. 까닭을 입력 줄 아래에 보여 준다 (스크롤백에 남지 않고, 줄을 실행하면 지워진다)
+		zle -M -- ${out:-git status 실패}
+	fi
+}
+zle -N jw-git-status _jw-git-status
+bindkey '^Gg' jw-git-status
+bindkey '^G^G' jw-git-status
+
 # 붙여 넣은 내용이 URL(http:// https:// ssh:// file:// …)로 시작하면 작은따옴표로 감싼다 (zsh 동봉 위젯).
 # 예: curl 뒤에 https://x.com/a?b=1&c=2 를 붙여 넣으면 ? 가 glob 으로, & 가 백그라운드 실행으로 읽혀 깨지던 것을 막는다.
 # 줄 중간에 붙여 넣어도 붙여 넣은 내용이 URL 로 시작하면 감싼다. 감싸지 않으려면 Option+2 를 누른 뒤 붙여 넣는다.
