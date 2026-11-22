@@ -10,7 +10,7 @@
 #   │      │        │  │             │    │            │    │  │  │        └ 직전 명령이 오래 걸렸으면 걸린 시간
 #   │      │        │  │             │    │            │    │  │  └ root 면 빨간 #
 #   │      │        │  │             │    │            │    │  └ 백그라운드(멈춘 것 포함) job 수
-#   │      │        │  │             │    │            │    └ 상태 표식 하나: 없음(깨끗) / ✗ / ✓
+#   │      │        │  │             │    │            │    └ 상태 표식 하나: 없음(깨끗) / ✗ / ? / ✓
 #   │      │        │  │             │    │            └ upstream 보다 앞선 / 뒤처진 커밋 수
 #   │      │        │  │             │    └ 진행 중인 작업 (rebase-i 2/5, merge, cherry, bisect …)
 #   │      │        │  │             └ 브랜치. detached 면 마젠타로 태그나 커밋 해시
@@ -20,9 +20,11 @@
 #   └ Python 가상환경이 켜져 있을 때만
 # 없는 것은 칸째로 사라진다. 평소와 다를 때만 나타나는 것만 넣었다 (늘 켜져 있는 표식은 눈에 들어오지 않는다).
 #
-# git 괄호 안은 "무엇이 있나" 의 목록이 아니라 다음에 할 일을 알려 주는 표시등이다. 세부는 git status 로 본다.
+# git 괄호 안은 "무엇이 있나" 의 목록이 아니라 다음에 할 일을 알려 주는 표시등이다. 세부는 git status 로 본다
+# (Ctrl-G g 를 누르면 입력 중인 줄을 둔 채로 git status -sb 가 찍힌다. rc.zsh 의 jw-git-status).
 #   (main)       깨끗하다                    (main ⇡1) push 할 것이 있다      (main ⇣2) 받아 올 것이 있다
-#   (main ✗)     stage 하지 않은 것이 있다 (바뀐 파일, untracked 파일, 풀지 않은 충돌)
+#   (main ✗)     추적 중인 파일에 stage 하지 않은 변경이 있다 (풀지 않은 충돌 포함. untracked 가 같이 있어도 ✗)
+#   (main ?)     고친 것은 다 stage 했거나 없고, untracked 파일만 남았다
 #   (main ✓)     바뀐 것이 전부 stage 됐다. 커밋하면 된다
 #   (a1b2c3d|rebase-i 2/5 ✗)  rebase 중이고 아직 풀 것이 있다. ✓ 로 바뀌면 이어 가면 된다 (git rebase --continue)
 #
@@ -87,6 +89,7 @@ _jw_prompt_git_render() {
 	[[ -n $_ps_upstream_ahead ]] && s+="${green}⇡${_ps_upstream_ahead}"
 	[[ -n $_ps_upstream_behind ]] && s+="${red}⇣${_ps_upstream_behind}"
 	[[ -n $_ps_unstaged_icon ]] && s+=" ${red}${_ps_unstaged_icon}"
+	[[ -n $_ps_untracked_icon ]] && s+=" ${red}${_ps_untracked_icon}"
 	[[ -n $_ps_staged_icon ]] && s+=" ${green}${_ps_staged_icon}"
 	s+="${paren})%f%b"
 	_jw_prompt_git=$s
@@ -97,7 +100,7 @@ _jw_prompt_git_render() {
 _jw_prompt_git_from_gitstatus() {
 	_ps_branch= _ps_detached_color= _ps_action=
 	_ps_upstream_ahead= _ps_upstream_behind= _ps_has_upstream_diff=
-	_ps_unstaged_icon= _ps_staged_icon=
+	_ps_unstaged_icon= _ps_untracked_icon= _ps_staged_icon=
 	[[ $VCS_STATUS_RESULT == ok-* ]] || return 0
 
 	if [[ -n $VCS_STATUS_LOCAL_BRANCH ]]; then
@@ -111,8 +114,10 @@ _jw_prompt_git_from_gitstatus() {
 	(( VCS_STATUS_COMMITS_BEHIND )) && _ps_upstream_behind=$VCS_STATUS_COMMITS_BEHIND
 	(( VCS_STATUS_COMMITS_AHEAD || VCS_STATUS_COMMITS_BEHIND )) && _ps_has_upstream_diff=1
 	# HAS_* 는 1(있음) 0(없음) -1(세지 않음: gitstatus_start -m 을 넘는 큰 저장소. 지금은 쓰지 않는다)
-	if (( VCS_STATUS_HAS_UNSTAGED == 1 || VCS_STATUS_HAS_UNTRACKED == 1 || VCS_STATUS_HAS_CONFLICTED == 1 )); then
+	if (( VCS_STATUS_HAS_UNSTAGED == 1 || VCS_STATUS_HAS_CONFLICTED == 1 )); then
 		_ps_unstaged_icon='✗'
+	elif (( VCS_STATUS_HAS_UNTRACKED == 1 )); then
+		_ps_untracked_icon='?'
 	elif (( VCS_STATUS_HAS_STAGED == 1 )); then
 		_ps_staged_icon='✓'
 	fi
