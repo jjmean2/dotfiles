@@ -1,0 +1,122 @@
+#!/bin/bash
+# shellcheck disable=SC2088  # '~/…' 는 사용자가 친 검색어 글자다 (셸이 펼치면 안 된다)
+# test/tmux-dev/run — tmux-dev 피커의 "자주 도는 콜백"이 가벼운지 확인한다. 실제 tmux·fzf 는 띄우지 않는다.
+#
+#   test/tmux-dev/run          실패한 항목이 있으면 종료 코드 1
+#
+# 무엇을 지키나 (docs/tmux-dev/design/worktree-picker.md 의 "자주 도는 콜백은 가볍게"):
+#   prefix W 의 change 콜백은 키를 누를 때마다 동기(transform)로 돈다. 그 시간만큼 fzf 가 다음 키를 받지 못하므로
+#   git·tmux 를 한 번도 띄우지 않아야 하고, 저장소 변수(MAIN, WT_LIST …)를 써서 set -u 로 조용히 죽어서도 안 된다.
+#   죽은 콜백은 빈 줄을 출력할 뿐이라 화면으로는 알아채기 어렵다. 그래서 여기서 본다.
+#
+# 방법: 불리면 로그에 한 줄을 남기는 가짜 git·tmux 를 임시 디렉토리에 만들고, 콜백을 실행하는 그 한 번에만 PATH 앞에 둔다.
+#   가짜 git 은 기록한 뒤 진짜 git 을 부른다(출력이 실제와 같게). 가짜 tmux 는 기록만 하고 실패한다(실제 서버를 건드리지 않게).
+#   배포되지 않는 자리(home/ 밖)라 chezmoi apply 로 홈에 들어가지 않는다.
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+W=$ROOT/home/dot_config/tmux/plugins/tmux-dev/libexec/executable_tmux-dev-worktree
+REAL_GIT=$(command -v git) || { echo "git is required" >&2; exit 1; }
+BASH_BIN=$(command -v bash)
+T=$(mktemp -d "${TMPDIR:-/tmp}/tmuxdevtest.XXXXXX"); T=$(cd "$T" && pwd -P)
+trap '/bin/rm -rf "$T"' EXIT
+pass=0; fail=0
+ok() { pass=$((pass + 1)); printf 'ok   %s\n' "$1"; }
+no() { fail=$((fail + 1)); printf 'FAIL %s\n' "$1"; [ $# -lt 2 ] || printf '%s\n' "$2" | sed 's/^/       | /'; }
+has() { case $1 in *"$2"*) return 0 ;; esac; return 1; }
+
+# --- 가짜 도구와 임시 저장소 -------------------------------------------------------
+mkdir -p "$T/bin" "$T/home/proj" "$T/tmp"
+LOG=$T/spawn.log
+cat > "$T/bin/git" <<STUB
+#!/bin/sh
+echo "git \$*" >> "$LOG"
+exec "$REAL_GIT" "\$@"
+STUB
+cat > "$T/bin/tmux" <<STUB
+#!/bin/sh
+echo "tmux \$*" >> "$LOG"
+exit 1
+STUB
+chmod +x "$T/bin/git" "$T/bin/tmux"
+"$REAL_GIT" init -q -b main "$T/repo"
+"$REAL_GIT" -C "$T/repo" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m init
+
+mkstate() {  # mkstate <모드> → 상태 디렉토리 (피커가 뜰 때 pick 이 쓰는 것과 같은 키)
+  local s; s=$(mktemp -d "$T/state.XXXXXX")
+  printf '%s\n' "$T/repo" > "$s/root"; printf '%s\n' "$1" > "$s/mode"
+  printf '%s\n' sess > "$s/session"
+  printf '%s\n' trunk > "$s/base"    # 저장소의 기본(main)과 다른 이름: 콜백이 상태의 값을 쓰는지 드러난다
+  printf '%s\n' "$s"
+}
+# run <상태> <검색어> <일치 수> <인자…> → OUT ERR RC SPAWNS (git·tmux 를 띄운 기록)
+run() {
+  local st=$1 q=$2 n=$3; shift 3
+  : > "$LOG"
+  OUT=$(env -i PATH="$T/bin:$PATH" HOME="$T/home" TMPDIR="$T/tmp" TMUX_DEV_STATE="$st" FZF_QUERY="$q" FZF_MATCH_COUNT="$n" \
+        "$BASH_BIN" "$W" "$@" 2> "$T/stderr"); RC=$?
+  ERR=$(cat "$T/stderr"); SPAWNS=$(cat "$LOG")
+}
+alive() {  # 죽지 않았다: 종료 코드 0, stderr 없음 (set -u 는 "unbound variable" 을 stderr 에 남긴다)
+  if [ "$RC" = 0 ] && [ -z "$ERR" ]; then ok "$1: runs clean"; else no "$1: runs clean (rc=$RC)" "$ERR"; fi
+}
+no_spawn() { if [ -z "$SPAWNS" ]; then ok "$1: no git/tmux"; else no "$1: no git/tmux" "$SPAWNS"; fi; }
+expect() { if has "$OUT" "$2"; then ok "$1"; else no "$1" "$OUT"; fi; }
+
+# --- change: 키마다, 동기 ---------------------------------------------------------
+# 어떤 모드·검색어에서도 액션 한 줄을 내고, git·tmux 를 띄우지 않는다
+for mode in worktree subdirectory directory; do
+  st=$(mkstate "$mode")
+  for q in '' abc feat/x '~/proj' '~/nope/x' /; do
+    name="change [$mode] q='$q'"
+    run "$st" "$q" 0 --on change
+    alive "$name"; no_spawn "$name"
+    if [ -n "$OUT" ]; then ok "$name: prints an action"; else no "$name: prints an action"; fi
+  done
+done
+st=$(mkstate worktree)
+run "$st" abc 3 --on change
+expect "change [worktree]: resets the cursor"          'first'
+expect "change [worktree]: create hint shows the query" "create branch"
+expect "change [worktree]: base comes from the state"   "from trunk"
+run "$st" '' 3 --on change
+expect "change [worktree]: empty query shows the key hint" "alt-enter new"
+st=$(mkstate subdirectory)
+run "$st" '~/proj' 1 --on change
+expect "change [subdirectory]: a path query searches by prefix" 'search:^~/proj'
+run "$st" abc 0 --on change
+expect "change [subdirectory]: create hint shows the query" "create directory"
+
+# --- result: 검색이 끝날 때마다, 백그라운드 ------------------------------------------
+# tmux 는 띄우지 않는다. git 은 디렉토리 모드에서 "없는 경로가 어느 저장소 안인가"(classify 의 rev-parse) 하나만 허용한다
+for mode in worktree subdirectory directory; do
+  st=$(mkstate "$mode")
+  for q in '' abc '~/proj' '~/nope/x'; do
+    name="result [$mode] q='$q'"
+    run "$st" "$q" 0 --on result
+    alive "$name"
+    extra=$(printf '%s\n' "$SPAWNS" | grep -v -E '^git -C .* rev-parse --show-toplevel$' | grep -v '^$' || true)
+    if [ -z "$extra" ]; then ok "$name: no extra git/tmux"; else no "$name: no extra git/tmux" "$extra"; fi
+    [ "$mode" = worktree ] && no_spawn "$name"
+  done
+done
+st=$(mkstate directory)
+run "$st" '~/nope/x' 0 --on result
+expect "result [directory]: a missing path gets a verdict" "does not exist"
+# ctrl-t 가 검색어를 지운 뒤 (상태 select_merged): change 는 result 를 기다리고, result 는 상태 rows 에서 고른다
+st=$(mkstate worktree); printf '1\n' > "$st/select_merged"
+printf 'feat\t+1\tbranch\t\tfeat\n' > "$st/rows"
+run "$st" '' 1 --on change
+alive "change [worktree] after ctrl-t"; no_spawn "change [worktree] after ctrl-t"
+expect "change [worktree] after ctrl-t: waits for result" 'rebind(result)'
+run "$st" '' 1 --on result
+alive "result [worktree] after ctrl-t"; no_spawn "result [worktree] after ctrl-t"
+expect "result [worktree] after ctrl-t: reports nothing merged" 'nothing merged'
+
+# --- 대조: 가짜 도구가 실제로 끼어드는지 ---------------------------------------------
+# 저장소 문맥을 만드는 콜백(모드 전환)은 git 을 띄운다. 이것이 잡히지 않으면 위의 "no git/tmux" 는 아무것도 증명하지 못한다
+st=$(mkstate worktree)
+run "$st" '' 1 --on mode next
+if has "$SPAWNS" 'git worktree list'; then ok "control: a full-context callback is seen calling git"
+else no "control: a full-context callback is seen calling git" "$SPAWNS"; fi
+
+printf '\n%d passed, %d failed\n' "$pass" "$fail"
+[ "$fail" = 0 ]

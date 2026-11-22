@@ -284,9 +284,34 @@ prefix S 와 같다 (session-picker.md "띄우기" 절): `run-shell -b "tmux-dev
 - `libexec/executable_tmux-dev-worktree`: 저장소·경로 규칙, 후보(`rows_worktree`, `rows_dir`), 머지 판정, 화면, 콜백(`--on …`),
   미리보기, 피커, 실행(`apply_decision`, `open_target`), 정리, Claude Code 훅. 공용은 `lib/picker.sh`, 탐색은 `lib/dirs.sh`,
   레이아웃은 `lib/layout.sh`.
-- 콜백은 `--on <이벤트>` 로 같은 스크립트를 다시 부르고, 매번 세션 디렉토리(상태 `root`)에서 저장소를 다시 찾는다.
+- 콜백은 `--on <이벤트>` 로 같은 스크립트를 다시 부른다. 매번 새 프로세스라 문맥을 다시 갖춰야 하는데, 그 문맥은 세 가지다.
+  - **피커가 정해 둔 값** (상태 `session`·`base`·`root`·`mode`): `pick` 이 뜰 때 한 번 쓰고 `picker_ctx` 가 읽는다. bash 내장
+    `read` 라 프로세스를 띄우지 않는다. 피커가 떠 있는 동안 바뀌지 않는 것만 둔다. `base` 는 브랜치 이름만 고정하고 그 커밋은
+    늘 새로 읽는다.
+  - **저장소 문맥** (`repo_try`: `COMMON`·`WT_LIST`·`MAIN`·`NAME`): git 을 여러 번 띄우고 워크트리 수만큼 느려진다. 워크트리
+    목록은 피커가 떠 있는 동안에도 바뀌므로(만들기·정리) 쓸 때마다 새로 읽는다. `in_session_dir` = `picker_ctx` + `repo_try`.
+  - **이벤트 값**: fzf 가 주는 환경변수(`FZF_QUERY` 등)와 인자(커서 행).
+- **자주 도는 콜백은 가볍게 (2026-11-22).** `change`(키마다)와 `result`(검색마다)는 `picker_ctx` 만 쓰고 저장소 문맥을 만들지
+  않는다. `--on` 디스패처의 `case` 한 줄이 그 목록이고, 거기 없는 콜백은 모두 저장소 문맥까지 만든다(기본이 안전한 쪽).
+  - 왜: `change` 는 `transform`(동기)이라 콜백이 도는 동안 fzf 가 다음 키를 받지 않는다. 전에는 모든 콜백이 `tmux
+    display-message` + `repo_try` + `default_base` 로 프로세스 8개를 띄워 키마다 약 120ms 가 걸렸다(워크트리 95개. 1개여도
+    90ms). 콜백 시간이 키 간격을 넘으면 입력이 쌓인다: 워크트리 61개에서 10타를 62ms 간격으로 치면 마지막 글자가 328ms 뒤에
+    떴고(마커 목록이 끝난 뒤), 피커가 뜨자마자 치면(마커 계산·fetch 대기와 겹친다) 약 690ms 뒤였다. 지금은 각각 18ms,
+    27ms 다. 남는 약 30ms 는 bash 기동과 스크립트를 읽는 비용이다(prefix S 의 `change`, `--cleanup-tick` 과 같다).
+  - 규칙: 이 둘의 콜백은 상태 파일과 fzf 환경변수만 읽는다. git·tmux 를 띄우지 않고, 저장소 변수를 쓰지 않는다(비어 있어서
+    `set -u` 로 죽는데, 죽은 콜백은 빈 줄을 낼 뿐이라 화면으로는 알기 어렵다). `result` 의 없는 경로 판정(`classify` 의 git
+    한 번, 백그라운드)만 예외다. `test/tmux-dev/run` 이 가짜 git·tmux 를 PATH 앞에 두고 모드 × 검색어마다 확인한다.
+  - 같이 고쳐진 것: `-t`·`--base` 로 띄운 피커에서 콜백은 그 값을 받지 못해 푸터·마커·미리보기가 기본 base 로 계산됐다
+    (만들기만 `--base` 를 썼다). 이제 콜백·목록·미리보기·정리 작업이 모두 상태의 값을 본다.
+  - 버린 안: (1) `change` 를 `bg-transform` 으로: 늦게 끝난 옛 검색어의 결과가 새 푸터를 덮는다(시험으로 확인). 막으려면
+    `bg-cancel` 이 필요한데 그것은 fetch 대기도 끊는다(머지 판정 절). (2) worktree 모드에서 `change` 를 푼다: 검색어가 바뀌어도
+    fzf 는 커서를 같은 순번에 두므로(시험으로 확인) `first` 가 필요하고, `change` 는 푸터의 일시 메시지를 지우는 일도 한다.
+    "치는 동안 alt-enter 가 할 일을 푸터에 보인다"(session-picker.md)도 뒤집어야 한다. (3) `change` 만의 빠른 경로와 base
+    캐시: 값의 출처가 둘이 된다.
 - **고친 경쟁 상태**: 목록 마커와 미리보기가 같은 patch-id 집합을 동시에 계산할 때 먼저 끝난 쪽의 `find -delete` 가 다른 쪽
   임시 파일을 지워 `mv` 가 실패(`set -e`)하고 목록이 통째로 비었다. 임시 파일(`<커밋>.<pid>`)은 정리 대상에서 빼고 `mv` 실패도 넘긴다.
 - **시험**: 격리 tmux 서버(`tmux -L`) + `script` 가짜 클라이언트(stdin 은 끝나지 않는 파이프) + 임시 bare 원격·저장소 +
   `XDG_*_HOME` 임시 디렉토리. 피커는 창이나 modal 패널에 띄우고 `send-keys` / `capture-pane` 으로 본다. 함정: 다른 클론에서
   만든 커밋 cherry-pick 이 조용히 실패한다 → 같은 저장소에서 `checkout -b tmp origin/main; cherry-pick; push HEAD:main`.
+- **자동 확인**: `test/tmux-dev/run` (저장소 맨 위. `home/` 밖이라 배포되지 않는다). tmux·fzf 없이 콜백만 실행해 자주 도는
+  콜백의 규칙을 본다. 화면 동작은 위의 격리 서버 시험으로 본다.
