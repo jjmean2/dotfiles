@@ -100,13 +100,6 @@ if [ -n "$branch" ]; then
   git_seg+="${ESC}[1m${ESC}[36m)${R}"
 fi
 
-# 모델·effort: "Opus 5.5·medium". effort 는 입력창 위에도 보이지만 모델과 한 묶음으로 둔다.
-model_seg=""
-if [ -n "$model" ]; then
-  model_seg="${ESC}[35m${model}${R}"
-  [ -n "$effort" ] && model_seg+="${DIM}·${R}${ESC}[35m${effort}${R}"
-fi
-
 # 컨텍스트 사용량: 60% 부터 노랑, 80% 부터 빨강. 첫 응답 전(null)에는 숨긴다.
 ctx_seg=""
 if [ -n "$ctx" ]; then
@@ -124,22 +117,44 @@ vis_len() {
   printf '%s' "${#s}"
 }
 
-render() { # $1: 경로 단계 수, $2: 모델 넣기(1/0)
-  local s="${host}${ESC}[36m${ESC}[4m$(path_disp "$1")${R}${git_seg}"
-  [ "$2" = 1 ] && [ -n "$model_seg" ] && s+="${SEP}${model_seg}"
-  [ -n "$ctx_seg" ] && s+="${SEP}${ctx_seg}"
+# 줄은 둘이다. 첫 줄은 경로·git, 둘째 줄은 모델·effort·컨텍스트.
+# 줄마다 따로 너비를 맞춘다. COLUMNS 를 모르면 줄이지 않는다.
+# footer 의 내장 들여쓰기 몫으로 4칸을 남긴다.
+max=$(( ${COLUMNS:-0} - 4 ))
+fits() { [ "${COLUMNS:-0}" -le 0 ] || [ "$(vis_len "$1")" -le "$max" ]; }
+
+line1() { # $1: 경로 단계 수
+  printf '%s' "${host}${ESC}[36m${ESC}[4m$(path_disp "$1")${R}${git_seg}"
+}
+
+line2() { # $1: 모델 넣기(1/0), $2: effort 넣기(1/0)
+  # 모델·effort: "Opus 5.5·medium". effort 는 입력창 위에도 보이지만 모델과 한 묶음으로 둔다.
+  local s=""
+  if [ "$1" = 1 ] && [ -n "$model" ]; then
+    s="${ESC}[35m${model}${R}"
+    [ "$2" = 1 ] && [ -n "$effort" ] && s+="${DIM}·${R}${ESC}[35m${effort}${R}"
+  fi
+  if [ -n "$ctx_seg" ]; then
+    [ -n "$s" ] && s+="$SEP"
+    s+="$ctx_seg"
+  fi
   printf '%s' "$s"
 }
 
-# 좁으면 모델 → 경로 순으로 줄인다. COLUMNS 를 모르면 줄이지 않는다.
-# footer 의 내장 들여쓰기 몫으로 4칸을 남긴다.
-max=$(( ${COLUMNS:-0} - 4 ))
-out=$(render 4 1)
-if [ "${COLUMNS:-0}" -gt 0 ]; then
-  for try in "4 0" "2 0" "1 0"; do
-    [ "$(vis_len "$out")" -le "$max" ] && break
-    out=$(render $try)
-  done
-fi
+# 첫 줄: 경로를 4 → 2 → 1 단계로 줄인다.
+for keep in 4 2 1; do
+  out1=$(line1 "$keep")
+  fits "$out1" && break
+done
 
-printf '%s' "$out"
+# 둘째 줄: effort → 모델 순으로 뺀다.
+for try in "1 1" "1 0" "0 0"; do
+  out2=$(line2 $try)
+  fits "$out2" && break
+done
+
+if [ -n "$out2" ]; then
+  printf '%s\n%s' "$out1" "$out2"
+else
+  printf '%s' "$out1"
+fi
