@@ -286,9 +286,6 @@ env = LC_MESSAGES=en_US.UTF-8
 # 실행할 셸/명령 지정 (기본: 로그인 셸)
 #command = /opt/homebrew/bin/fish
 
-# 설정을 여러 파일로 나눠 관리 (? 접두사: 파일이 없어도 에러 안 냄)
-#config-file = ?local.config
-
 # 테마: "공유 기본값 + 머신별 덮어쓰기" 구조.
 #
 # - 아래 theme 은 모든 머신에 적용되는 기본값이다 (chezmoi/git 관리).
@@ -308,3 +305,22 @@ config-file = ?auto/theme.ghostty
 # 프로그램들이 먼저 찾도록 TERMINFO 환경변수를 돌린다. 내용과 이유는 그 파일 참고.
 # *.darwin.* 파일은 다른 OS 에 설치되지 않으며, ? 접두사라 없어도 오류가 없다.
 config-file = ?terminfo.darwin.ghostty
+
+# 머신 로컬 설정: ~/.config/ghostty/local.ghostty (폰트·크기·테마 등 이 머신만의 값).
+# tmux.local.conf, shell 의 rc.d/*.local.sh 와 같은 규칙이다. chezmoi 소스에 없는 파일이라
+# apply 가 건드리지 않고, 필요한 머신에서 손으로 만든다. ? 접두사라 없으면 건너뛴다.
+#
+# 읽는 순서: config-file 로 포함한 파일은 줄의 위치와 상관없이 본 파일을 다 읽은 뒤, 적힌
+# 순서대로 읽힌다. 그래서 local 이 본 파일의 값을 이기고, 포함 파일 중 마지막이라
+# auto/theme.ghostty(테마 선택기가 쓰는 파일)도 이긴다. 이 줄은 늘 맨 아래에 둔다.
+#
+# 덮어쓰는 법: font-size, theme 같은 단일 값은 그냥 적으면 바뀐다. font-family 처럼 여러 번
+# 적는 목록 키는 뒤에 이어 붙으므로, 먼저 빈 값으로 목록을 비우고 다시 적는다:
+#   font-family = ""
+#   font-family = "Cascadia Code Light"
+#   font-family = "D2Coding"        # 한글 대체 폰트도 다시 적는다
+# 폰트를 바꾸면 위 "폰트" 절의 이모지 font-codepoint-map 목록(Fira Code·D2Coding 기준)이
+# 맞지 않을 수 있다. 확인: ghostty +show-face --cp=0x2615
+#
+# 적용 확인: ghostty +show-config | grep -E '^(font-family|font-size|theme) '
+config-file = ?local.ghostty
