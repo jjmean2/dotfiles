@@ -132,6 +132,9 @@ for s in waiting error done running; do
   n=$(count "$s")
   summary+="#{?#{e|>|:$n,0},$(paint "$c" "$i$n") ,}"
 done
+# 상태바 오른쪽의 조각 규칙(내용 + 공백 둘)을 맞춘다: 하나라도 있으면 끝에 공백을 하나 더 붙인다.
+any="#{n:#{S:#{W:#{P:#{?$st,x,}}}}}"
+summary+="#{?#{e|>|:$any,0}, ,}"
 tmux set -g @agent_summary "$summary"
 
 pane="#{?#{==:$st,waiting},$(paint "$c_wait" "$i_wait") ,"

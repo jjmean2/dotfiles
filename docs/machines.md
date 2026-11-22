@@ -223,7 +223,6 @@ chezmoi apply
 
 ## 후속 후보
 
-- tmux 상태바의 `gitmux` 를 설치 여부로 감싸기. 지금은 서버처럼 gitmux 가 없는 곳에서 git 표시가 비거나 오류가 난다.
 - 셸이 만드는 상태 파일(`.zsh_history`, `.zcompdump`)을 `$XDG_STATE_HOME`·`$XDG_CACHE_HOME` 으로 옮기기.
 - 실제 VS Code Dev Containers 와 Codespaces 에서 dotfiles 자동 설치(`install.sh`)를 돌려 보기.
 - 실제 서버에서 `jw-ephemeral` 시험. 지금까지는 Docker 컨테이너(Debian 13, Alpine 3.22)의 sudo 없는 사용자로
