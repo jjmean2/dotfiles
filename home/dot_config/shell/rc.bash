@@ -11,7 +11,7 @@ fi
 
 # region: 프롬프트(Prompt) 설정
 # 프롬프트에서 사용하기 위한 git 상태를 저장하는 변수를 정의하는 함수
-# _ps_branch, _ps_unstaged_icon, _ps_staged_icon
+# _ps_branch, _ps_action, _ps_unstaged_icon … (변수 목록은 그 파일 머리말)
 if [[ -f $HOME/.config/shell/_ps_set_git_status.bash ]]; then
 	source "$HOME/.config/shell/_ps_set_git_status.bash"
 
@@ -44,13 +44,16 @@ PS1+='\[\e[36;1m\]('
 # - 브랜치명
 PS1+='\[\e[${_ps_detached_color:-33}m\]$_ps_branch'
 # shellcheck disable=SC2154
-# - upstream과의 차이가 있으면 표시
-PS1+='${_ps_has_upstream_diff:+ }${_ps_upstream_ahead:+\[\e[32m\]⇡${_ps_upstream_ahead}\[\e[0m\]}${_ps_upstream_behind:+\[\e[31m\]⇣${_ps_upstream_behind}\[\e[0m\]}'
+# - 진행 중인 작업 (rebase, merge …) 이 있으면 |작업 으로 표시. 예: main|rebase-i 2/5
+PS1+='${_ps_action:+\[\e[1;31m\]|$_ps_action}'
 # shellcheck disable=SC2154
-# - staged/unstaged 변경 사항이 있으면 표시
-PS1+='${_ps_unstaged_icon:+ \[\e[31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[32m\]$_ps_staged_icon}'
+# - upstream과의 차이가 있으면 표시
+PS1+='${_ps_has_upstream_diff:+ }${_ps_upstream_ahead:+\[\e[1;32m\]⇡${_ps_upstream_ahead}}${_ps_upstream_behind:+\[\e[1;31m\]⇣${_ps_upstream_behind}}'
+# shellcheck disable=SC2154
+# - 충돌 ≠, unstaged ✗, staged ✓, untracked ?, stash ≡개수
+PS1+='${_ps_conflicted_icon:+ \[\e[1;31m\]$_ps_conflicted_icon}${_ps_unstaged_icon:+ \[\e[1;31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[1;32m\]$_ps_staged_icon}${_ps_untracked_icon:+ \[\e[1;31m\]$_ps_untracked_icon}${_ps_stashes:+ \[\e[1;34m\]≡$_ps_stashes}'
 # (2) 괄호 닫기
-PS1+='\[\e[36m\])\[\e[0m\]'
+PS1+='\[\e[1;36m\])\[\e[0m\]'
 # (1) `${_ps_branch:+ ...` 구문 닫기
 PS1+='}'
 # 프롬프트 끝에 $ 표시
