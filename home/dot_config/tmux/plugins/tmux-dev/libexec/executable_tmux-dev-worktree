@@ -914,6 +914,10 @@ pick() {
   picker_state_init tmux-dev-worktree
   local root; root=$(session_dir); [ -n "$root" ] && st_set root "$root"
   cur_mode; st_set mode "$MODE"
+  # 피커가 떠 있는 동안 바뀌지 않는 값은 여기서 한 번 정해 상태로 물려준다 (picker_ctx 가 읽는다). 콜백이 저마다 다시 구하면
+  # 키마다 tmux·git 이 뜨고, -t·--base 로 띄운 피커에서는 콜백만 다른 값을 봤다. base 는 브랜치 이름만 고정한다 (커밋은 늘 새로 읽는다)
+  st_set session "$SESSION"
+  [ -n "$IN_REPO" ] && st_set base "$(base)"
   local start_tab=""; [ "$MODE" = worktree ] || start_tab="unbind(tab,shift-tab)+"   # 다중 선택은 worktree 모드에서만
   style_opts
   # 정렬은 행 순서 그대로(--tiebreak index 가 마지막). 바인딩은 fzf 기본 키와 겹치지 않는 것만 (prefix S 와 같다).
@@ -1323,7 +1327,7 @@ busy() { st_get busy; [ "$ST" = 1 ] || return 1; printf 'bell'; }   # 정리 중
 start_job() {  # $1 one(상태 target) | many(상태 bulk) [$2 keep]
   st_del finished result fail progress
   st_set job "$1$US${2:-}$US$(picker_window)"
-  st_set session "$SESSION"   # 세션 이름(사용자가 정한 글자)은 셸 명령줄 대신 상태로 넘긴다
+  # 세션 이름(사용자가 정한 글자)은 셸 명령줄에 싣지 않는다: 작업이 상태 session 에서 읽는다 (pick 이 써 둔다)
   # run-shell 의 출력은 패널에 뜨므로 버린다. 피커 패널(TMUX_PANE)은 close_windows 가 남겨야 해서 넘긴다
   tmux run-shell -b "$(printf 'TMUX_DEV_STATE=%q TMUX_PANE=%q %q --cleanup-job >/dev/null 2>&1' \
     "$TMUX_DEV_STATE" "${TMUX_PANE:-}" "$SELF")" 2>/dev/null || { st_del job; nope "${Y}could not start the clean-up${R}"; return; }
@@ -1576,8 +1580,16 @@ hook_remove() {
 }
 
 # --- 인자 ------------------------------------------------------------------------------
-# 콜백·목록·미리보기는 피커가 띄운 것이라 세션 디렉토리에서 저장소를 찾는다 (상태 root). 셸 호출은 지금 디렉토리 기준.
-in_session_dir() { st_get root; [ -n "$ST" ] && [ -d "$ST" ] && cd "$ST"; repo_try || true; }
+# 콜백·목록·미리보기는 피커가 띄운 것이라 피커가 정해 둔 값을 상태에서 읽는다 (pick 이 쓴 session·base·root). 프로세스를
+# 띄우지 않는다. 상태가 없으면(셸에서 부른 --list 등) 아무것도 바꾸지 않는다: 지금 디렉토리, 인자로 받은 값 그대로.
+picker_ctx() {
+  st_get session; SESSION=${SESSION:-$ST}
+  st_get base; BASE=${BASE:-$ST}
+  st_get root; [ -n "$ST" ] && [ -d "$ST" ] && cd "$ST"
+  return 0
+}
+# 저장소 문맥까지 (repo_try: git 을 여러 번 띄우고 워크트리 수만큼 느려진다). 자주 도는 이벤트는 picker_ctx 만 쓴다 (--on)
+in_session_dir() { picker_ctx; repo_try || true; }
 arg=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -1585,8 +1597,12 @@ while [ $# -gt 0 ]; do
     --layout) LAYOUT=$2; shift 2 ;;
     -t)       SESSION=$2; shift 2 ;;
     --on)
-      SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}
-      in_session_dir; cur_mode; apply_scope "$MODE"
+      # 자주 도는 이벤트(change: 키마다, result: 검색마다)는 저장소 문맥 없이 돈다. change 는 동기(transform)라 걸리는 시간만큼
+      # 입력이 밀린다: 상태 파일과 fzf 환경변수만 읽고 git·tmux 를 띄우지 않는다. result 는 백그라운드지만 같은 규칙이고, 없는
+      # 경로의 판정(classify 의 git 한 번)만 예외다. 이 둘에서는 저장소 변수(MAIN, WT_LIST …)가 비어 있어 쓰면 set -u 로 조용히
+      # 죽는다. test/tmux-dev/run 이 둘 다 확인한다. 나머지 콜백은 저장소 문맥까지 만든다 (기본)
+      case ${2:-} in change|result) picker_ctx ;; *) in_session_dir ;; esac
+      cur_mode; apply_scope "$MODE"
       # 콜백은 출력이 전부다. 마지막 조건식의 종료 코드로 set -e 가 끊지 않게 || true
       case $2 in
         enter) on_enter "${3:-}" "${4:-}" "${5:-}" || true ;; layout) on_layout "${3:-}" "${4:-}" "${5:-}" || true ;;
@@ -1601,20 +1617,20 @@ while [ $# -gt 0 ]; do
         toggle-merged) on_toggle_merged || true ;; after-cleanup) on_after_cleanup || true ;; deselect) on_deselect || true ;; fetch) on_fetch || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
       esac; exit 0 ;;
     --cleanup-tick)    cleanup_tick; exit 0 ;;   # 저장소를 찾지 않는다 (틱마다 불린다)
-    --cleanup-job)     st_get session; SESSION=$ST; in_session_dir; cleanup_job; exit 0 ;;
+    --cleanup-job)     in_session_dir; cleanup_job; exit 0 ;;
     --empty-trash)     repo_init; empty_trash; exit 0 ;;
     --fetch-job)       repo_init; fetch_job; exit 0 ;;
     --choose-layout)   in_session_dir; w_choose_layout_step; exit 0 ;;
     --choose-create)   in_session_dir; choose_create_step; exit 0 ;;
     --create-preview)  in_session_dir; create_preview "${2:-create}"; exit 0 ;;
-    --choose-cleanup)  SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; in_session_dir; choose_cleanup_step; exit 0 ;;
-    --cleanup-preview) SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}; in_session_dir; cleanup_preview "${2:-clean}"; exit 0 ;;
+    --choose-cleanup)  in_session_dir; choose_cleanup_step; exit 0 ;;
+    --cleanup-preview) in_session_dir; cleanup_preview "${2:-clean}"; exit 0 ;;
     --choose-location) in_session_dir; cur_mode; apply_scope "$MODE"; choose_location_step; exit 0 ;;
     --loc-preview)     loc_preview "${2:-}"; exit 0 ;;
     --help-keys)       in_session_dir; help_keys; exit 0 ;;
     --list)
-      SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}
       in_session_dir
+      SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}   # 셸에서 부른 --list (상태 없음)
       case ${2:-} in
         worktree)  # 마커가 붙은 목록은 ctrl-t 가 읽도록 상태에도 남긴다 (마커 없는 목록이면 지운다)
           if [ "${3:-}" = --marks ] && [ -n "${TMUX_DEV_STATE:-}" ]; then list_mode worktree --marks | tee "$TMUX_DEV_STATE/rows"
