@@ -11,6 +11,7 @@
 #
 # 순서가 곧 설계다. 플러그인끼리 같은 키와 위젯을 차례로 감싸기 때문에 아래 순서를 바꾸지 않는다.
 #   (앞) compinit (rc.zsh) → fzf 의 Tab·Ctrl-R 바인딩 (rc.d/fzf.sh)
+#   0. gitstatus                키나 위젯을 건드리지 않아 순서와 상관없다. 데몬이 일찍 뜨도록 맨 앞에 둔다
 #   1. fzf-tab                  compinit 뒤, Tab(^I) 을 마지막으로 잡아야 한다. 위젯을 감싸는 플러그인보다 앞
 #   2. zsh-autosuggestions      위젯을 감싼다
 #   3. zsh-syntax-highlighting  반드시 마지막. 이보다 뒤에 만든 위젯은 입력 줄 색칠이 갱신되지 않는다
@@ -29,6 +30,27 @@ _jw_plugin() {
 	REPLY=$_jw_plugin_dir/$1/$1.plugin.zsh
 	[[ " ${JW_ZSH_PLUGINS_DISABLE-} " != *" $1 "* && -r $REPLY ]]
 }
+
+# ------------------------------------------------------------------------------
+# 0. gitstatus: 프롬프트의 git 상태를 셸마다 하나 뜨는 데몬(gitstatusd)에게 묻는다.
+#    https://github.com/romkatv/gitstatus
+# ------------------------------------------------------------------------------
+# 데몬이 저장소의 index 와 디렉터리 정보를 메모리에 들고 있다가 바뀐 부분만 다시 본다. 매번 git status 를 새로
+# 띄우는 것보다 빠르고, 답을 비동기로 받아 Enter 뒤에 셸이 멈추지 않는다. 쓰는 쪽은 prompt.zsh 의 git 칸.
+# 여기서는 데몬을 띄우기만 하고(-a: 준비를 기다리지 않음) 돌아온다. 첫 프롬프트에서 prompt.zsh 가 준비를 마친다.
+# 데몬은 이 셸이 끝나면 같이 끝난다. 쉬는 동안은 CPU 를 쓰지 않는다.
+#
+# 데몬 실행 파일은 플러그인이 처음 실행할 때 인터넷에서 받는 것이 기본인데, 그러지 않게 하고(AUTO_INSTALL=0)
+# chezmoi 가 체크섬을 고정해 받아 둔 것만 쓴다 (.chezmoiexternals/gitstatus.toml.tmpl). 실행 파일이 없는 머신
+# (받지 않는 OS·아키텍처)에서는 플러그인을 읽지 않고, prompt.zsh 가 git status 를 직접 부르는 방식으로 대신한다.
+typeset -g GITSTATUS_CACHE_DIR=$HOME/.local/share/gitstatus
+typeset -g GITSTATUS_AUTO_INSTALL=0
+if _jw_plugin gitstatus && () { (( $# )) } $GITSTATUS_CACHE_DIR/gitstatusd-*(N.x); then
+	source $REPLY
+	# 이름 JW 는 이 셸 안에서 데몬을 가리키는 이름이다 (prompt.zsh 가 같은 이름으로 묻는다).
+	# 종류(staged·unstaged·충돌·untracked)마다 1개까지만 센다(기본값). 있다/없다만 쓰므로 다 세지 않아 빠르다.
+	gitstatus_start -a JW
+fi
 
 # ------------------------------------------------------------------------------
 # 1. fzf-tab: Tab 완성 목록을 fzf 로 고른다. https://github.com/Aloxaf/fzf-tab

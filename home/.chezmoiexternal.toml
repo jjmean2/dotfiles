@@ -6,6 +6,14 @@
 # zsh 플러그인 (shell/plugins.zsh 가 이 순서와 설정으로 읽는다. 더하고 올리고 빼는 법은 docs/zsh-plugins.md).
 # 플러그인 관리자 없이 태그의 소스 묶음을 그대로 받아 ~/.local/share/zsh/plugins/<이름> 에 푼다.
 # 버전을 올리려면 url 의 태그와 checksum 을 같이 바꾼다. exact 라서 새 버전에 없는 옛 파일은 지워진다.
+# gitstatus 는 소스(프롬프트가 부르는 zsh 함수)만 여기서 받는다. 데몬 실행 파일은 OS·아키텍처마다 달라서
+# .chezmoiexternals/gitstatus.toml.tmpl 에 따로 있다. 태그를 올릴 때는 그 파일 머리말대로 실행 파일도 같이 맞춘다.
+[".local/share/zsh/plugins/gitstatus"]
+    type = "archive"
+    url = "https://github.com/romkatv/gitstatus/archive/refs/tags/v1.5.5.tar.gz"
+    checksum.sha256 = "ed9e41487638591386b947b1944ab9cc3b434d8c8b47df7acade1200e76a8ed4"
+    stripComponents = 1
+    exact = true
 [".local/share/zsh/plugins/fzf-tab"]
     type = "archive"
     url = "https://github.com/Aloxaf/fzf-tab/archive/refs/tags/v1.3.0.tar.gz"

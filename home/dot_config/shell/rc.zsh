@@ -7,73 +7,10 @@
 autoload -Uz colors && colors
 setopt PROMPT_SUBST
 
-# # region: 프롬프트(Prompt) 설정
-autoload -Uz add-zsh-hook
-
-# 프롬프트에서 사용하기 위한 git 상태를 저장하는 변수를 정의하는 함수
-# _ps_branch, _ps_unstaged_icon, _ps_staged_icon
-if [[ -f $HOME/.config/shell/_ps_set_git_status.bash ]]; then
-	source "$HOME/.config/shell/_ps_set_git_status.bash"
-
-	# precmd hook은 PROMPT가 출력되기 직전 시점에 실행될 함수를 등록하는 hook이다.
-	# _ps_set_git_status를 PROMPT 출력 직전에 실행되도록 하여 PROMPT에서 사용할 상태 변수를 갱신한다.
-	add-zsh-hook precmd _ps_set_git_status
+# 프롬프트: 생김새와 git 상태를 얻는 방법은 prompt.zsh 머리말
+if [[ -f $HOME/.config/shell/prompt.zsh ]]; then
+	source "$HOME/.config/shell/prompt.zsh"
 fi
-
-# Zsh는 이 변수를 기본 지원하지 않지만, PROMPT 평가시
-# - 파라미터 패턴 매칭
-#   - ${(M)name:#pattern} (name 파라미터 값이 pattern과 매칭되면 name 값으로 확장, 아니면 null)
-# - 중첩 파라미터 확장:
-#   - ${${${name}:+setword}:-unsetword} (name 값이 비어 있지 않으면, setword로 확장, 비어 있으면 unsetword로 확장)
-# - 산술 확장:
-#   - $((expression)) (expression을 산술식으로 연산한 결과로 확장)
-# - 프롬프트 삼항식 조건분기 escape 문법:
-#   - %(n~:true-text:false-text) (현재 디렉토리 요소 개수가 n 이상이면 true-text, 아니면 false-text로 확장)
-# 등을 이용해 PROMPT_DIRTRIM 값에서 지정한 만큼 경로를 줄이도록 작성함
-PROMPT_DIRTRIM=4
-
-PROMPT=''
-if [[ -n $SSH_CLIENT || -n $SSH_TTY ]]; then
-	# 원격 접속 시에는 <user>@<host>를 추가로 표시
-	# "user@host🅩 ~/dev/dotfiles (main ✗) $ " 형태
-	PROMPT+='%F{green}%n%F{magenta}@%m%f'
-fi
-# "🅩 ~/dev/jwlee/dotfiles (main ✗) $ " 형태
-# 🅩 로 Zsh 임을 표시.
-PROMPT+='%B%(?:%f:%F{red})🅩%b '
-# 현재 디렉토리 경로를 표시
-PROMPT+='%F{cyan}%U${${${(M)PROMPT_DIRTRIM:#(+|)<1->}:+%($((PROMPT_DIRTRIM+3))~:%-1~/.../%$((PROMPT_DIRTRIM))~:%~)}:-%~}%u%f'
-# (1) git 브랜치 정보가 있으면 공백을 두고 확장
-PROMPT+='${_ps_branch:+ '
-# (2) 괄호 열기
-PROMPT+='%B%F{cyan\}('
-# - 브랜치명
-PROMPT+='${${_ps_detached_color:+%F{magenta\}}:-%F{yellow\}}$_ps_branch%f'
-# - upstream과의 차이가 있으면 표시
-PROMPT+='${_ps_has_upstream_diff:+ }${_ps_upstream_ahead:+%F{green\}⇡${_ps_upstream_ahead}%f}${_ps_upstream_behind:+%F{red\}⇣${_ps_upstream_behind}%f}'
-# - staged/unstaged 변경 사항이 있으면 표시
-PROMPT+='${_ps_unstaged_icon:+ %F{red\}$_ps_unstaged_icon}${_ps_staged_icon:+ %F{green\}$_ps_staged_icon}'
-# (2) 괄호 닫기
-PROMPT+='%F{cyan\})%f%b'
-# (1) ${_ps_branch:+ ... 구문 닫기
-PROMPT+='}'
-# 프롬프트 끝에 $ 표시
-PROMPT+=' $ '
-
-# 에러로 끝난 경우, 우측에서 직전 명령의 종료 코드 확인하기
-RPROMPT="%(?..%F{red}%?🚫%f)"
-
-# PROMPT="%F{yellow}%n%f%F{green}@%m%f %F{cyan}%U%~%u%f $ "
-#
-# Without green coloring
-# PROMPT="%F{cyan}%U%~%u%f $ "
-#
-# green coloring을 추가하려면 위 대신 아래 설정 사용
-# https://mybyways.com/blog/macos-zsh-configuration
-# PROMPT="%F{cyan}%U%~%u%f $ %F{green}%B"
-# preexec() { print -Pn "%b%f"; }
-# RPROMPT="%(?..%F{red}%?🚫%f)"
-# endregion
 
 # ==================================================
 # 🕹️ 셸 옵션

@@ -1,0 +1,38 @@
+{{- /* gitstatusd: 프롬프트의 git 상태를 답하는 데몬 (shell/plugins.zsh 의 "0. gitstatus", shell/prompt.zsh 의 git 칸).
+
+       플러그인 소스는 .chezmoiexternal.toml 이 받는다. 플러그인은 처음 실행할 때 실행 파일을 GitHub(실패하면 gitee)에서
+       받는 것이 기본인데, plugins.zsh 가 그것을 끄고(GITSTATUS_AUTO_INSTALL=0) 여기서 받아 둔 것만 쓰게 한다
+       (GITSTATUS_CACHE_DIR=~/.local/share/gitstatus). 플러그인이 찾는 파일 이름이 gitstatusd-<uname -s>-<uname -m> 이라
+       묶음 안의 이름 그대로 둔다. 실행 파일은 정적 링크라 따로 깔 것이 없다.
+
+       아래 네 가지 말고는 받지 않는다. 그런 머신에서 plugins.zsh 는 플러그인을 읽지 않고, prompt.zsh 가 git status 를
+       직접 부르는 방식으로 대신한다.
+
+       버전 올리기: .chezmoiexternal.toml 의 gitstatus 태그를 바꾼 뒤, 그 태그의 install.info 에 적힌 플랫폼별
+       version 과 sha256 을 아래에 옮긴다 (플러그인 태그와 실행 파일 버전이 다를 수 있다. v1.5.5 플러그인은 v1.5.4 실행 파일).
+       플러그인은 install.info 의 version 으로 실행 파일을 확인하므로 맞지 않으면 데몬이 뜨지 않는다 (프롬프트는 git status 로 대신).
+         curl -fsSL https://raw.githubusercontent.com/romkatv/gitstatus/<태그>/install.info */ -}}
+{{- $version := "v1.5.4" -}}
+{{- $file := "" -}}
+{{- $sum := "" -}}
+{{- if and (eq .chezmoi.os "darwin") (eq .chezmoi.arch "arm64") -}}
+{{-   $file = "gitstatusd-darwin-arm64" -}}
+{{-   $sum = "eae979e990ca37c56ee39fadd0c3f392cbbd0c6bdfb9a603010be60d9e48910a" -}}
+{{- else if and (eq .chezmoi.os "darwin") (eq .chezmoi.arch "amd64") -}}
+{{-   $file = "gitstatusd-darwin-x86_64" -}}
+{{-   $sum = "9fd3913ec1b6b856ab6e08a99a2343f0e8e809eb6b62ca4b0963163656c668e6" -}}
+{{- else if and (eq .chezmoi.os "linux") (eq .chezmoi.arch "amd64") -}}
+{{-   $file = "gitstatusd-linux-x86_64" -}}
+{{-   $sum = "9633816e7832109e530c9e2532b11a1edae08136d63aa7e40246c0339b7db304" -}}
+{{- else if and (eq .chezmoi.os "linux") (eq .chezmoi.arch "arm64") -}}
+{{-   $file = "gitstatusd-linux-aarch64" -}}
+{{-   $sum = "32b57eb28bf6d80b280e4020a0045184f8ca897b20b570c12948aa6838673225" -}}
+{{- end -}}
+{{- if $file }}
+[".local/share/gitstatus/{{ $file }}"]
+    type = "archive-file"
+    url = "https://github.com/romkatv/gitstatus/releases/download/{{ $version }}/{{ $file }}.tar.gz"
+    checksum.sha256 = "{{ $sum }}"
+    path = "{{ $file }}"
+    executable = true
+{{- end }}
