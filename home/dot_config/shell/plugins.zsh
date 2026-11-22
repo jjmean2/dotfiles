@@ -66,6 +66,9 @@ if _jw_plugin zsh-autosuggestions; then
 	# Option+. 바로 뒤인 줄 모르고 한 칸씩 밀린다. copy-earlier-word 는 기본 목록에 이미 있다.
 	# 위젯 목록은 source 뒤에 고쳐도 된다 (위젯을 감싸는 일은 첫 프롬프트 직전에 한다, README 의 Widget Mapping)
 	ZSH_AUTOSUGGEST_CLEAR_WIDGETS+=(jw-insert-last-word)
+	# ↑ / ↓, Option+↑ / ↓ (jw-history-*, rc.zsh) 도 같은 이유로 넣는다. 이 위젯들도 $LASTWIDGET 으로 "이어서 누름" 을
+	# 알아본다. 기본 목록에는 이들이 대신한 zsh 동봉 위젯(up/down-line-or-beginning-search)이 들어 있다.
+	ZSH_AUTOSUGGEST_CLEAR_WIDGETS+=(jw-history-local-up jw-history-local-down jw-history-all-up jw-history-all-down)
 fi
 
 # ------------------------------------------------------------------------------

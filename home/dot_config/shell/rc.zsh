@@ -101,17 +101,24 @@ setopt interactive_comments
 # 파일 위치를 직접 정하는 이유: macOS 는 /etc/zshrc 가 ~/.zsh_history 로 정해 주지만(크기는 1000 줄),
 # Linux 배포판의 기본 설정은 대개 HISTFILE 을 정하지 않아서 히스토리가 셸을 닫으면 사라진다.
 HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
-# 메모리에 둘 줄 수와 파일에 남길 줄 수. 중복을 지우므로(아래) 실제로는 서로 다른 명령 5만 개다.
+# 메모리에 둘 줄 수와 파일에 남길 줄 수. 연달아 친 반복만 합치므로(아래) 명령을 실행한 횟수로 5만 번이다.
 HISTSIZE=50000
 SAVEHIST=50000
 
 # 명령마다 시작 시각과 걸린 시간을 같이 적는다 (`: 1763300000:3;make` 꼴). `history -i` 로 시각과 함께 본다.
 setopt extended_history
-# 명령을 실행할 때마다 파일에 바로 쓰고, 다른 셸이 쓴 줄도 읽어 온다. 그래서 tmux 의 다른 pane 에서
-# 방금 친 명령이 이 pane 의 Ctrl-R 과 ↑ 에도 나온다 (셸을 닫을 때 한꺼번에 쓰는 기본 동작 대신).
+# 명령을 실행할 때마다 파일에 바로 쓰고, 다른 셸이 쓴 줄도 읽어 온다 (셸을 닫을 때 한꺼번에 쓰는 기본 동작 대신).
+# 읽어 온 줄에는 "다른 셸에서 들어옴" 표시가 붙고 (`fc -l` 에서 번호 뒤의 *), 키마다 이 표시로 범위를 나눈다.
+#   ↑ / ↓           이 셸에서 친 것만 (아래 Bindkey 부분의 jw-history-*)
+#   Option+↑ / ↓    다른 셸에서 친 것까지 전부. Ctrl-P / Ctrl-N 도 전부다
+#   Ctrl-R (fzf)    전부. 단 다른 셸에서 막 들어온 줄은 이 셸에서 명령을 하나 실행한 뒤부터 나온다
+#                   (fzf 가 읽는 $history 배열이 이 셸의 마지막 명령보다 뒤에 들어온 줄을 보여 주지 않는다)
 setopt share_history
-# 같은 명령을 다시 치면 옛 줄을 지우고 새 줄만 남긴다 (`git status` 가 수십 줄 쌓이지 않게)
-setopt hist_ignore_all_dups
+# 바로 앞 줄과 같은 명령은 다시 적지 않는다. 떨어져 있는 반복(make → vim → make)은 그대로 남긴다.
+# hist_ignore_all_dups (같은 명령의 옛 줄을 모두 지움) 를 쓰지 않는 이유: 다른 셸이 같은 명령을 나중에 치면
+# 이 셸에서 친 줄이 지워지고 들어온 줄만 남아서, 이 셸 것만 보는 ↑ 에서 그 명령이 빠진다.
+# hist_find_no_dups 도 같은 구멍을 만든다. Ctrl-R 목록의 중복은 fzf 가 스스로 걸러 한 줄로 보여 준다.
+setopt hist_ignore_dups
 # 공백으로 시작한 명령은 기록하지 않는다 (토큰이 든 명령 등. 바로 직전 줄로는 잠깐 남는다)
 setopt hist_ignore_space
 # 기록할 때 명령 안의 불필요한 공백을 줄인다 (같은 명령이 공백 차이로 따로 남지 않게)
@@ -176,18 +183,75 @@ autoload -Uz edit-command-line
 zle -N edit-command-line
 bindkey "^X^E" edit-command-line
 
-# ↑ / ↓: 지금 입력한 앞부분으로 시작하는 히스토리만 오간다 (zsh 동봉 위젯).
-# 예: `git ` 까지 치고 ↑ → git 으로 시작한 명령만 차례로. 빈 줄에서는 원래처럼 바로 앞 명령.
+# ↑ / ↓: 이 셸에서 친 명령 가운데, 지금 입력한 앞부분으로 시작하는 것만 오간다.
+# Option+↑ / Option+↓: 같은 방식으로, 다른 셸에서 친 것까지 전부 오간다 (share_history 가 읽어 온 줄 포함).
+# 예: `git ` 까지 치고 ↑ → 이 터미널에서 친 git 명령만 차례로. 빈 줄에서는 바로 앞 명령.
+# 두 키는 섞어 눌러도 서 있던 자리에서 이어 간다. ↑ 로 올라가다 Option+↑ 를 누르면 그 사이에 다른 셸에서 친 명령이 나온다.
+# "이 셸에서 친 것" 에는 셸을 열 때 파일에 이미 있던 줄도 들어간다. 그래서 ↑ 는 이번 세션 것이 끝나면 예전 히스토리로 이어진다.
 # 앞부분은 커서 앞까지다. 첫 ↑ 뒤 커서가 줄 끝으로 가도 같은 앞부분으로 계속 찾는다.
-# 여러 줄 입력 안에서는 먼저 줄 사이를 움직인다. Ctrl-P / Ctrl-N 은 원래 동작(앞뒤 명령) 그대로 둔다.
+# 여러 줄 입력 안에서는 먼저 줄 사이를 움직인다. Ctrl-P / Ctrl-N 은 원래 동작(전체에서 앞뒤 명령) 그대로 둔다.
+#
+# zsh 동봉 위젯 up/down-line-or-beginning-search 와 같은 논리에 범위만 더했다. 동봉 위젯을 감싸지 않고 다시 적은 이유:
+#   범위는 set-local-history 위젯으로 바꾼다 (-n 1 = 이 셸 것만, -n 0 = 전부. -n 없이 부르면 값과 상관없이 토글이다).
+#   그런데 위젯 안에서 set-local-history 를 부르면 그 뒤로 $LASTWIDGET 이 set-local-history 로 바뀐다. 동봉 위젯은
+#   $LASTWIDGET 으로 "이어서 누름" 을 알아보므로, 범위를 바꾼 뒤에 동봉 위젯을 부르면 매번 처음 누른 것으로 보고
+#   두 번째부터 움직이지 않는다. 그래서 "이어서 누름" 을 먼저 판정하고 그 뒤에 범위를 바꾼다.
+# 위젯 이름이 범위(local / all)와 방향(up / down)을 정한다. 네 위젯이 상태를 같이 쓰므로 키를 섞어도 이어진다.
+# (plugins.zsh 의 CLEAR_WIDGETS 가 짝이다)
+_jw-history-search() {
+	emulate -L zsh
+	typeset -g __jw_hist_searching __jw_hist_savecursor
+	local -i local_only=0 continuing=0 ret=0
+	[[ $WIDGET == *-local-* ]] && local_only=1
+	[[ -n $__jw_hist_searching && $LASTWIDGET == $__jw_hist_searching ]] && continuing=1
+
+	zle .set-local-history -n $local_only
+	{
+		if [[ $WIDGET == *-up ]]; then
+			if [[ $LBUFFER == *$'\n'* ]]; then
+				zle .up-line-or-history
+				__jw_hist_searching=
+				return
+			fi
+			(( continuing )) && CURSOR=$__jw_hist_savecursor
+			__jw_hist_savecursor=$CURSOR
+			__jw_hist_searching=$WIDGET
+			zle .history-beginning-search-backward
+			zle .end-of-line
+			return
+		fi
+
+		if (( ! ${+NUMERIC} )) && { (( continuing )) || [[ $RBUFFER != *$'\n'* ]] }; then
+			(( continuing )) && CURSOR=$__jw_hist_savecursor
+			__jw_hist_searching=$WIDGET
+			__jw_hist_savecursor=$CURSOR
+			if zle .history-beginning-search-forward; then
+				zle .end-of-line
+				return
+			fi
+			[[ $RBUFFER == *$'\n'* ]] || return 1
+		fi
+		__jw_hist_searching=
+		zle .down-line-or-history
+	} always {
+		# 끝나면 전부 보기(zsh 기본값)로 되돌린다. Ctrl-P / Ctrl-N 같은 다른 히스토리 이동이 영향을 받지 않게
+		ret=$?
+		zle .set-local-history -n 0
+		return ret
+	}
+}
+zle -N jw-history-local-up _jw-history-search
+zle -N jw-history-local-down _jw-history-search
+zle -N jw-history-all-up _jw-history-search
+zle -N jw-history-all-down _jw-history-search
 # 방향키는 터미널 모드에 따라 ESC[A 또는 ESCOA 로 오므로 둘 다 묶는다.
-autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
-zle -N up-line-or-beginning-search
-zle -N down-line-or-beginning-search
-bindkey '^[[A' up-line-or-beginning-search
-bindkey '^[OA' up-line-or-beginning-search
-bindkey '^[[B' down-line-or-beginning-search
-bindkey '^[OB' down-line-or-beginning-search
+bindkey '^[[A' jw-history-local-up
+bindkey '^[OA' jw-history-local-up
+bindkey '^[[B' jw-history-local-down
+bindkey '^[OB' jw-history-local-down
+# Option+방향키는 모드와 상관없이 ESC[1;3A / ESC[1;3B 로 온다 (위 Option+← / → 와 같은 꼴)
+bindkey '^[[1;3A' jw-history-all-up
+bindkey '^[[1;3B' jw-history-all-down
 
 # Option+, : Option+. (insert-last-word, 앞 명령의 마지막 단어 넣기) 다음에 누르면 그 명령의 한 단어 앞으로 바꾼다.
 # 예: `cp a.txt b.txt` 뒤에 `vi ` Option+. → b.txt, 이어서 Option+, → a.txt → cp.
