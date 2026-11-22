@@ -208,7 +208,8 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
   보고 있는 윈도우의 탭에도 나온다(tmux 의 벨 `!` 는 보고 있는 윈도우에는 붙지 않는다 — `bell-action any` 로도. 실측).
 - 탭 바탕: 대기·오류가 있는 **비활성** 탭은 바탕 전체를 노랑·빨강으로 칠한다(벨 탭과 같은 강도). 보고 있는 탭은 "여기" 를 보여 주는
   원래 색 그대로 두고 아이콘만 색으로. 칠한 탭에서는 아이콘·플래그에 색을 입히지 않는다(바탕과 같은 색이라 묻혀서).
-  tmux.conf 의 `window-status-style` 이 `@agent_tab_style` 이 비었으면 원래 색을 쓴다. `@agent-state-tab-paint off` 로 끈다.
+  어댑터는 주의 단계만 낸다(`@agent_tab_alert`: 대기 = `attn`, 오류 = `err`). 칠하는 것은 tmux.conf 의 기본 층(`window-status-style`)이고
+  색은 팔레트의 `@c_attn`·`@c_err` 다. `@agent-state-tab-paint off` 로 끈다.
 - 상태바 요약(`status-right`, 시각 앞): **모든 세션**을 통틀어 상태별 개수 `◆2 ✘1 ✔1 ⋯3`(0 인 것은 뺀다). `#{S:#{W:#{P:…}}}` 로 훑는다.
   탭에는 지금 세션의 윈도우만 보이므로, 다른 세션(다른 프로젝트)의 에이전트가 기다리는 것은 여기서 보인다.
 - 패널 테두리(`pane-border-format`): 그 패널의 상태. 윈도우 안에서 어느 패널인지 보인다.
@@ -223,12 +224,44 @@ tmux 안 아무 패널에서 `printf '\ePtmux;\e\e]9;agent-state test\a\e\\'`.
 | done | `✔` | 초록 `#22e06b` |
 | error | `✘` | 빨강 `#ff3d5a` (탭 바탕으로도 칠한다) |
 
-기본 색은 어두운 상태바(`#1e1e2e`)에서 튀도록 채도를 높였다. 처음엔 테마(Catppuccin Mocha)의 파스텔 색을 썼는데 눈에 덜 띄었다(2026-11-20).
+기본 색은 어두운 상태바에서 튀도록 채도를 높였다. 처음엔 테마(Catppuccin Mocha)의 파스텔 색을 썼는데 눈에 덜 띄었다(2026-11-20).
+값은 tmux.conf 팔레트의 신호색(`@c_run` `@c_attn` `@c_ok` `@c_err`)에 있고, 어댑터는 그 참조를 조각에 넣는다. 그래서 팔레트를 바꾸면
+아이콘 색도 따라간다. 팔레트가 없는 설정에서는 위 표의 값을 직접 쓴다.
 running 도 처음엔 색이 없었다. 빈 값으로 설정하면 그 상태는 색을 바꾸지 않는다.
 
-아이콘·색은 `@agent-state-icon-<상태>`, `@agent-state-color-<상태>` 로 바꾼다. 어댑터가 만드는 포맷 조각은 `@agent_badge`(탭),
-`@agent_tab_style`(탭 바탕), `@agent_summary`(상태바), `@agent_pane_badge`(패널 테두리)이고, tmux.conf 의 포맷이 `#{E:@agent_badge}` 처럼
-꺼내 쓴다. 어댑터를 빼면 조각이 비어 아무것도 그리지 않는다.
+아이콘·색은 `@agent-state-icon-<상태>`, `@agent-state-color-<상태>` 로 바꾼다. 탭 바탕을 칠하는 색은 기본 층의 팔레트가 정하므로
+아이콘 색만 바꿔도 바탕은 따라오지 않는다.
+
+### 기본 층과 확장 슬롯
+
+tmux.conf 의 상태바·탭·패널 테두리(4~6번 섹션)는 이 어댑터를 모르는 "기본 층" 이고, 어댑터는 그 위에 덧붙는 "확장" 이다
+(2026-11-22. 그 전에는 기본 층의 포맷 다섯 곳이 `#{E:@agent_badge}` 처럼 어댑터의 조각을 이름으로 불렀고, 끄는 방법이 없었다).
+기본 층은 확장이 채울 자리(슬롯)를 비워 두고 포맷에서 펼친다. 계약의 원본은 tmux.conf 4번 섹션의 "확장 슬롯" 이다.
+
+| 슬롯 | 어댑터가 넣는 것 | 내용 |
+|---|---|---|
+| `@slot_tab` | `#{E:@agent_badge}` | 탭 이름 뒤의 상태 아이콘 |
+| `@slot_tab_alert` | `#{E:@agent_tab_alert}` | 탭의 주의 단계 `attn` / `err` / 빈 값. 칠하는 것은 기본 층 |
+| `@slot_right` | `#{E:@agent_summary}` | 상태바 오른쪽의 전체 요약 |
+| `@slot_pane` | `#{E:@agent_pane_badge}` | 패널 테두리 제목 앞의 상태 아이콘 |
+
+- 슬롯에는 조각의 **참조**만 넣고 내용은 어댑터의 옵션(`@agent_*`)에 둔다. 끌 때는 옵션만 비우면 되고, 남은 참조는 빈 값으로 펼쳐진다.
+- tmux.conf 는 읽힐 때마다 슬롯을 비우고 어댑터는 그 뒤(7번 섹션, `tmux.local.conf` 다음)에 읽힌다. 어댑터는 이미 들어 있는 참조를
+  다시 넣지 않는다. 그래서 `prefix R` 을 여러 번 눌러도, 스크립트만 다시 돌려도 쌓이지 않는다.
+- 기본 층이 어댑터에 알려 주는 것은 둘이다: 팔레트(`@c_*`)와 `@tab_filled`(그 탭의 바탕이 밝은 색으로 칠해졌는가. 벨 탭, 주의가 올라온
+  비활성 탭). 어댑터는 칠해진 탭에서는 아이콘에 색을 입히지 않는다. 둘 다 없는 설정에서는 자기 색을 쓰고 늘 색을 입힌다.
+- `tmux.local.conf` 보다 뒤에 읽히므로, 거기 적은 `@agent-state-*` 가 처음 읽을 때부터 먹는다.
+
+끄기: `~/.config/tmux/plugins/agent-state/agent-state.tmux off`. 조각을 비우고 키(`prefix a`·`M-a`·`M-A`)와 `pane-focus-in[43]` 훅을 푼다.
+스위치 `@agent-state-enable` 을 적어 두므로 `prefix R` 뒤에도 꺼진 채로 남는다(서버를 새로 띄우면 다시 켜진다). 켜기는 `… on`.
+한 머신에서 늘 끄려면 `tmux.local.conf` 에 `set -g @agent-state-enable off`.
+
+격리 서버(`tmux -L`, 임시 HOME 에 푼 실제 tmux.conf)에서 확인한 것 (2026-11-22, tmux 3.8, 가짜 `@agent_state` 를 넣은 같은 장면):
+
+- 슬롯으로 옮기기 전과 뒤의 화면이 색까지 같다 (일곱 장면).
+- 끈 화면 = `run-shell` 줄을 뺀 설정으로 띄운 화면. 키 3 → 0, 훅 1 → 0.
+- 끄고 설정을 두 번 다시 읽어도 꺼져 있다. 켠 채로 두 번 다시 읽고 스크립트를 한 번 더 돌려도 슬롯에 참조가 하나씩만 있다.
+- `tmux.local.conf` 의 `@agent-state-enable off`, 아이콘·키 옵션이 처음 읽을 때부터 먹는다.
 
 ### 모아 보기 (`prefix a`)
 
@@ -263,7 +296,7 @@ tmux 기본 `choose-tree` 를 floating pane 에 띄운다(tmux man 의 `new-pane
 | 단위 | 설치 | 제거 |
 |---|---|---|
 | Claude 플러그인 | `claude plugin marketplace update justwonder` → `claude plugin install agent-state@justwonder` | `claude plugin uninstall agent-state@justwonder` |
-| tmux 어댑터 | chezmoi 가 배포. tmux.conf 의 `run-shell …/agent-state.tmux` 한 줄 | 그 줄과 포맷의 `#{E:@agent_*}` 를 지우고 `prefix R` |
+| tmux 어댑터 | chezmoi 가 배포. tmux.conf 7번 섹션의 `run-shell …/agent-state.tmux` 한 줄 | 지금 서버에서: `agent-state.tmux off`. 아예 빼려면 그 한 줄을 지운다 (다른 곳은 고칠 것이 없다) |
 
 tmux 어댑터는 모든 머신에 둔다. 플러그인이 없는 머신에서는 패널 옵션이 비어 아무것도 그리지 않으므로 머신별 기능 스위치를 두지 않는다
 (설정은 모든 머신에 같게, 갈리는 것은 깔았을 때 무언가 일어나는 것뿐 — [`docs/machines.md`](machines.md)). Claude 의 `settings.json` 은 chezmoi 가 관리하지 않으므로 플러그인 설치는 머신마다 한 번 손으로 한다.
