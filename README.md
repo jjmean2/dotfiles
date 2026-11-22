@@ -165,6 +165,9 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
 - `config file template has changed` 경고가 나오면 `chezmoi init` 을 실행한다. 새로 생긴 질문만 묻고 기존 답과
   `[data.features]` 에 적어 둔 값은 유지한다.
 - 스크립트를 강제로 다시 돌리려면 내용을 조금 바꾸거나 `chezmoi state delete-bucket --bucket=entryState` 후 `chezmoi apply`.
+- Claude Code 상태 줄: 스크립트 `~/.claude/statusline-command.sh` 만 배포하고, 켤지는 머신마다 정한다
+  (`~/.claude/settings.json` 은 Claude Code 가 계속 고쳐 쓰는 파일이라 관리하지 않는다). 켜려면 그 파일에
+  `"statusLine": {"type": "command", "command": "bash \"$HOME/.claude/statusline-command.sh\""}` 를 넣는다. `jq` 가 있어야 한다.
 - 머신 전용 값은 `*.local` 파일, `~/.config/mise/config.toml`, `~/.config/ghostty/auto/theme.ghostty` 처럼 chezmoi 가 관리하지 않는 자리에 둔다 (`home/.chezmoiignore` 참고).
 
 ## 문서
