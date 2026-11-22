@@ -9,11 +9,11 @@
 #               이름은 gitstatus 와 같다 (zsh 의 vcs_info 에서 온 이름). 아래 _ps_git_action 참고
 # - _ps_upstream_ahead / _ps_upstream_behind: upstream 보다 앞선 / 뒤처진 커밋 수 (0이면 빈 문자열)
 # - _ps_has_upstream_diff: 위 둘 중 하나라도 있으면 1
-# - _ps_conflicted_icon: 충돌난 파일이 있으면 ≠
-# - _ps_unstaged_icon: 추적 중인 파일에 stage 하지 않은 변경이 있으면 ✗
-# - _ps_staged_icon: stage 한 변경이 있으면 ✓ (✗ 와 함께 나올 수 있다)
-# - _ps_untracked_icon: 추적하지 않는 파일이 있으면 ?
-# - _ps_stashes: stash 개수 (0이면 빈 문자열)
+# - _ps_unstaged_icon: stage 하지 않은 것이 있으면 ✗ (바뀐 파일, untracked 파일, 풀지 않은 충돌)
+# - _ps_staged_icon: 바뀐 것이 전부 stage 됐으면 ✓ (커밋하면 된다. merge·rebase 중이면 이어 가면 된다)
+#
+# 표식은 "무엇이 있나" 의 목록이 아니라 "지금 어떤 상태인가" 하나만 말한다: 없음(깨끗) / ✗ / ✓ 중 하나.
+# 무엇이 바뀌었는지는 git status 로 본다. stash 개수나 untracked 처럼 늘 켜져 있기 쉬운 것은 일부러 넣지 않았다.
 _ps_set_git_status() {
 	# 프롬프트에서 사용해야 하므로 매번 초기화해야 한다.
 	_ps_branch=""
@@ -22,15 +22,12 @@ _ps_set_git_status() {
 	_ps_upstream_ahead=""
 	_ps_upstream_behind=""
 	_ps_has_upstream_diff=""
-	_ps_conflicted_icon=""
 	_ps_unstaged_icon=""
 	_ps_staged_icon=""
-	_ps_untracked_icon=""
-	_ps_stashes=""
 
 	local line tag index_status work_status
 	local branch="" oid=""
-	local has_staged=0 has_unstaged=0 has_untracked=0 has_conflicted=0
+	local has_staged=0 has_unstaged=0
 
 	# git status --porcelain=v2 --branch 호출 (단 1회의 subshell/fork 실행)
 	while IFS= read -r line; do
@@ -61,8 +58,10 @@ _ps_set_git_status() {
 		# 파일 상태를 읽는 시점에는 이미 브랜치 및 upstream 정보 파싱이 끝난 상태다.
 		tag="${line:0:1}"
 		case "$tag" in
-		'?') has_untracked=1 ;;
-		u) has_conflicted=1 ;;
+		'?' | u)
+			# untracked(?) 와 풀지 않은 충돌(u) 도 stage 하지 않은 것이다
+			has_unstaged=1
+			;;
 		1 | 2)
 			# 1: 일반 변경, 2: 이름 바꿈/복사. 셋째 글자가 stage 쪽(X), 넷째가 작업 트리 쪽(Y). 변경이 없으면 '.'
 			index_status="${line:2:1}"
@@ -72,8 +71,8 @@ _ps_set_git_status() {
 			;;
 		esac
 
-		# 네 가지를 모두 찾았으면 더 읽을 필요가 없다 (변경 파일이 많은 저장소에서 루프를 일찍 끝낸다)
-		((has_staged && has_unstaged && has_untracked && has_conflicted)) && break
+		# stage 하지 않은 것을 하나라도 찾았으면 ✗ 로 정해졌으므로 더 읽지 않는다 (변경 파일이 많은 저장소에서 빨리 끝난다)
+		((has_unstaged)) && break
 	done < <(git --no-optional-locks status --porcelain=v2 --branch 2>/dev/null)
 
 	# Git 저장소가 아니거나 브랜치가 없으면 종료
@@ -90,30 +89,16 @@ _ps_set_git_status() {
 		_ps_branch="$branch"
 	fi
 
-	((has_conflicted)) && _ps_conflicted_icon="≠"
-	((has_unstaged)) && _ps_unstaged_icon="✗"
-	((has_staged)) && _ps_staged_icon="✓"
-	((has_untracked)) && _ps_untracked_icon="?"
-
-	# 진행 중인 작업과 stash 는 status 출력에 없어서 .git 안의 파일을 직접 본다.
-	# 워크트리에서는 작업 상태가 그 워크트리의 git 디렉터리에, stash 는 공용 디렉터리에 있다.
-	local git_dir="" common_dir=""
-	{
-		IFS= read -r git_dir
-		IFS= read -r common_dir
-	} < <(git rev-parse --git-dir --git-common-dir 2>/dev/null)
-	[[ -n "$git_dir" ]] || return
-
-	_ps_git_action "$git_dir"
-
-	# stash 하나가 refs/stash 의 reflog 한 줄이다
-	if [[ -r "$common_dir/logs/refs/stash" ]]; then
-		local n=0
-		while IFS= read -r line; do
-			n=$((n + 1))
-		done <"$common_dir/logs/refs/stash"
-		((n > 0)) && _ps_stashes="$n"
+	if ((has_unstaged)); then
+		_ps_unstaged_icon="✗"
+	elif ((has_staged)); then
+		_ps_staged_icon="✓"
 	fi
+
+	# 진행 중인 작업은 status 출력에 없어서 git 디렉터리 안의 파일을 직접 본다 (워크트리면 그 워크트리의 것).
+	local git_dir=""
+	IFS= read -r git_dir < <(git rev-parse --git-dir 2>/dev/null)
+	[[ -n "$git_dir" ]] && _ps_git_action "$git_dir"
 }
 
 # git 디렉터리 안의 파일로 진행 중인 작업을 알아내 _ps_action 에 넣는다.

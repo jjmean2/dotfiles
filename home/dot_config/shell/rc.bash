@@ -50,8 +50,8 @@ PS1+='${_ps_action:+\[\e[1;31m\]|$_ps_action}'
 # - upstream과의 차이가 있으면 표시
 PS1+='${_ps_has_upstream_diff:+ }${_ps_upstream_ahead:+\[\e[1;32m\]⇡${_ps_upstream_ahead}}${_ps_upstream_behind:+\[\e[1;31m\]⇣${_ps_upstream_behind}}'
 # shellcheck disable=SC2154
-# - 충돌 ≠, unstaged ✗, staged ✓, untracked ?, stash ≡개수
-PS1+='${_ps_conflicted_icon:+ \[\e[1;31m\]$_ps_conflicted_icon}${_ps_unstaged_icon:+ \[\e[1;31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[1;32m\]$_ps_staged_icon}${_ps_untracked_icon:+ \[\e[1;31m\]$_ps_untracked_icon}${_ps_stashes:+ \[\e[1;34m\]≡$_ps_stashes}'
+# - stage 하지 않은 것이 있으면 ✗, 전부 stage 됐으면 ✓ (둘 중 하나만 나온다)
+PS1+='${_ps_unstaged_icon:+ \[\e[1;31m\]$_ps_unstaged_icon}${_ps_staged_icon:+ \[\e[1;32m\]$_ps_staged_icon}'
 # (2) 괄호 닫기
 PS1+='\[\e[1;36m\])\[\e[0m\]'
 # (1) `${_ps_branch:+ ...` 구문 닫기
