@@ -122,6 +122,33 @@ git config --unset tmux-dev.layout    # 지우기
 | 실행 후 바로 실패 | 새 워크트리에 의존성이 없다 (`node_modules` 등) | `git config tmux-dev.worktree.setup 'pnpm install'` |
 | 포트 충돌 | 여러 워크트리에서 동시에 켰다 | Vite·Next 는 다음 빈 포트로 비켜 간다. 다른 도구는 포트를 직접 지정한다 |
 
+## 피커가 느리다
+
+### 회사 머신 등에서 `prefix S` 목록이 늦게 찬다
+
+`prefix S` 는 열 때마다 홈 전체를 `fd` 로 훑는다. 보안 에이전트(EDR)처럼 디렉토리를 열 때마다 검사하는 프로그램이 있으면
+같은 홈이라도 몇 배 느리다. 먼저 탐색 시간을 잰다.
+
+```sh
+time tmux-dev project --list repo | wc -l
+time tmux-dev project --list dir  | wc -l
+```
+
+- 탐색 범위 줄이기: `~/.config/tmux-dev/ignore` 에 큰 디렉토리(빌드 산출물, 내려받은 데이터)를 넣는다.
+- 탐색 결과 캐시: 그 머신의 `~/.config/tmux/tmux.local.conf` 에 `set -g @tmux-dev-scan-cache on`. 지난 결과를 바로 띄우고,
+  탐색은 뒤에서 해 다음에 열 때 쓴다. 그래서 지난번 이후에 만든 디렉토리는 한 번 더 열어야 보인다(그 전에도 경로를 치면 열린다).
+  지운 디렉토리가 목록에 남아 있으면 골라도 안내만 뜬다. 캐시는 `~/.cache/tmux-dev/scan/` 이고 지워도 된다.
+
+### `prefix W` 의 마커(dirty)가 늦게 뜬다
+
+마커는 워크트리마다 `git status` 를 돈다. 워크트리가 많고 저장소가 크면 그 저장소에 git 의 파일 감시를 켠다
+(설정은 저장소 공용이라 모든 워크트리에 적용된다).
+
+```sh
+git config core.untrackedCache true
+git config core.fsmonitor true
+```
+
 ## 그 밖
 
 ### 키나 크기 옵션을 바꿨는데 적용되지 않는다

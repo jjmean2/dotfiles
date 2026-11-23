@@ -160,6 +160,7 @@ tmux.conf 에서 `run-shell .../tmux-dev.tmux` 줄 **앞에** 둔다.
 | `@tmux-dev-worktree-key` | `W` | `prefix W` 의 키 | tmux.conf 다시 읽을 때 |
 | `@tmux-dev-popup-size` | `85%,75%` | 피커 너비,높이 (`%` 또는 칸) | 키를 누를 때 |
 | `@tmux-dev-layout` | `plain` | 전역 기본 레이아웃 | 키를 누를 때 |
+| `@tmux-dev-scan-cache` | `off` | `on` 이면 홈 탐색 결과를 캐시해 바로 띄우고, 다음에 쓸 캐시는 뒤에서 새로 쓴다 (prefix S, prefix W 의 디렉토리 모드, 위치 피커) | 키를 누를 때 |
 | `@float-style` | `popup-style` 값 | 피커 배경·글자 스타일 (tmux.conf 공용 옵션) | 키를 누를 때 |
 
 ### git config

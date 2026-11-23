@@ -185,6 +185,50 @@ run "$st" '' 1 --on mode
 alive "S mode (full script)"; expect "S mode (full script): reloads the list" 'reload('
 BIN=""
 
+# --- 탐색 결과 캐시 (TMUX_DEV_SCAN_CACHE, lib/dirs.sh) -----------------------------------
+# 켜면 두 번째부터 지난 결과를 바로 내고 탐색은 뒤에서 한다. 가짜 fd 는 1초 늦게 시작한다: 두 번째 목록이 그것을
+# 기다리지 않는지(빠른지)와, 갱신이 끝난 뒤 다음 목록에 변화가 보이는지 본다
+if command -v fd > /dev/null; then
+  C=$T/scan; mkdir -p "$C/bin" "$C/home/a" "$C/home/gone" "$C/cache"
+  printf '#!/bin/sh\nsleep 1\nexec %s "$@"\n' "$(command -v fd)" > "$C/bin/fd"; chmod +x "$C/bin/fd"
+  "$REAL_GIT" init -q "$C/home/repo1"
+  slist() {  # slist <on|off> <repo|dir> → LIST (첫 칸), SECS
+    local s e
+    s=$(perl -MTime::HiRes=time -e 'print time')
+    LIST=$(env -i PATH="$C/bin:$PATH" HOME="$C/home" TMPDIR="$T/tmp" TMUX_DEV_CACHE="$C/cache" TMUX_DEV_SCAN_CACHE="$1" \
+           "$BASH_BIN" "$S" --list "$2" 2> "$T/stderr" | cut -f1)
+    e=$(perl -MTime::HiRes=time -e 'print time'); SECS=$(perl -e "printf '%.2f', $e - $s")
+  }
+  wait_refresh() { local i; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do ls "$C/cache/scan/"*.lock > /dev/null 2>&1 || return 0; perl -e 'select(undef,undef,undef,0.2)'; done; }
+  slist off dir
+  if [ ! -d "$C/cache/scan" ]; then ok "scan cache off: writes nothing"; else no "scan cache off: writes nothing"; fi
+  slist on dir
+  if has "$LIST" '~/gone' && ls "$C/cache/scan/"dirs-* > /dev/null 2>&1; then ok "scan cache on, first: scans and saves"; else no "scan cache on, first: scans and saves" "$LIST"; fi
+  mkdir "$C/home/new"; rmdir "$C/home/gone"
+  slist on dir
+  if has "$LIST" '~/gone' && ! has "$LIST" '~/new'; then ok "scan cache on, second: last list as is"; else no "scan cache on, second: last list as is" "$LIST"; fi
+  if perl -e "exit($SECS < 0.7 ? 0 : 1)"; then ok "scan cache on, second: does not wait for the scan (${SECS}s)"; else no "scan cache on, second: does not wait for the scan (${SECS}s)"; fi
+  wait_refresh
+  slist on dir
+  if has "$LIST" '~/new' && ! has "$LIST" '~/gone'; then ok "scan cache on, third: refreshed in the background"; else no "scan cache on, third: refreshed in the background" "$LIST"; fi
+  slist on repo; wait_refresh; /bin/rm -rf "$C/home/repo1/.git"
+  slist on repo
+  if ! has "$LIST" '~/repo1'; then ok "scan cache on, repo mode: drops a repository that is gone"; else no "scan cache on, repo mode: drops a repository that is gone" "$LIST"; fi
+  wait_refresh
+  # 캐시 목록에 남은 지운 디렉토리를 고르면: 안내만, 결정 없음 (S, W 의 디렉토리 모드, 위치 피커)
+  st=$(mkstate dir); BIN=$S
+  run "$st" '' 3 --on enter "$C/home/gone"
+  alive "S enter on a deleted row"; expect "S enter on a deleted row: says it is gone" 'no longer exists'
+  if [ ! -f "$st/decision" ]; then ok "S enter on a deleted row: decides nothing"; else no "S enter on a deleted row: decides nothing"; fi
+  run "$st" '' 3 --on loc-enter "$C/home/gone"
+  alive "S location on a deleted row"; expect "S location on a deleted row: says it is gone" 'no longer exists'
+  st=$(mkstate directory); BIN=""
+  run "$st" '' 3 --on enter dir "$C/home/gone" ''
+  alive "W enter on a deleted directory row"; expect "W enter on a deleted directory row: says it is gone" 'no longer exists'
+else
+  echo "skip scan cache tests (no fd)"
+fi
+
 # --- 대조: 가짜 도구가 실제로 끼어드는지 ---------------------------------------------
 # 저장소 문맥을 만드는 콜백(모드 전환)은 git 을 띄운다. 이것이 잡히지 않으면 위의 "no git/tmux" 는 아무것도 증명하지 못한다
 st=$(mkstate worktree)

@@ -32,6 +32,7 @@ decide() {  # $1 경로 $2 만들기(none|dir|repo) [$3 위치 피커에서 고�
 # 열 것이 없으면 안내 액션을 출력하고 1 (만들기는 alt-enter 의 몫이다)
 open_target() {  # $1 커서 항목의 실제 경로 (없으면 빈 값)
   local mode q=${FZF_QUERY:-}; st_get mode; mode=${ST:-repo}
+  stale_pick "$1" && return 1
   if [ -n "$1" ]; then J_PATH=$1; if [ -f "$1/.git" ]; then J_KIND=worktree; else J_KIND=open; fi; return 0; fi
   if pathish "$q"; then
     classify "$q" "$mode"

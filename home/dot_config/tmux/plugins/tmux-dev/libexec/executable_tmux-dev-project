@@ -111,7 +111,8 @@ recent_rows() {
 }
 scan_rows() {
   if [ "$1" = repo ]; then
-    local p; while IFS= read -r p; do branch_mark "$p"; row "$p" "$BM"; done < <(scan_repos)
+    # 캐시에서 온 목록에는 그사이 지운 저장소가 있을 수 있다. 수백 개라 여기서 거른다 (디렉토리 모드는 수만 개라 고를 때 본다)
+    local p; while IFS= read -r p; do [ -d "$p/.git" ] || continue; branch_mark "$p"; row "$p" "$BM"; done < <(scan_cached repos)
   else
     dir_rows
   fi

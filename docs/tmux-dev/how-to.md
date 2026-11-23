@@ -339,11 +339,12 @@ set -g @tmux-dev-project-key  S        # prefix S
 set -g @tmux-dev-worktree-key W        # prefix W
 set -g @tmux-dev-popup-size   85%,75%  # 피커 너비,높이 (% 또는 칸)
 set -g @tmux-dev-layout       plain    # 기본 레이아웃
+set -g @tmux-dev-scan-cache   off      # on: 홈 탐색 결과 캐시 (탐색이 느린 머신에서. 문제 해결 문서 참고)
 run-shell ~/.config/tmux/plugins/tmux-dev/tmux-dev.tmux
 ```
 
 키 옵션은 tmux.conf 를 다시 읽어야 적용된다 (`prefix :` 에서 `source-file ~/.config/tmux/tmux.conf`).
-크기와 레이아웃 옵션은 키를 누를 때 읽으므로 바로 적용된다.
+크기·레이아웃·캐시 옵션은 키를 누를 때 읽으므로 바로 적용된다.
 
 ---
 
