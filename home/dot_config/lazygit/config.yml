@@ -9,6 +9,133 @@
 gui:
   # Nerd Font 아이콘 (Ghostty 폰트가 지원). 아이콘이 깨지면 "" 로 끈다.
   nerdFontsVersion: "3"
+  # 파일 아이콘 덧붙임: Node·프론트엔드 생태계 파일. lazygit 은 아이콘 표를 바이너리 안에 들고 있어
+  # (pkg/gui/presentation/icons/file_icons.go) nvim 의 mini.icons 설정을 읽지 않는다. 내장 표에 이름이
+  # 없어 확장자 아이콘(pnpm-workspace.yaml 은 YAML 의 느낌표)이나 기본 아이콘이 되는 것만 적었다.
+  # 내장 표에 이미 전용 아이콘이 있는 것(package.json, tsconfig.json, eslint·tailwind 설정 등)은 그대로 둔다.
+  # 목록과 글리프는 ~/.config/nvim/lua/plugins/icons.lua 와 같고 색은 nvim-web-devicons 의 브랜드 색이다.
+  # 패턴이나 겹 확장자(.stories.tsx)는 지원하지 않아 이름을 하나씩 적는다.
+  customIcons:
+    filenames:
+      ".babelrc.json": { icon: "\ue75d", color: "#F9DC3E" }
+      ".eslintrc.cjs": { icon: "\ue7d2", color: "#4B32C3" }
+      ".eslintrc.js": { icon: "\ue7d2", color: "#4B32C3" }
+      ".eslintrc.json": { icon: "\ue7d2", color: "#4B32C3" }
+      ".node-version": { icon: "\ue718", color: "#5FA04E" }
+      ".pnpmfile.cjs": { icon: "\ue865", color: "#F9AD02" }
+      ".pnpmfile.mjs": { icon: "\ue865", color: "#F9AD02" }
+      ".postcssrc": { icon: "\ue86a", color: "#DD3A0A" }
+      ".postcssrc.json": { icon: "\ue86a", color: "#DD3A0A" }
+      ".prettierrc.cjs": { icon: "\ue6b4", color: "#4285F4" }
+      ".prettierrc.cts": { icon: "\ue6b4", color: "#4285F4" }
+      ".prettierrc.js": { icon: "\ue6b4", color: "#4285F4" }
+      ".prettierrc.mjs": { icon: "\ue6b4", color: "#4285F4" }
+      ".prettierrc.mts": { icon: "\ue6b4", color: "#4285F4" }
+      ".prettierrc.ts": { icon: "\ue6b4", color: "#4285F4" }
+      ".yarnrc": { icon: "\ue8ec", color: "#2C8EBB" }
+      ".yarnrc.yml": { icon: "\ue8ec", color: "#2C8EBB" }
+      "astro.config.cjs": { icon: "\ue735", color: "#FF5D01" }
+      "astro.config.cts": { icon: "\ue735", color: "#FF5D01" }
+      "astro.config.js": { icon: "\ue735", color: "#FF5D01" }
+      "astro.config.mjs": { icon: "\ue735", color: "#FF5D01" }
+      "astro.config.mts": { icon: "\ue735", color: "#FF5D01" }
+      "astro.config.ts": { icon: "\ue735", color: "#FF5D01" }
+      "babel.config.cjs": { icon: "\ue75d", color: "#F9DC3E" }
+      "babel.config.cts": { icon: "\ue75d", color: "#F9DC3E" }
+      "babel.config.js": { icon: "\ue75d", color: "#F9DC3E" }
+      "babel.config.mjs": { icon: "\ue75d", color: "#F9DC3E" }
+      "babel.config.mts": { icon: "\ue75d", color: "#F9DC3E" }
+      "babel.config.ts": { icon: "\ue75d", color: "#F9DC3E" }
+      "bun.lock": { icon: "\ue76f", color: "#EADCD1" }
+      "bunfig.toml": { icon: "\ue76f", color: "#EADCD1" }
+      "cypress.config.cjs": { icon: "\ue7b9", color: "#69D3A7" }
+      "cypress.config.cts": { icon: "\ue7b9", color: "#69D3A7" }
+      "cypress.config.js": { icon: "\ue7b9", color: "#69D3A7" }
+      "cypress.config.mjs": { icon: "\ue7b9", color: "#69D3A7" }
+      "cypress.config.mts": { icon: "\ue7b9", color: "#69D3A7" }
+      "cypress.config.ts": { icon: "\ue7b9", color: "#69D3A7" }
+      "deno.json": { icon: "\ue7c0", color: "#D0BFBC" }
+      "deno.jsonc": { icon: "\ue7c0", color: "#D0BFBC" }
+      "deno.lock": { icon: "\ue7c0", color: "#D0BFBC" }
+      "eslint.config.cts": { icon: "\ue7d2", color: "#4B32C3" }
+      "eslint.config.mts": { icon: "\ue7d2", color: "#4B32C3" }
+      "jest.config.cjs": { icon: "\ue807", color: "#99425B" }
+      "jest.config.cts": { icon: "\ue807", color: "#99425B" }
+      "jest.config.js": { icon: "\ue807", color: "#99425B" }
+      "jest.config.mjs": { icon: "\ue807", color: "#99425B" }
+      "jest.config.mts": { icon: "\ue807", color: "#99425B" }
+      "jest.config.ts": { icon: "\ue807", color: "#99425B" }
+      "jsconfig.json": { icon: "\U000f06e6", color: "#519ABA" }
+      "netlify.toml": { icon: "\ue83c", color: "#32E6E2" }
+      "next.config.cjs": { icon: "\ue83e", color: "#FFFFFF" }
+      "next.config.cts": { icon: "\ue83e", color: "#FFFFFF" }
+      "next.config.js": { icon: "\ue83e", color: "#FFFFFF" }
+      "next.config.mjs": { icon: "\ue83e", color: "#FFFFFF" }
+      "next.config.mts": { icon: "\ue83e", color: "#FFFFFF" }
+      "next.config.ts": { icon: "\ue83e", color: "#FFFFFF" }
+      "npm-shrinkwrap.json": { icon: "\ue71e", color: "#E8274B" }
+      "nuxt.config.cts": { icon: "\U000f1106", color: "#00C58E" }
+      "nuxt.config.mts": { icon: "\U000f1106", color: "#00C58E" }
+      "playwright.config.cjs": { icon: "\ue863", color: "#2FAD33" }
+      "playwright.config.cts": { icon: "\ue863", color: "#2FAD33" }
+      "playwright.config.js": { icon: "\ue863", color: "#2FAD33" }
+      "playwright.config.mjs": { icon: "\ue863", color: "#2FAD33" }
+      "playwright.config.mts": { icon: "\ue863", color: "#2FAD33" }
+      "playwright.config.ts": { icon: "\ue863", color: "#2FAD33" }
+      "pnpm-lock.yaml": { icon: "\ue865", color: "#F9AD02" }
+      "pnpm-workspace.yaml": { icon: "\ue865", color: "#F9AD02" }
+      "postcss.config.cjs": { icon: "\ue86a", color: "#DD3A0A" }
+      "postcss.config.cts": { icon: "\ue86a", color: "#DD3A0A" }
+      "postcss.config.js": { icon: "\ue86a", color: "#DD3A0A" }
+      "postcss.config.mjs": { icon: "\ue86a", color: "#DD3A0A" }
+      "postcss.config.mts": { icon: "\ue86a", color: "#DD3A0A" }
+      "postcss.config.ts": { icon: "\ue86a", color: "#DD3A0A" }
+      "prettier.config.cts": { icon: "\ue6b4", color: "#4285F4" }
+      "prettier.config.mts": { icon: "\ue6b4", color: "#4285F4" }
+      "rollup.config.cjs": { icon: "\ue892", color: "#EC4A3F" }
+      "rollup.config.cts": { icon: "\ue892", color: "#EC4A3F" }
+      "rollup.config.js": { icon: "\ue892", color: "#EC4A3F" }
+      "rollup.config.mjs": { icon: "\ue892", color: "#EC4A3F" }
+      "rollup.config.mts": { icon: "\ue892", color: "#EC4A3F" }
+      "rollup.config.ts": { icon: "\ue892", color: "#EC4A3F" }
+      "svelte.config.cjs": { icon: "\ue697", color: "#FF3E00" }
+      "svelte.config.cts": { icon: "\ue697", color: "#FF3E00" }
+      "svelte.config.mjs": { icon: "\ue697", color: "#FF3E00" }
+      "svelte.config.mts": { icon: "\ue697", color: "#FF3E00" }
+      "svelte.config.ts": { icon: "\ue697", color: "#FF3E00" }
+      "tailwind.config.cjs": { icon: "\ue8ba", color: "#20C2E3" }
+      "tailwind.config.cts": { icon: "\ue8ba", color: "#20C2E3" }
+      "tailwind.config.mts": { icon: "\ue8ba", color: "#20C2E3" }
+      "tsconfig.app.json": { icon: "\U000f06e6", color: "#519ABA" }
+      "tsconfig.base.json": { icon: "\U000f06e6", color: "#519ABA" }
+      "tsconfig.build.json": { icon: "\U000f06e6", color: "#519ABA" }
+      "tsconfig.node.json": { icon: "\U000f06e6", color: "#519ABA" }
+      "tsconfig.test.json": { icon: "\U000f06e6", color: "#519ABA" }
+      "vercel.json": { icon: "\ue8d3", color: "#FFFFFF" }
+      "vite.config.cjs": { icon: "\ue8d7", color: "#8040FF" }
+      "vite.config.cts": { icon: "\ue8d7", color: "#8040FF" }
+      "vite.config.js": { icon: "\ue8d7", color: "#8040FF" }
+      "vite.config.mjs": { icon: "\ue8d7", color: "#8040FF" }
+      "vite.config.mts": { icon: "\ue8d7", color: "#8040FF" }
+      "vite.config.ts": { icon: "\ue8d7", color: "#8040FF" }
+      "vitest.config.cjs": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.config.cts": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.config.js": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.config.mjs": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.config.mts": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.config.ts": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.workspace.cjs": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.workspace.cts": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.workspace.js": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.workspace.mjs": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.workspace.mts": { icon: "\ue8d9", color: "#739B1B" }
+      "vitest.workspace.ts": { icon: "\ue8d9", color: "#739B1B" }
+      "webpack.config.cjs": { icon: "\ue8e3", color: "#8ED6FB" }
+      "webpack.config.cts": { icon: "\ue8e3", color: "#8ED6FB" }
+      "webpack.config.js": { icon: "\ue8e3", color: "#8ED6FB" }
+      "webpack.config.mjs": { icon: "\ue8e3", color: "#8ED6FB" }
+      "webpack.config.mts": { icon: "\ue8e3", color: "#8ED6FB" }
+      "webpack.config.ts": { icon: "\ue8e3", color: "#8ED6FB" }
   theme:
     # 아래 세 색은 tmux 팔레트(~/.config/tmux/tmux.conf 2번 섹션)와 같은 값이다. YAML 이라 따로 적으므로 팔레트를 바꾸면 여기도 바꾼다.
     activeBorderColor: ["#b4befe", "bold"]  # 포커스된 패널 테두리 (@c_accent, 세션 뱃지 색)
