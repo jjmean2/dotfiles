@@ -30,10 +30,10 @@
 # 목록: 열린 세션(●) → 최근 고른 곳(◷) → 홈 전체 탐색 (lib/dirs.sh). 한 경로는 한 번만, 모드 조건에 맞는 것만.
 # 파일: ~/.config/tmux-dev/ignore (탐색 제외, gitignore 문법), ~/.local/state/tmux-dev/history (피커로 고른 곳만),
 #   ~/.local/state/tmux-dev/parents (위치 피커로 무언가를 만든 곳)
-# 세션 찾기: 세션 옵션 @tmux-dev-path 가 그 경로 → 옵션 없는 세션의 session_path 가 그 경로 → 없으면 만든다.
-#   여럿이면 최근에 붙었던 것. 만들 때 @tmux-dev-path 를 붙이고, 저장소면 첫 윈도우에 @worktree 를 둔다 (worktree 가 읽는다).
-# 워크트리(.git 이 파일)를 고르면 그 워크트리로 이동한다: 그 경로의 세션 → 그 워크트리를 연 윈도우(@worktree)
-#   → 메인 저장소 세션에 윈도우를 열어 준다 (tmux-dev worktree 에 넘김). 세션 = 저장소, 윈도우 = 워크트리.
+# 세션 찾기: 세션의 시작 경로(session_path)가 그 경로인 세션 → 없으면 만든다. 여럿이면 최근에 붙었던 것.
+#   tmux-dev 가 만든 세션과 순정 `tmux new -c` 세션을 가리지 않는다 (세션에 표지를 붙이지 않는다).
+# 워크트리(.git 이 파일)를 고르면 그 워크트리로 이동한다: 그 경로의 세션 → 그 워크트리 안에 패널이 있는 윈도우(어느 세션이든.
+#   lib/panes.sh 의 주인 규칙) → 메인 저장소 세션에 윈도우를 열어 준다 (tmux-dev worktree 에 넘김). 세션 = 저장소, 윈도우 = 워크트리.
 set -euo pipefail
 
 # 피커의 콜백은 fzf 가 절대 경로로 부른다($SELF). 그때는 외부 명령·서브셸 없이 정하고, 셸에서 상대 경로로 불렀을 때만
@@ -63,6 +63,8 @@ fi
 . "$LIB/dirs.sh"             # 홈 탐색(scan_repos, scan_dirs)·미리보기. worktree 의 dir 모드와 공유
 # shellcheck source=../lib/layout.sh
 . "$LIB/layout.sh"           # 새 세션의 첫 윈도우에 한 번 적용. worktree 와 공유
+# shellcheck source=../lib/panes.sh
+. "$LIB/panes.sh"            # 창을 패널의 경로로 찾는다 (주인 규칙)·real_dir. worktree 와 공유
 WORKTREE_BIN="${SELF%/*}/tmux-dev-worktree"
 
 LAYOUT=""          # --layout 으로 명시한 값, 또는 피커의 alt-l. 비어 있으면 resolve_layout
@@ -84,17 +86,17 @@ mode_name() { if [ "$1" = repo ]; then printf 'repository'; else printf 'directo
 
 # --- 후보 (행 꼴은 lib/picker.sh 의 row) ------------------------------------------------
 branch_mark() { git_branch "$1"; BM=""; [ -n "$GB" ] && BM=" $C$GB$R"; return 0; }   # → BM. 행마다 부르므로 서브셸 없이
-session_list() {  # "<최근 붙은 시각>US<id>US<이름>US<@tmux-dev-path>US<session_path>", 최근 붙은 순
-  tmux list-sessions -F "#{session_last_attached}${US}#{session_id}${US}#{session_name}${US}#{@tmux-dev-path}${US}#{session_path}" 2>/dev/null \
-    | sort -t "$US" -k1,1nr || true
+session_list() {  # "<최근 붙은 시각>US<id>US<이름>US<session_path>", 최근 붙은 순 (같은 시각이면 tmux 가 준 순서 그대로)
+  tmux list-sessions -F "#{session_last_attached}${US}#{session_id}${US}#{session_name}${US}#{session_path}" 2>/dev/null \
+    | sort -s -t "$US" -k1,1nr || true
 }
+# 세션의 경로 = session_path 를 실제 경로로 푼 것 (tmux 는 받은 그대로 들고 있어 심볼릭 링크일 수 있다). real_dir 은
+# 서브셸을 띄우지 않는다 (세션 수만큼 불린다. lib/panes.sh). 세션 디렉토리가 지워졌으면 그 세션은 건너뛴다
 session_rows() {
-  local _t _id name tag sp p
-  while IFS=$US read -r _t _id name tag sp; do
-    # 세션 디렉토리가 지워졌으면 canon_dir 이 실패한다. set -e 아래서 대입이 그 실패를 받으면
-    # 스크립트 전체가 끝나 목록이 비므로, || p="" 로 받아 그 세션만 건너뛴다
-    p=$tag; [ -n "$p" ] || p=$(canon_dir "$sp") || p=""
-    [ -n "$p" ] || continue
+  local _t _id name sp p
+  while IFS=$US read -r _t _id name sp; do
+    real_dir "$sp" || continue
+    p=$REAL
     fits_mode "$1" "$p" || continue
     branch_mark "$p"; row "$p" "${G}●${R} ${D}$name${R}$BM"
   done < <(session_list)
@@ -119,13 +121,13 @@ rows() {  # 앞에 나온 것이 이긴다. fflush 로 한 줄씩 흘려 보내 
 }
 
 # --- 세션 찾기·만들기 --------------------------------------------------------------
-find_session() {  # $1 실제 경로 → 세션 id. 옵션이 붙은 세션이 먼저, 그다음 옵션 없는 세션의 session_path
-  local _t id _n tag sp by_path=""
-  while IFS=$US read -r _t id _n tag sp; do
-    if [ -n "$tag" ]; then [ "$tag" = "$1" ] && { printf '%s' "$id"; return 0; }
-    elif [ -z "$by_path" ] && [ "$(canon_dir "$sp")" = "$1" ]; then by_path=$id; fi
+find_session() {  # $1 실제 경로 → 세션 id. 시작 경로가 그 경로인 세션 가운데 가장 최근에 붙었던 것 (목록의 ● 행과 같은 세션)
+  local _t id _n sp
+  while IFS=$US read -r _t id _n sp; do
+    real_dir "$sp" || continue
+    [ "$REAL" = "$1" ] || continue
+    printf '%s' "$id"; return 0
   done < <(session_list)
-  [ -n "$by_path" ] && printf '%s' "$by_path"
   return 0
 }
 session_name_for() {  # 표시용 이름. 겹치면 부모 이름을 붙이고, 그래도 겹치면 -2, -3
@@ -142,7 +144,7 @@ ensure_session() {  # $1 실제 경로 → 세션 id (없으면 만들고 레이
   if [ -z "$sid" ]; then
     win=$(tmux new-session -d -s "$(session_name_for "$1")" -c "$1" -P -F '#{window_id}')
     sid=$(tmux display-message -p -t "$win" '#{session_id}')
-    tmux set-option -t "$sid" @tmux-dev-path "$1"
+    # 표지는 쓰기만 한다: jw 플러그인의 handoff 가 이 창을 메인 체크아웃의 창으로 읽는다 (lib/panes.sh 머리말)
     [ -d "$1/.git" ] && tmux set-option -w -t "$win" @worktree "$1"
     apply_layout "$(resolve_layout "$LAYOUT" "$1")" "$win" "$1"
   fi
@@ -156,13 +158,18 @@ switch_to() {
 }
 # 워크트리를 고르면 그 워크트리로 이동한다 (session-picker.md 결정 3). 읽기를 바꾸려면 이 함수만 고친다.
 open_worktree() {
-  local path=$1 sid _t win tag main
+  local path=$1 sid _t _idx win _id modal _cmd start cur main
   sid=$(find_session "$path")                       # 순정으로 만든 워크트리 세션은 존중한다
   if [ -n "$sid" ]; then switch_to "$sid"; return; fi
-  while IFS=$US read -r _t sid win tag; do          # 그 워크트리를 연 윈도우가 어느 세션에든 있으면 그리로
-    [ "$tag" = "$path" ] || continue
+  # 그 워크트리가 주인인 패널이 어느 세션에든 있으면 그 창으로 (최근에 붙었던 세션부터). 주인을 가리려면 이 저장소의 워크트리
+  # 목록이 있어야 한다: prefix W 와 같은 규칙을 쓴다 (pane_owner). 피커 자신(modal 패널)은 뺀다
+  wt_set "$(git -C "$path" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')"
+  while IFS=$US read -r _t sid _idx win _id modal _cmd start cur; do
+    [ "$modal" != 1 ] || continue
+    pane_owner "$start" "$cur" || continue
+    [ "$OWNER" = "$path" ] || continue
     tmux select-window -t "$win"; switch_to "$sid"; return
-  done < <(tmux list-windows -a -F "#{session_last_attached}${US}#{session_id}${US}#{window_id}${US}#{@worktree}" 2>/dev/null | sort -t "$US" -k1,1nr)
+  done < <(tmux list-panes -a -F "#{session_last_attached}${US}#{session_id}${US}$PANE_FMT" 2>/dev/null | sort -s -t "$US" -k1,1nr)
   main=$(worktree_main "$path")
   if [ -z "$main" ]; then switch_to "$(ensure_session "$path")"; return; fi
   sid=$(LAYOUT="" ensure_session "$main")           # 메인 세션은 기본 레이아웃으로. 고른 레이아웃은 워크트리 윈도우에

@@ -116,8 +116,8 @@ echo test > note.txt && git add note.txt && git commit -m "try tmux-dev"
 
    | 항목 | 하는 일 |
    |---|---|
-   | `clean up` | 윈도우 닫기 → 워크트리 제거 → 브랜치 보관 → 브랜치 삭제 |
-   | `keep branch` | 윈도우 닫기 → 워크트리 제거. 브랜치는 남긴다 |
+   | `clean up` | 패널 닫기 → 워크트리 제거 → 브랜치 보관 → 브랜치 삭제 |
+   | `keep branch` | 패널 닫기 → 워크트리 제거. 브랜치는 남긴다 |
 
 3. `clean up` 에서 `enter` 를 누른다. 머지되지 않은 브랜치면 `keep branch` 가 맨 위에 있고 `clean up` 에 경고가 붙어 있으니,
    커서를 한 칸 내려 `clean up` 을 고른다.
