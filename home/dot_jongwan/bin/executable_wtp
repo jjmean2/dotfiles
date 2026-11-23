@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# wtp: 브랜치 이름으로 그 브랜치가 체크아웃된 git 워크트리의 경로를 찾는다.
+#
+#   wtp foo            브랜치 이름에 foo 가 든 워크트리의 경로 (여럿이면 모두, 한 줄에 하나)
+#   wtp foo bar        조각 여러 개는 모두 들어 있어야 한다 (순서 무관, zoxide 처럼)
+#   wtp -i foo         여럿이면 fzf 로 하나 고른다 (하나뿐이면 묻지 않는다)
+#   wtp -l [foo]       브랜치와 경로를 표로 본다
+#   wtp -m             main 워크트리의 경로
+#
+# 규칙
+#   - 대소문자는 smart-case: 검색어에 대문자가 있을 때만 구분한다.
+#   - 브랜치 이름이 검색어와 똑같은 것이 있으면 그것 하나만 고른다 (wtp main 이 main 만 내도록).
+#   - 브랜치가 아닌 상태(detached HEAD)의 워크트리와 디렉토리가 사라진 워크트리는 뺀다.
+#   - 찾은 것이 없으면 1, fzf 에서 취소하면 130 으로 끝난다. 경로는 stdout, 알림은 stderr.
+#
+# 자료는 `git worktree list --porcelain -z` 에서 온다. 이 목록은 main 워크트리를 늘 맨 앞에 둔다.
+# fzf 의 화면은 /dev/tty 에 그려지므로 dir=$(wtp -i foo) 처럼 받아도 고를 수 있다.
+
+set -euo pipefail
+
+readonly PROG=${0##*/}
+
+usage() {
+	cat <<EOF
+Usage: $PROG [options] [query...]
+
+Print the path of the git worktree whose branch name contains every query word.
+
+Options:
+  -i, --interactive  pick one with fzf when several match
+  -l, --list         print "branch  path" rows instead of bare paths
+  -m, --main         print the main worktree path and exit
+  -C <dir>           run as if started in <dir>
+  -h, --help         show this help
+EOF
+}
+
+die() {
+	printf '%s: %s\n' "$PROG" "$1" >&2
+	exit "${2:-2}"
+}
+
+interactive=0 list=0 main_only=0
+terms=()
+while (($#)); do
+	case $1 in
+	-i | --interactive) interactive=1 ;;
+	-l | --list) list=1 ;;
+	-m | --main) main_only=1 ;;
+	-C)
+		[[ $# -ge 2 ]] || die "-C needs a directory"
+		cd "$2" || exit 2
+		shift
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	--)
+		shift
+		terms+=("$@")
+		break
+		;;
+	-*) die "unknown option: $1 (see --help)" ;;
+	*) terms+=("$1") ;;
+	esac
+	shift
+done
+
+git rev-parse --git-dir >/dev/null 2>&1 || die "not in a git repository"
+
+# 워크트리 목록 → branches[], paths[] (같은 순서). main 워크트리가 맨 앞.
+branches=() paths=()
+main_path=
+path='' branch=''
+while IFS= read -r -d '' line; do
+	case $line in
+	'worktree '*) path=${line#worktree } ;;
+	'branch refs/heads/'*) branch=${line#branch refs/heads/} ;;
+	'')
+		# 레코드 끝
+		[[ -z $main_path ]] && main_path=$path
+		if [[ -n $branch && -d $path ]]; then
+			branches+=("$branch")
+			paths+=("$path")
+		fi
+		path='' branch=''
+		;;
+	esac
+done < <(git worktree list --porcelain -z)
+
+if ((main_only)); then
+	[[ -n $main_path ]] || die "no main worktree found" 1
+	printf '%s\n' "$main_path"
+	exit 0
+fi
+
+# 대문자가 하나라도 있으면 대소문자를 구분한다 (smart-case)
+case_sensitive=0
+for t in ${terms[@]+"${terms[@]}"}; do
+	[[ $t == *[[:upper:]]* ]] && case_sensitive=1
+done
+
+# 대소문자 무시는 nocasematch 로 한다 (회사 머신은 프로세스 하나 띄우는 값이 비싸서 tr 을 쓰지 않는다)
+((case_sensitive)) || shopt -s nocasematch
+matches=() # branches/paths 의 인덱스
+exact=-1
+query_joined="${terms[*]-}"
+for i in "${!branches[@]}"; do
+	b=${branches[$i]}
+	[[ $b == "$query_joined" && ${#terms[@]} -eq 1 ]] && exact=$i
+	ok=1
+	for t in ${terms[@]+"${terms[@]}"}; do
+		[[ $b == *"$t"* ]] || {
+			ok=0
+			break
+		}
+	done
+	((ok)) && matches+=("$i")
+done
+
+shopt -u nocasematch
+((exact >= 0)) && matches=("$exact")
+
+if ((${#matches[@]} == 0)); then
+	if ((${#terms[@]})); then
+		die "no worktree has a branch matching: ${terms[*]}" 1
+	else
+		die "no worktree with a branch checked out" 1
+	fi
+fi
+
+# 표시용: 홈은 ~ 로, 브랜치 칸은 가장 긴 이름에 맞춘다
+width=0
+for i in "${matches[@]}"; do
+	((${#branches[$i]} > width)) && width=${#branches[$i]}
+done
+row() {
+	local p=${paths[$1]}
+	[[ $p == "$HOME"/* ]] && p="~${p#"$HOME"}"
+	local mark=' '
+	[[ ${paths[$1]} == "$main_path" ]] && mark='*'
+	printf '%s %-*s  %s' "$mark" "$width" "${branches[$1]}" "$p"
+}
+
+if ((list)); then
+	for i in "${matches[@]}"; do
+		row "$i"
+		printf '\n'
+	done
+	exit 0
+fi
+
+if ((interactive && ${#matches[@]} > 1)); then
+	command -v fzf >/dev/null 2>&1 || die "fzf not found (needed for --interactive)"
+	# 한 줄 = "보이는 칸<TAB>실제 경로". 고른 줄의 둘째 칸만 내보낸다.
+	set +e
+	picked=$(
+		for i in "${matches[@]}"; do
+			row "$i"
+			printf '\t%s\n' "${paths[$i]}"
+		done | fzf --height=40% --reverse --no-sort \
+			--delimiter=$'\t' --with-nth=1 \
+			--prompt='worktree> ' --header='* = main worktree' \
+			--preview='git -C {2} log --oneline --decorate --color=always -15; echo; git -C {2} status --short' \
+			--preview-window='right,50%,wrap'
+	)
+	rc=$?
+	set -e
+	((rc == 0)) || exit 130
+	printf '%s\n' "${picked#*$'\t'}"
+	exit 0
+fi
+
+for i in "${matches[@]}"; do
+	printf '%s\n' "${paths[$i]}"
+done
