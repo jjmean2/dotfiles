@@ -1,35 +1,35 @@
 {
-  "description": "Claude Code 의 진행 상태(running·waiting·done·error)를 agent-state 레코드·tmux 패널 옵션·터미널 진행 표시(OSC 9;4)로 내고, 사람이 필요해지면 터미널 알림을 보낸다. PreToolUse 는 걸지 않는다(running 은 UserPromptSubmit 이, 승인 뒤 복귀는 PostToolUse 가 맡아 도구 호출마다 훅 하나)",
+  "description": "Claude Code·Cursor CLI 의 진행 상태(running·waiting·done·error)를 agent-state 레코드·tmux 패널 옵션·터미널 진행 표시(OSC 9;4)로 내고, 사람이 필요해지면 터미널 알림을 보낸다. PreToolUse 는 걸지 않는다(running 은 UserPromptSubmit 이, 승인 뒤 복귀는 PostToolUse 가 맡아 도구 호출마다 훅 하나). 명령 끝의 이벤트 이름은 Cursor 가 이 훅을 가져와 돌릴 때 쓴다(입력의 이벤트 이름이 다르다)",
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude SessionStart", "timeout": 5 }] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude UserPromptSubmit", "timeout": 5 }] }
     ],
     "PostToolUse": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude PostToolUse", "timeout": 5 }] }
     ],
     "PostToolUseFailure": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude PostToolUseFailure", "timeout": 5 }] }
     ],
     "PermissionRequest": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude PermissionRequest", "timeout": 5 }] }
     ],
     "Notification": [
       {
         "matcher": "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input",
-        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude Notification", "timeout": 5 }]
       }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude Stop", "timeout": 5 }] }
     ],
     "StopFailure": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude StopFailure", "timeout": 5 }] }
     ],
     "SessionEnd": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude", "timeout": 5 }] }
+      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/agent-state\" hook claude SessionEnd", "timeout": 5 }] }
     ]
   }
 }
