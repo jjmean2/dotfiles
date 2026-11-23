@@ -6,12 +6,21 @@
 #   wtp -i foo         여럿이면 fzf 로 하나 고른다 (하나뿐이면 묻지 않는다)
 #   wtp -l [foo]       브랜치와 경로를 표로 본다
 #   wtp -m             main 워크트리의 경로
+#   wtp init zsh       cd 까지 하는 셸 함수(wcd)와 그 Tab 완성의 정의를 출력한다 (아래 "셸 함수")
 #
 # 규칙
 #   - 대소문자는 smart-case: 검색어에 대문자가 있을 때만 구분한다.
 #   - 브랜치 이름이 검색어와 똑같은 것이 있으면 그것 하나만 고른다 (wtp main 이 main 만 내도록).
 #   - 브랜치가 아닌 상태(detached HEAD)의 워크트리와 디렉토리가 사라진 워크트리는 뺀다.
 #   - 찾은 것이 없으면 1, fzf 에서 취소하면 130 으로 끝난다. 경로는 stdout, 알림은 stderr.
+#
+# 셸 함수
+#   스크립트는 셸의 위치를 바꿀 수 없으므로, cd 는 셸 함수가 한다. `wtp init <zsh|bash> [--cmd <이름>]`
+#   이 함수와 Tab 완성(체크아웃된 브랜치 이름) 정의를 출력하고, 쓰는 쪽이 그것을 eval 하거나 파일로
+#   저장해 source 한다. 함수는 `wtp -i` 의 결과로 cd 만 하므로 찾기 규칙은 모두 이 스크립트에 있다.
+#     eval "$(wtp init zsh)"         # wcd foo / wcd -m / wcd (전체에서 고르기)
+#     wtp init zsh > ~/.wcd.zsh      # 파일로 두고 source 해도 된다
+#   브랜치 이름이 init 이면 `wtp -- init` 처럼 찾는다.
 #
 # 자료는 `git worktree list --porcelain -z` 에서 온다. 이 목록은 main 워크트리를 늘 맨 앞에 둔다.
 # fzf 의 화면은 /dev/tty 에 그려지므로 dir=$(wtp -i foo) 처럼 받아도 고를 수 있다.
@@ -23,6 +32,7 @@ readonly PROG=${0##*/}
 usage() {
 	cat <<EOF
 Usage: $PROG [options] [query...]
+       $PROG init <zsh|bash> [--cmd <name>]
 
 Print the path of the git worktree whose branch name contains every query word.
 
@@ -32,6 +42,11 @@ Options:
   -m, --main         print the main worktree path and exit
   -C <dir>           run as if started in <dir>
   -h, --help         show this help
+  --branches         print checked-out branch names (for completion)
+
+init prints a shell function (default name: wcd) that cd's into the picked
+worktree, plus Tab completion of branch names. Use it as:
+  eval "\$($PROG init zsh)"
 EOF
 }
 
@@ -40,13 +55,88 @@ die() {
 	exit "${2:-2}"
 }
 
-interactive=0 list=0 main_only=0
+# init: cd 함수와 완성 정의를 출력한다. 함수 이름 자리는 __CMD__ 로 써 두고 바꿔 넣는다.
+init_zsh() {
+	cat <<'EOF'
+# wtp init zsh 가 만든 정의
+__CMD__() {
+	local dir
+	dir=$(command wtp -i "$@") || return
+	builtin cd -- "$dir"
+}
+
+_wtp___CMD__() {
+	local -a branches expl
+	branches=(${(f)"$(command wtp --branches 2>/dev/null)"})
+	# 부분 일치 + smart-case (소문자는 대문자와도 맞는다. wtp 의 검색 규칙과 같게)
+	_wanted branches expl 'worktree branch' \
+		compadd -M 'm:{[:lower:]}={[:upper:]} l:|=* r:|=*' -a branches
+}
+(( $+functions[compdef] )) && compdef _wtp___CMD__ __CMD__
+EOF
+}
+
+init_bash() {
+	cat <<'EOF'
+# wtp init bash 가 만든 정의
+__CMD__() {
+	local dir
+	dir=$(command wtp -i "$@") || return
+	builtin cd -- "$dir"
+}
+
+_wtp___CMD__() {
+	local cur=${COMP_WORDS[COMP_CWORD]} b
+	COMPREPLY=()
+	local IFS=$'\n'
+	# 부분 일치 + smart-case (wtp 의 검색 규칙과 같게)
+	local nocase=0
+	shopt -q nocasematch && nocase=1
+	[[ $cur == *[[:upper:]]* ]] || shopt -s nocasematch
+	for b in $(command wtp --branches 2>/dev/null); do
+		[[ $b == *"$cur"* ]] && COMPREPLY+=("$b")
+	done
+	((nocase)) || shopt -u nocasematch
+}
+complete -F _wtp___CMD__ __CMD__
+EOF
+}
+
+if [[ ${1-} == init ]]; then
+	shift
+	shell=${1-}
+	[[ -n $shell ]] || die "init needs a shell: zsh or bash"
+	shift
+	cmd=wcd
+	while (($#)); do
+		case $1 in
+		--cmd)
+			[[ $# -ge 2 ]] || die "--cmd needs a name"
+			cmd=$2
+			shift
+			;;
+		*) die "unknown init option: $1" ;;
+		esac
+		shift
+	done
+	[[ $cmd =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "invalid function name: $cmd"
+	case $shell in
+	zsh) out=$(init_zsh) ;;
+	bash) out=$(init_bash) ;;
+	*) die "unsupported shell: $shell (zsh or bash)" ;;
+	esac
+	printf '%s\n' "${out//__CMD__/$cmd}"
+	exit 0
+fi
+
+interactive=0 list=0 main_only=0 branches_only=0
 terms=()
 while (($#)); do
 	case $1 in
 	-i | --interactive) interactive=1 ;;
 	-l | --list) list=1 ;;
 	-m | --main) main_only=1 ;;
+	--branches) branches_only=1 ;;
 	-C)
 		[[ $# -ge 2 ]] || die "-C needs a directory"
 		cd "$2" || exit 2
@@ -88,6 +178,11 @@ while IFS= read -r -d '' line; do
 		;;
 	esac
 done < <(git worktree list --porcelain -z)
+
+if ((branches_only)); then
+	printf '%s\n' ${branches[@]+"${branches[@]}"}
+	exit 0
+fi
 
 if ((main_only)); then
 	[[ -n $main_path ]] || die "no main worktree found" 1
