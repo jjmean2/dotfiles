@@ -284,6 +284,10 @@ return {
           -- 와 <leader>fc(설정 파일), <leader>sF(filetype).
           projects = { dev = expand_project_parents(patterns) },
           explorer = {
+            -- 필터 입력을 fuzzy 로 맞춘다. snacks 의 explorer 기본은 fuzzy = false (부분 문자열 일치)이고,
+            -- 검색어 문법으로 fuzzy 를 켜는 방법은 없다 (', ^, $, ! 는 모두 fuzzy 를 끄는 쪽이다).
+            -- 비교 대상은 cwd 기준 상대 경로 전체다. 정확히 찾고 싶으면 'foo 를 쓴다. sort_empty 등은 기본값이 병합돼 남는다.
+            matcher = { fuzzy = true },
             actions = {
               reveal_in_finder = function(_, item)
                 if item then
