@@ -94,7 +94,7 @@ row() {  # 행마다 부르므로 서브셸($(home_disp)) 없이
   printf '%s\t%s\t%s\n' "$d" "$2" "$1"
 }
 dir_rows() {  # SCAN_ROOT 아래 디렉토리 전부를 행으로 (표시 없음. 수만 개라 행마다 프로세스를 띄우지 않는다)
-  scan_dirs | awk -v home="$HOME" -v OFS='\t' '{ d = $0; if (index(d, home "/") == 1) d = "~" substr(d, length(home) + 1); else if (d == home) d = "~"; print d, "", $0 }'
+  scan_cached dirs | awk -v home="$HOME" -v OFS='\t' '{ d = $0; if (index(d, home "/") == 1) d = "~" substr(d, length(home) + 1); else if (d == home) d = "~"; print d, "", $0 }'
 }
 
 # --- 판정: 경로 모양 검색어 ----------------------------------------------------------
@@ -211,6 +211,12 @@ frame_hold() {  # $1 제목. 테두리를 켰으면 키 하나를 누를 때까�
 }
 
 # --- 콜백 도구 -------------------------------------------------------------------
+# 커서 항목이 그사이 사라졌다 (탐색 결과 캐시를 켜면 지운 디렉토리가 다음 탐색까지 목록에 남는다. lib/dirs.sh).
+# 사라졌으면 안내 액션을 출력하고 0. 고르기(enter·alt-l)와 위치 피커가 만들기·열기 전에 본다
+stale_pick() {
+  [ -n "${1:-}" ] && [ ! -d "$1" ] || return 1
+  nope "${Y}no longer exists: $(home_disp "$1")${R} ${D}· the list came from the cache and is refreshed for next time${R}"
+}
 nope() { printf 'bell+%s' "$(act change-footer "$1")"; }   # 할 일이 없을 때: 벨과 안내만
 search_action() {  # 경로 모양 검색어 → 경로 접두 일치. /Users/<나>/... 도 ~/... 로 맞춘다. 공백은 fzf 검색 문법대로 \ 로
   local q=$1
@@ -260,6 +266,7 @@ loc_preview() {  # $1 고를 부모 → 만들어질 경로와 판정, 그 아�
 on_loc_enter() {  # 위치 피커의 enter: 만들 수 있으면(또는 이미 있으면) 고르고 끝, 막히면 안내
   local mode name; st_get name; name=$ST; st_get mode; mode=${ST:-repo}
   [ -n "${1:-}" ] || { printf 'bell'; return; }
+  stale_pick "$1" && return
   classify "$1/$name" "$mode"
   [ "$J_KIND" = block ] && { nope "$J_SAY"; return; }
   st_set loc "$1"; printf 'accept'
@@ -267,6 +274,7 @@ on_loc_enter() {  # 위치 피커의 enter: 만들 수 있으면(또는 이미 �
 on_loc_layout() {  # 위치 피커의 alt-l: 레이아웃을 겹쳐 띄우고, 고르면 위치도 고른 것으로 끝낸다
   local mode name; st_get name; name=$ST; st_get mode; mode=${ST:-repo}
   [ -n "${1:-}" ] || { printf 'bell'; return; }
+  stale_pick "$1" && return
   classify "$1/$name" "$mode"
   [ "$J_KIND" = block ] && { nope "$J_SAY"; return; }
   st_set pending "${J_CREATE:-none}"$'\t'"$J_PATH"; st_set near_pick "$1"; st_del layout

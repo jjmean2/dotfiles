@@ -108,6 +108,7 @@ worktree_target() {  # $1 종류 $2 경로 $3 브랜치 [$4 확인 목록의 커
 # 디렉토리 모드의 열 대상: 커서 항목, 아니면 경로 모양 검색어가 가리키는 있는 디렉토리. 없으면 안내 액션을 출력하고 1
 dir_target() {  # $1 커서 항목의 경로
   local q=${FZF_QUERY:-}
+  stale_pick "$1" && return 1
   if [ -n "$1" ]; then J_PATH=$1; return 0; fi
   if pathish "$q"; then
     classify "$q" dir
