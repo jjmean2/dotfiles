@@ -201,8 +201,10 @@ fresh 는 첫 메시지가 꼭 있어야 하고, 비어 있으면(공백뿐이�
   원본의 Bash 호출 결과가 기록에 써질 때까지 기다리는 경험값이다. 그래서 포크의 `bg` 는 분리된 프로세스로 띄운다.
 - Claude 는 세션 이름이 겹쳐도 막지 않고, `--resume <이름>` 은 정확히 하나가 일치할 때만 바로 연다. 그래서 같은 브랜치로
   여러 번 넘겨도 겹치지 않게 이름에 분 단위 시각을 붙인다. 이름 검색은 지금 디렉토리의 세션만 본다.
-- tmux: 새 윈도우는 호출한 패널의 tmux 세션에 생긴다. 그 워크트리의 윈도우(`@worktree`)가 이미 있으면 키를 보내지 않고
-  거기에 새 패널을 열고, 나눌 자리가 없으면 새 윈도우를 연다. 다른 터미널 창에서 따로 보려면 같은 세션 그룹에 붙는다:
+- tmux: 새 윈도우는 호출한 패널의 tmux 세션에 생긴다. 그 워크트리의 윈도우가 이미 있으면 키를 보내지 않고
+  거기에 새 패널을 열고, 나눌 자리가 없으면 새 윈도우를 연다. 그 워크트리의 윈도우는 패널의 경로로 찾는다: 현재 경로가 그
+  워크트리 안인 패널(없으면 시작 경로가 그 안인 패널)이 있는 가장 앞 윈도우다. tmux-dev 의 `prefix W` 와 같은 규칙이라
+  `prefix c` 로 연 창도 잡힌다. 만든 윈도우에 옵션 `@worktree` 를 쓰기는 하지만 읽지는 않는다. 다른 터미널 창에서 따로 보려면 같은 세션 그룹에 붙는다:
   `tmux new-session -t <세션> -s <세션>-2 \; select-window -t <윈도우 번호>`.
 - 포크된 세션은 handoff 지시문까지 이어받는다. 그래서 첫 메시지가 "그 지시는 원본 세션에 대한 것"이라고 먼저 밝힌다.
 
@@ -318,6 +320,7 @@ ln -s "$(pwd)"/claude-plugins/jw/bin/{branch-worktree,worktree-handoff,pr-review
 
 ## 바뀐 것
 
+- **0.11.1**: handoff 가 tmux 에서 그 워크트리의 윈도우를 옵션 `@worktree` 가 아니라 패널의 경로로 찾는다 (위 "tmux"). 표지 없이 연 창도 찾고, 패널이 옮겨 가 낡은 표지는 따라가지 않는다.
 - **0.11.0**: 워크트리를 찾고 만드는 일을 `bin/branch-worktree` 로 떼었다. `worktree-handoff` 는 세션 띄우기만 하고 `pr-review-fetch` 도 같은 판정을 쓴다. `worktree-handoff path` 는 `branch-worktree ensure` 가 대신하고, `pr-review-fetch` 의 `local` 에서 `uncommitted_changes` 는 `worktree_dirty` 로 합쳤다. `test/run` 으로 스크립트를 확인한다 (위 "구성").
 - **0.10.0**: handoff 가 Cursor CLI 세션도 열게 했다. Claude 와 Cursor 어느 쪽에서 부르든 돌고, 어느 도구로 열지는 확인 단계에서 고른다 (위 "세션을 여는 도구"). 세 스킬 모두 Cursor 에서도 스크립트를 찾도록 `bin/` 경로로 부른다 (위 "Cursor 에서 쓰기").
 - **0.9.0**: pr-review-handle 이 지적마다 따로 수정안을 내는 대신 원인을 따진 수정 계획(공통 원인은 근거가 있을 때만 묶음)을 내고, 그 계획을 구현하고 답글·해결까지 하는 `pr-review-apply` 와 `bin/pr-review-reply` 를 더했다 (위 "pr-review-apply").

@@ -373,6 +373,18 @@ t_tmux() {
   check "tmux: 대신 거기에 패널을 연다" test "$(tm list-panes -t main:1 | wc -l | tr -d ' ')" = 2
   check "tmux: 윈도우 수는 그대로" test "$(tm list-windows -t main | wc -l | tr -d ' ')" = 2
 
+  # 윈도우는 표지(@worktree)가 아니라 패널의 경로로 찾는다: 표지가 없어도(prefix c 로 연 창처럼) 그 워크트리의 창이다
+  tm set-option -w -u -t main:1 @worktree
+  inside feat/t1 claude
+  expect "tmux: 표지 없는 윈도우도 그 워크트리의 윈도우다" 'open:     tmux main:1 (feat/t1)'
+  check "tmux: 패널의 경로로 찾아 거기에 패널을 연다" test "$(tm list-panes -t main:1 | wc -l | tr -d ' ')" = 3
+  check "tmux: 새 윈도우를 열지 않았다" test "$(tm list-windows -t main | wc -l | tr -d ' ')" = 2
+  # 반대로 표지만 있고 그 워크트리의 패널이 없는 창은 그 워크트리의 창이 아니다 (패널이 다른 곳으로 옮겨 간 뒤의 낡은 표지)
+  tm set-option -w -t main:0 @worktree "$(wtdir "$M" feat-t9)"
+  inside feat/t9 claude
+  expect "tmux: 낡은 표지를 따라가지 않고 새 윈도우를 연다" 'open:     tmux main:2 (feat/t9)'
+  tm set-option -w -u -t main:0 @worktree; tm kill-window -t main:2
+
   inside feat/t2 agent --agent cursor
   expect_rc "tmux 안의 cursor: 성공" 0
   out=$(cat "$M/log/agent.log")

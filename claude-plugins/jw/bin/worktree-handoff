@@ -244,21 +244,52 @@ open_bg() {
     failed=1; where="background 실패 (위 $cli: 줄). 아래 run: 줄을 터미널에서 직접 실행하세요"
   fi
 }
+# 그 워크트리의 윈도우를 패널의 경로로 찾는다: 그 워크트리가 주인인 패널이 있는 가장 앞 윈도우.
+#   패널의 주인 = 현재 경로(pane_current_path)가 이 저장소의 워크트리 안이면 그 워크트리, 아니면 시작 경로(pane_start_path)의
+#   워크트리. 겹치면 가장 깊은 것 (메인 체크아웃이 그 아래의 워크트리를 삼키지 않게). modal 패널(떠 있는 피커)은 뺀다.
+# tmux-dev 의 prefix W 와 같은 규칙이다 (dotfiles 의 home/dot_config/tmux/plugins/tmux-dev/lib/panes.sh. 이 플러그인은 따로
+# 배포되므로 그 파일을 읽지 않고 같은 규칙을 여기 둔다). 전에는 윈도우 옵션 @worktree 로 찾았는데, 그러면 prefix c 로 연 창은
+# 못 찾고 break-pane·join-pane 으로 패널이 옮겨 가면 엉뚱한 창을 가리켰다.
+wt_window() {  # $1 세션 → 그 워크트리($wt)의 윈도우 id (없으면 빈 줄)
+  local us roots want win modal start cur owner
+  us=$(printf '\037')
+  roots=$(git -C "$wt" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+  want=$(cd -P -- "$wt" 2>/dev/null && pwd) || want=$wt
+  owner_of() {  # $1 경로 → owner (그 경로를 담는 가장 깊은 워크트리). 없으면 1
+    local w; owner=""
+    [ -n "$1" ] || return 1
+    while IFS= read -r w; do
+      [ -n "$w" ] || continue
+      case $1 in "$w"|"$w"/*) [ "${#w}" -le "${#owner}" ] || owner=$w ;; esac
+    done <<<"$roots"
+    [ -n "$owner" ]
+  }
+  while IFS=$us read -r win modal start cur; do
+    [ "$modal" != 1 ] || continue
+    if ! owner_of "$cur"; then
+      start=$(cd -P -- "$start" 2>/dev/null && pwd) || continue   # 시작 경로는 받은 그대로라 심볼릭 링크일 수 있다
+      owner_of "$start" || continue
+    fi
+    [ "$owner" = "$want" ] || continue
+    printf '%s\n' "$win"; return 0
+  done < <(tmux list-panes -s -t "$1" -F "#{window_id}$us#{pane_modal_flag}$us#{pane_start_path}$us#{pane_current_path}" 2>/dev/null)
+  return 0
+}
 open_tmux() {
-  local sess tab wid pane="" wt_esc
+  local sess wid pane="" wt_esc
   # 대상 세션은 호출한 패널의 세션. -t 없이 두면 tmux 가 "가장 최근 세션"을 골라 다른 저장소에 열 수 있다
   sess=$(tmux display -p ${TMUX_PANE:+-t "$TMUX_PANE"} '#{session_id}') || return 1
   # 그 워크트리의 윈도우가 이미 있으면 거기에 새 패널 (기존 패널에서 무엇이 돌지 모르므로 키를 보내지 않는다).
   # 없거나 자리가 없어 나눌 수 없으면 새 윈도우. 어느 쪽이든 -d 라 지금 보는 화면은 그대로다
-  tab=$(printf '\t')
-  wid=$(tmux list-windows -t "$sess" -F "#{window_id}$tab#{@worktree}" | awk -F'\t' -v p="$wt" '$2==p{print $1; exit}') || return 1
+  wid=$(wt_window "$sess") || return 1
   # -c 와 -n 은 tmux 형식 문자열로 해석된다. 경로·브랜치의 # 을 ## 로 (안 하면 fix/#H 같은 이름이 엉뚱한 디렉토리가 된다)
   fmt_esc() { printf %s "$1" | sed 's/#/##/g'; }
   wt_esc=$(fmt_esc "$wt")
   [ -z "$wid" ] || pane=$(tmux split-window -d -h -P -F '#{pane_id}' -t "$wid" -c "$wt_esc" 2>/dev/null) || pane=""
   if [ -z "$pane" ]; then
     pane=$(tmux new-window -d -P -F '#{pane_id}' -t "$sess:" -c "$wt_esc" -n "$(fmt_esc "$branch")") || return 1
-    tmux set -w -t "$pane" @worktree "$wt" || return 1   # tmux-dev 피커가 이 윈도우를 워크트리로 인식한다 (없어도 무해)
+    # 표지는 쓰기만 한다 (읽지 않는다). 경로로 찾기 전의 tmux-dev·이 플러그인이 이 윈도우를 그 워크트리의 것으로 알아보게
+    tmux set -w -t "$pane" @worktree "$wt" || return 1
   fi
   # -l: 글자 그대로 입력 (키 이름으로 해석하지 않게). Enter 는 따로
   tmux send-keys -l -t "$pane" "sh $(sq "$pf.sh")" || return 1
