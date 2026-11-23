@@ -256,7 +256,7 @@ XDG 기본 디렉토리를 종류별로 쓴다.
 | `home/dot_config/tmux/plugins/tmux-dev/executable_tmux-dev.tmux` | 진입 스크립트 (키 등록) |
 | `home/dot_config/tmux/plugins/tmux-dev/bin/executable_tmux-dev` | 명령 진입점 |
 | `home/dot_config/tmux/plugins/tmux-dev/libexec/` | 서브커맨드 (`project`, `worktree`, `open`) |
-| `home/dot_config/tmux/plugins/tmux-dev/lib/` | 공용 (`common.sh`, `dirs.sh`, `layout.sh`, `picker.sh`) |
+| `home/dot_config/tmux/plugins/tmux-dev/lib/` | 공용 (`common.sh`, `dirs.sh`, `layout.sh`, `picker.sh`), prefix W 의 키마다 도는 콜백 (`worktree-events.sh`) |
 | `home/dot_config/tmux-dev/create_ignore` | `ignore` 파일의 초기 내용 |
 
 ---

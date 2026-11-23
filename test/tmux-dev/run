@@ -111,6 +111,24 @@ run "$st" '' 1 --on result
 alive "result [worktree] after ctrl-t"; no_spawn "result [worktree] after ctrl-t"
 expect "result [worktree] after ctrl-t: reports nothing merged" 'nothing merged'
 
+# --- enter: 고르기, 동기 ----------------------------------------------------------
+# 상태만 쓰고 fzf 를 끝낸다. 마커 계산이 CPU 를 쓰는 동안에도 바로 먹도록 저장소 문맥 없이 돈다 (lib/worktree-events.sh)
+st=$(mkstate worktree)
+run "$st" '' 3 --on enter worktree "$T/repo" main
+alive "enter [worktree] worktree row"; no_spawn "enter [worktree] worktree row"
+expect "enter [worktree] worktree row: accepts" 'accept'
+if [ -f "$st/decision" ]; then ok "enter [worktree] worktree row: writes the decision"; else no "enter [worktree] worktree row: writes the decision"; fi
+run "$st" '' 3 --on enter branch '' feat
+alive "enter [worktree] branch row"; no_spawn "enter [worktree] branch row"
+expect "enter [worktree] branch row: opens the create confirmation" '--choose-create'
+run "$st" abc 0 --on enter '' '' ''
+alive "enter [worktree] no match"; no_spawn "enter [worktree] no match"
+expect "enter [worktree] no match: says so" 'no match'
+st=$(mkstate directory)
+run "$st" '' 3 --on enter dir "$T/home/proj" ''
+alive "enter [directory]"; no_spawn "enter [directory]"
+expect "enter [directory]: accepts" 'accept'
+
 # --- 대조: 가짜 도구가 실제로 끼어드는지 ---------------------------------------------
 # 저장소 문맥을 만드는 콜백(모드 전환)은 git 을 띄운다. 이것이 잡히지 않으면 위의 "no git/tmux" 는 아무것도 증명하지 못한다
 st=$(mkstate worktree)

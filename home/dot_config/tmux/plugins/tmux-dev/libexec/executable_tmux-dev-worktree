@@ -83,20 +83,37 @@ set -euo pipefail
 # 주지 않는 것뿐이다 (결과는 같다). 자식(서브셸, run-shell -b 로 다시 띄우는 작업)도 물려받는다.
 export GIT_OPTIONAL_LOCKS=0
 
-SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
-LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
+# 피커의 콜백은 fzf 가 절대 경로로 부른다($SELF). 그때는 서브셸 없이 정하고, 셸에서 상대 경로로 불렀을 때만 cd 로 푼다
+case $0 in
+  /*) SELF=$0; LIB=${0%/*}/../lib ;;
+  *)  SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0"); LIB=$(cd "$(dirname "$SELF")/../lib" && pwd) ;;
+esac
 # shellcheck source=../lib/common.sh
 . "$LIB/common.sh"
-# shellcheck source=../lib/layout.sh
-. "$LIB/layout.sh"
-# shellcheck source=../lib/dirs.sh
-. "$LIB/dirs.sh"
 # shellcheck source=../lib/picker.sh
 . "$LIB/picker.sh"           # 상태 디렉토리·판정·탭·테두리·위치 피커·레이아웃 목록. project 와 공유
+# shellcheck source=../lib/worktree-events.sh
+. "$LIB/worktree-events.sh"  # 키마다 도는 콜백(change, result)과 그것이 쓰는 푸터·모드 함수
 
 LAYOUT=""                                  # --layout 으로 명시한 값. 비어 있으면 resolve_layout (저장소 설정 → 전역 → plain)
 BASE=""                                    # --base. 비어 있으면 default_base
 SESSION="${TMUX_WORKTREE_SESSION:-}"       # -t
+
+# 빠른 길: 키마다(change) · 검색마다(result) 도는 콜백과 고르기(enter)는 여기서 끝낸다. 아래의 1500줄과 layout.sh·dirs.sh 를 bash 가 읽지도
+# 않게 하려는 것이다 (bash 는 스크립트를 읽는 대로 실행하므로 exit 뒤는 파싱하지 않는다). 이유는 lib/worktree-events.sh 머리말
+if [ "${1:-}" = --on ]; then
+  case ${2:-} in
+    change) picker_ctx; on_change || true; exit 0 ;;
+    result) picker_ctx; on_result || true; exit 0 ;;
+    enter)  picker_ctx; on_enter "${3:-}" "${4:-}" "${5:-}" || true; exit 0 ;;   # double-click 도 같은 콜백이다
+  esac
+fi
+
+# shellcheck source=../lib/layout.sh
+. "$LIB/layout.sh"
+# shellcheck source=../lib/dirs.sh
+. "$LIB/dirs.sh"
+
 HISTORY_MAX=500
 TMUX_DEV_WINDOWS="${TMUX_DEV_WINDOWS:-${TMUX_DEV_HISTORY%/*}/windows}"   # 피커로 연 윈도우의 경로 (최근 순)
 CONFIRMED=""                               # 피커에서 이미 확인을 받았으면 1 (open_target 이 다시 묻지 않는다)
@@ -116,15 +133,6 @@ repo_try() {  # 저장소가 아니면 1 (죽지 않는다)
   IN_REPO=1
 }
 repo_init() { repo_try || die "not a git repository: $(abbrev_home "$PWD")"; }
-default_base() {  # origin/HEAD 가 가리키는 브랜치의 로컬 사본 → main → master → HEAD
-  local b
-  if b=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null); then
-    b=${b#origin/}; git show-ref -q --verify "refs/heads/$b" && { echo "$b"; return; }
-  fi
-  for b in main master; do git show-ref -q --verify "refs/heads/$b" && { echo "$b"; return; }; done
-  echo HEAD
-}
-base() { echo "${BASE:-$(default_base)}"; }
 # 머지 판정의 기준 ref. 로컬 베이스가 업스트림(origin/main 등)의 조상이면(= 뒤처졌거나 같으면) 업스트림이 둘 다를 담으므로
 # 업스트림으로 판정한다. 그래서 "로컬 main 또는 origin/main 에 들어 있으면 머지됨" 을 계산 한 번으로 얻는다.
 # 로컬이 앞서 있거나 갈라졌으면 로컬로 판정한다.
@@ -216,8 +224,6 @@ session_dir() {
 #   remote    원격에만 있는 브랜치. 경로 = 원격 ref (origin/이름), 브랜치 = 짧은 이름
 #   dir       subdirectory / directory 모드의 디렉토리. 1칸 = ~경로
 mode_name() { printf '%s' "$1"; }   # 탭 이름 = 모드 이름 (worktree, subdirectory, directory)
-modes() { if [ -n "$IN_REPO" ]; then echo worktree subdirectory directory; else echo subdirectory directory; fi; }
-cur_mode() { st_get mode; MODE=${ST:-}; [ -n "$MODE" ] || { if [ -n "$IN_REPO" ]; then MODE=worktree; else MODE=subdirectory; fi; }; }
 # subdirectory 모드면 탐색·위치 피커를 세션 디렉토리 아래로 (lib/dirs.sh 의 SCAN_ROOT, lib/picker.sh 의 LOC_ROOT)
 apply_scope() {
   LOC_ROOT=""
@@ -236,28 +242,37 @@ hist_rank() {  # $1 경로 → RANK (0 부터, 없으면 -1)
 rows_worktree() {  # $1 = --marks 면 상태 마커(dirty, merged/new/+N)까지 (없으면 빠른 목록)
   local marks=${1:-} path branch flags ref track sha ts subj w=12 n
   local -a wt=() br=() rm=()
-  # 로컬 브랜치 표: 같은 인덱스의 배열들 (이름, 업스트림 대비, 커밋, 커밋 시각). 긴 문자열에 ${var#*패턴} 글로브 매칭을 하면
-  # 멀티바이트 로케일에서 아주 느리므로(행마다 수 ms) 배열을 단순 비교로 훑는다.
-  local -a names=() trks=() shas=() tss=()
+  # 브랜치가 수천 개여도 행마다 전체 브랜치를 훑지 않는다 (예전에는 이름 → 커밋을 배열 전체 비교로 찾아서 로컬 1200·원격 1500
+  # 에서 마커 없는 목록만 10초였다). 그래서
+  #   - 워크트리에 체크아웃된 브랜치(몇십 개)만 따로 표로 둔다: wnames·wshas·wtss. 워크트리 행은 이 작은 표에서 찾는다
+  #   - 워크트리 없는 브랜치는 행(br)과 커밋(brsha)을 같은 인덱스로 둔다. 찾을 일이 없다
+  #   - 원격 브랜치 중 같은 이름의 로컬 브랜치가 있는 것은 awk 가 해시로 거른다
+  # 긴 문자열에 ${var#*패턴} 글로브 매칭을 하면 멀티바이트 로케일에서 아주 느리므로 표는 배열을 단순 비교로 훑는다.
+  local -a wnames=() wshas=() wtss=() brsha=()
   while IFS=$'\t' read -r path branch flags; do
     wt+=("$path|$branch|$flags"); n=${#branch}; [ "$n" -gt "$w" ] && w=$n
   done <<< "$WT_LIST"
   # worktreepath 는 비어 있을 수 있으므로 구분자는 US (git 포맷의 %1f). 최근 커밋 순. 제목은 마지막 칸 (US 가 들어 있을 리 없다)
+  # 원격 행을 거르는 데 쓸 로컬 이름 목록은 같은 출력에서 한 번에 모은다 (local_names)
+  local local_names=""
   while IFS=$US read -r ref path track sha ts subj; do
-    names+=("$ref"); trks+=("$track"); shas+=("$sha"); tss+=("$ts")
-    [ -z "$path" ] && { br+=("$ref|$ts|$subj"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n; }
+    local_names+=$ref$'\n'
+    if [ -n "$path" ]; then wnames+=("$ref"); wshas+=("$sha"); wtss+=("$ts")
+    else br+=("$ref|$ts|$subj"); brsha+=("$sha"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n; fi
   done < <(git for-each-ref refs/heads --sort=-committerdate --format='%(refname:short)%1f%(worktreepath)%1f%(upstream:track)%1f%(objectname)%1f%(committerdate:unix)%1f%(subject)')
-  find_branch() {  # 이름 → IDX (없으면 -1). 서브셸 없이 전역에 둔다
+  wt_branch() {  # 워크트리의 브랜치 이름 → IDX (wnames 의 인덱스, 없으면 -1). 서브셸 없이 전역에 둔다
     local i; IDX=-1
-    for ((i = 0; i < ${#names[@]}; i++)); do [ "${names[$i]}" = "$1" ] && { IDX=$i; return 0; }; done
+    for ((i = 0; i < ${#wnames[@]}; i++)); do [ "${wnames[$i]}" = "$1" ] && { IDX=$i; return 0; }; done
     return 1
   }
   while IFS=$US read -r ref ts subj; do
-    case $ref in */HEAD) continue ;; esac       # origin/HEAD 는 브랜치가 아니다
-    ref=${ref#refs/remotes/}; branch=${ref#origin/}
-    find_branch "$branch" && continue           # 같은 이름의 로컬 브랜치가 있으면 그쪽 행이 대표한다
+    ref=${ref#refs/remotes/}
     rm+=("$ref|$ts|$subj"); n=${#ref}; [ "$n" -gt "$w" ] && w=$n
-  done < <(git for-each-ref refs/remotes/origin --sort=-committerdate --format='%(refname)%1f%(committerdate:unix)%1f%(subject)')
+  done < <(git for-each-ref refs/remotes/origin --sort=-committerdate --format='%(refname)%1f%(committerdate:unix)%1f%(subject)' \
+             | awk -F"$US" 'NR == FNR { if ($0 != "") have["refs/remotes/origin/" $0] = 1; next }
+                            $1 ~ /\/HEAD$/ { next }      # origin/HEAD 는 브랜치가 아니다
+                            !($1 in have)                # 같은 이름의 로컬 브랜치가 있으면 그쪽 행이 대표한다
+                           ' <(printf '%s' "$local_names") -)
   [ "$w" -gt 30 ] && w=30                       # 이름 칸. 더 긴 이름은 그 행만 밀린다 (모든 행을 가장 긴 이름에 맞추지 않는다)
   # 상태 마커는 행마다 git 을 띄워야 해서 비용이 크다. 그래서 (1) 마커 없는 목록을 먼저 띄우고 fzf 의 load 이벤트에서
   # --marks 로 다시 읽으며, (2) --marks 때는 베이스 쪽 계산을 한 번만 하고(merge_prepare) 행마다는 작은 일만 남기며
@@ -273,13 +288,16 @@ rows_worktree() {  # $1 = --marks 면 상태 마커(dirty, merged/new/+N)까지 
     local jobs running=0; jobs=${TMUX_DEV_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 8)}
     i=0; for e in "${wt[@]+"${wt[@]}"}"; do
       path=${e%%|*}; branch=${e#*|}; branch=${branch%%|*}
-      sha=""; find_branch "$branch" && sha=${shas[$IDX]}
+      sha=""; wt_branch "$branch" && sha=${wshas[$IDX]}
       ( marks_for "$path" "$branch" "$b" "$sha" "$bsha" "$lb" "$lbsha" > "$tmp/w$i" ) & i=$((i + 1))
       running=$((running + 1)); [ "$running" -ge "$jobs" ] && { wait; running=0; }
     done
     i=0; for e in "${br[@]+"${br[@]}"}"; do
-      sha=""; find_branch "${e%%|*}" && sha=${shas[$IDX]}
-      ( marks_for "" "${e%%|*}" "$b" "$sha" "$bsha" "$lb" "$lbsha" > "$tmp/b$i" ) & i=$((i + 1))
+      sha=${brsha[$i]}; branch=${e%%|*}
+      # 워크트리 없는 브랜치는 dirty 가 없으니 상태가 캐시에 있으면 fork 하지 않는다 (브랜치 대부분이 여기서 끝난다)
+      case $branch in "$b"|"$lb") printf '0\t\n' > "$tmp/b$i"; i=$((i + 1)); continue ;; esac
+      if marks_cached "$branch" "$sha" "$bsha"; then printf '0\t%s\n' "$MC" > "$tmp/b$i"; i=$((i + 1)); continue; fi
+      ( marks_for "" "$branch" "$b" "$sha" "$bsha" "$lb" "$lbsha" > "$tmp/b$i" ) & i=$((i + 1))
       running=$((running + 1)); [ "$running" -ge "$jobs" ] && { wait; running=0; }
     done
     wait
@@ -296,7 +314,7 @@ rows_worktree() {  # $1 = --marks 면 상태 마커(dirty, merged/new/+N)까지 
     i=0; for e in "${wt[@]+"${wt[@]}"}"; do
       path=${e%%|*}; branch=${e#*|}; flags=${branch#*|}; branch=${branch%%|*}
       kind=worktree; parts=(); dirty=0; st=""; ts=0
-      find_branch "$branch" && ts=${tss[$IDX]:-0}
+      wt_branch "$branch" && ts=${wtss[$IDX]:-0}
       [ "$marks" = --marks ] && { IFS=$'\t' read -r dirty st < "$tmp/w$i" || true; }; i=$((i + 1))
       if [ "$path" = "$MAIN" ]; then key=2 sub=-9999999999; elif [ "${st%%:*}" = merged ]; then key=3 sub=$((-ts)); else key=2 sub=$((-ts)); fi
       if window_for "$path"; then parts+=("${G}●${WIN_IDX}${R}"); key=0; sub=$WIN_IDX
@@ -315,13 +333,13 @@ rows_worktree() {  # $1 = --marks 면 상태 마커(dirty, merged/new/+N)까지 
       [ "$marks" = --marks ] && { IFS=$'\t' read -r dirty st < "$tmp/b$i" || true; }; i=$((i + 1))
       key=4; name_style=""; [ "${st%%:*}" = merged ] && { key=5; name_style=$D; }
       state_marks "$st" 0
-      age_of "${ts:-$NOW}"; parts+=("${D}$AGE (branch) $(trim "$subj" 50)${R}")
+      age_of "${ts:-$NOW}"; trim_to "$subj" 50; parts+=("${D}$AGE (branch) $TRIM${R}")
       printf '%s\t%s\t%s%-*s%s\t%s\tbranch\t\t%s\n' "$key" "$((-${ts:-0}))" "$name_style" "$w" "$ref" "$R" "${parts[*]}" "$ref"
     done
     for e in "${rm[@]+"${rm[@]}"}"; do
       ref=${e%%|*}; ts=${e#*|}; subj=${ts#*|}; ts=${ts%%|*}
-      age_of "${ts:-$NOW}"
-      printf '6\t%s\t%s%-*s%s\t%s\tremote\t%s\t%s\n' "$((-${ts:-0}))" "$D" "$w" "$ref" "$R" "${D}$AGE (remote) $(trim "$subj" 50)${R}" "$ref" "${ref#origin/}"
+      age_of "${ts:-$NOW}"; trim_to "$subj" 50
+      printf '6\t%s\t%s%-*s%s\t%s\tremote\t%s\t%s\n' "$((-${ts:-0}))" "$D" "$w" "$ref" "$R" "${D}$AGE (remote) $TRIM${R}" "$ref" "${ref#origin/}"
     done
   } | sort -s -t$'\t' -k1,1n -k2,2n | cut -f3-
   /bin/rm -rf "$tmp"
@@ -374,6 +392,7 @@ short_loc() {
   esac
 }
 trim() { if [ "${#1}" -gt "$2" ]; then printf '%s…' "${1:0:$(( $2 - 1 ))}"; else printf '%s' "$1"; fi; }
+trim_to() { if [ "${#1}" -gt "$2" ]; then TRIM="${1:0:$(( $2 - 1 ))}…"; else TRIM=$1; fi; }   # 행마다 쓰는 쪽: $(...) 없이 TRIM 에
 # subdirectory / directory: 이 세션에 열린 윈도우의 디렉토리(●N) → 최근(◷) → 탐색. 앞에 나온 것이 이긴다 (경로 기준)
 rows_dir() {  # $1 모드
   local idx _id tag _pane dir p n=0
@@ -481,7 +500,7 @@ cache_file()  { printf '%s/merged/%s' "$TMUX_DEV_CACHE" "$1"; }
 cache_get()   { local f; f=$(cache_file "$1"); CACHED=""; [ -f "$f" ] && IFS= read -r CACHED < "$f"; }
 cache_put()   { local f; f=$(cache_file "$1"); mkdir -p "${f%/*}"; printf '%s\n' "$2" > "$f.$$" && mv -f "$f.$$" "$f"; }
 cache_prune() {
-  local d; for d in merged prs; do
+  local d; for d in merged marks prs; do
     [ -d "$TMUX_DEV_CACHE/$d" ] && find "$TMUX_DEV_CACHE/$d" -type f -mtime +60 -delete 2>/dev/null || true
   done
 }
@@ -546,25 +565,44 @@ marks_for() {  # $1 워크트리 경로 $2 브랜치 $3 기준 ref $4 브랜치 
   local dirty=0 st="" n
   if [ -n "$1" ] && [ -d "$1" ]; then dirty=$(dirty_count "$1") || dirty='?'; fi
   case $2 in "(detached "*|"$3"|"${6:-}") ;; *)
-    if in_merged_set "$2" && never_committed "$2"; then st=new   # 고유 커밋이 없고(기준의 조상) 커밋한 적도 없다
-    elif is_merged "$2" "$3" "${4:-}" "${5:-}"; then st="merged:$MERGED_HOW"
-    else n=$(git rev-list --count "${5:-$3}..${4:-$2}" 2>/dev/null || echo '?'); st="+$n"; fi ;;
+    if marks_cached "$2" "${4:-}" "${5:-}"; then st=$MC
+    else
+      if in_merged_set "$2" && never_committed "$2"; then st=new   # 고유 커밋이 없고(기준의 조상) 커밋한 적도 없다
+      elif is_merged "$2" "$3" "${4:-}" "${5:-}"; then st="merged:$MERGED_HOW"
+      else n=$(git rev-list --count "${5:-$3}..${4:-$2}" 2>/dev/null || echo '?'); st="+$n"; fi
+      marks_put "$2" "${4:-}" "${5:-}" "$st"
+    fi ;;
   esac
   printf '%s\t%s\n' "$dirty" "$st"
+}
+# 브랜치 상태(new · merged:<방법> · +N) 캐시. 파일은 marks/<브랜치 커밋>-<브랜치 이름(/ 는 %)>, 내용은 "<기준 커밋> <상태>".
+# 브랜치 커밋과 기준 커밋이 그대로면 상태도 그대로라서(new 는 이름의 reflog 에도 달려 있어 이름도 키에 넣는다. 같은 커밋을
+# 가리키는 브랜치가 여럿이어도 서로 덮어쓰지 않는다) 다시 읽을 때 git 을 하나도 띄우지 않는다.
+# 브랜치가 천 개를 넘으면 이것이 없을 때 마커를 다시 읽을 때마다 브랜치마다 git 이 한두 번씩 떠서 코어를 다 쓰는 동안
+# 입력이 밀렸다. +N 만 예외로, 같은 기준이어도 fetch 가 머지된 PR 목록을 새로 받으면 merged:pr 로 바뀔 수 있어 그것만 다시 본다
+# (pr_merged 는 파일을 읽는다. 같은 이름의 PR 이 있을 때만 git 한 번).
+marks_cached() {  # $1 브랜치 $2 브랜치 커밋 $3 기준 커밋 → MC (상태). 없거나 맞지 않으면 1. 서브셸 없이
+  local f c
+  MC=""
+  [ -n "$2" ] && [ -n "$3" ] || return 1
+  f=$TMUX_DEV_CACHE/marks/$2-${1//\//%}
+  [ -f "$f" ] && IFS=' ' read -r c MC < "$f" || return 1
+  [ "$c" = "$3" ] && [ -n "$MC" ] || { MC=""; return 1; }
+  case $MC in +*) pr_merged "$1" "$2" && { MC=merged:pr; marks_put "$1" "$2" "$3" "$MC"; } ;; esac
+  return 0
+}
+marks_put() {  # $1 브랜치 $2 브랜치 커밋 $3 기준 커밋 $4 상태. 판정 못 한 것(+?)은 남기지 않는다
+  [ -n "$2" ] && [ -n "$3" ] && [ -n "$4" ] || return 0
+  case $4 in '+?') return 0 ;; esac
+  local f=$TMUX_DEV_CACHE/marks/$2-${1//\//%}
+  mkdir -p "${f%/*}" 2>/dev/null || return 0
+  printf '%s %s\n' "$3" "$4" > "$f.$$" 2>/dev/null && mv -f "$f.$$" "$f" 2>/dev/null || rm -f "$f.$$" 2>/dev/null
+  return 0
 }
 
 # --- 피커 화면 -------------------------------------------------------------------
 # shellcheck disable=SC2046  # 모드 목록을 단어로 나눠 넘긴다
 tabs() { picker_tabs "$1" $(modes); }   # 맨 위 헤더의 모드 탭. 클릭하면 그 모드로
-hint() {
-  if [ "$1" = worktree ]; then printf '%s' "${D}enter open · alt-enter new · ctrl-x clean up · tab select · ctrl-t merged · alt-m mode · alt-h keys${R}"
-  else printf '%s' "${D}enter open · alt-enter new · alt-l layout · alt-m mode · alt-h keys${R}"; fi
-}
-create_hint() {  # $1 검색어 $2 모드. 검색어가 있으면 늘 보이는 만들기 안내
-  local q=${1%/}
-  if [ "$2" = worktree ]; then printf '%s' "alt-enter create branch ${B}'$q'${R} from $(base) ${D}· enter open · alt-h keys${R}"
-  else printf '%s' "alt-enter create directory ${B}'$q'${R} ${D}· enter open · alt-h keys${R}"; fi
-}
 help_keys() {
   cat <<EOF
 ${B}prefix W: open a window in this session${R}
@@ -627,55 +665,6 @@ EOF
 # 상태 키: mode, root(세션 디렉토리), target("<종류>US<경로>US<브랜치>" 지금 다룰 대상), help,
 #   create_start·create_choice(만들기 확인 목록), 그리고 lib 의 name, near, loc, pending, near_pick, layout.
 #   decision 은 fzf 를 끝낼 때의 결정.
-footer_now() {  # 지금 모드의 푸터 (검색어에 따라)
-  local q=${FZF_QUERY:-}; cur_mode
-  if [ -z "$q" ]; then hint "$MODE"
-  elif [ "$MODE" != worktree ] && pathish "$q"; then
-    if [ "${FZF_MATCH_COUNT:-1}" -eq 0 ]; then classify "$q" dir; printf '%s' "$J_SAY"
-    else printf '%s' "enter open the item ${D}· alt-enter create at the typed path${R}"; fi
-  else create_hint "$q" "$MODE"; fi
-}
-decide() {  # $1 종류 $2 경로 $3 브랜치 [$4 만들기 dir] [$5 위치 피커에서 고른 부모] → 결정 파일을 쓰고 fzf 를 끝낸다
-  local l="" s=""; st_get layout; [ -n "$ST" ] && IFS=$'\t' read -r l s <<< "$ST"
-  st_set decision "$1$US$2$US$3$US$l$US$s$US${4:-}$US${5:-}"
-  printf 'accept'
-}
-# 만들어야 하는 것은 만들기 확인 목록을 겹쳐 띄운다. 거기서 고르면 after-create 가 결정하고, esc 면 메인 목록이 그대로 남는다
-confirm_create() {  # $1 종류 $2 경로 $3 브랜치 [$4 커서를 둘 행: 1 create, 2 create with layout]
-  st_set target "$1$US$2$US$3"; st_set create_start "${4:-1}"; st_del layout create_choice
-  printf 'execute(%s --choose-create)+transform(%s --on after-create)' "$SELF" "$SELF"
-}
-# worktree 모드의 행을 대상으로: 바로 열 것이면 결정, 만들어야 하면 확인 목록
-worktree_target() {  # $1 종류 $2 경로 $3 브랜치 [$4 확인 목록의 커서 행]
-  case $1 in
-    worktree) decide worktree "$2" "$3" ;;
-    prunable|branch|remote) confirm_create "$1" "$2" "$3" "${4:-1}" ;;
-    *) printf 'bell' ;;
-  esac
-}
-# 디렉토리 모드의 열 대상: 커서 항목, 아니면 경로 모양 검색어가 가리키는 있는 디렉토리. 없으면 안내 액션을 출력하고 1
-dir_target() {  # $1 커서 항목의 경로
-  local q=${FZF_QUERY:-}
-  if [ -n "$1" ]; then J_PATH=$1; return 0; fi
-  if pathish "$q"; then
-    classify "$q" dir
-    case $J_KIND in open|worktree) return 0 ;; esac
-    nope "$J_SAY"; return 1
-  fi
-  if [ -n "$q" ]; then nope "${Y}no match${R} · $(create_hint "$q" "$MODE")"; else nope "$(hint "$MODE")"; fi
-  return 1
-}
-on_enter() {  # $1 종류 $2 경로 $3 브랜치
-  busy && return
-  cur_mode; st_del layout
-  if [ "$MODE" = worktree ]; then
-    [ -n "${1:-}" ] || { local q=${FZF_QUERY:-}; if [ -n "$q" ]; then nope "${Y}no match${R} · $(create_hint "$q" worktree)"; else nope "$(hint worktree)"; fi; return; }
-    worktree_target "$1" "${2:-}" "${3:-}"
-  else
-    dir_target "${2:-}" || return 0
-    decide dir "$J_PATH" ""
-  fi
-}
 on_layout() {  # alt-l: 대상을 정하고 레이아웃 목록을 겹쳐 띄운다. 만들어야 하는 행은 확인 목록을 띄우고 커서를 with layout 에
   local k p b
   busy && return
@@ -735,20 +724,6 @@ on_after_location() {  # 위치 피커에서 esc 면 그대로, 골랐으면 만
     *) nope "$J_SAY" ;;
   esac
 }
-on_change() {  # 디렉토리 모드의 경로 모양 검색어는 접두 일치로
-  local out=""
-  st_get select_merged; [ "$ST" = 1 ] && { printf 'rebind(result)'; return 0; }   # ctrl-t 가 검색어를 지운 것: result 를 기다린다
-  cur_mode
-  # 이전 검색어로 돌던 푸터 판정(result 의 bg-transform)을 버린다. 그것은 디렉토리 모드에서만 돈다. bg-cancel 은 돌고 있는
-  # bg-transform 을 모두 끊어서 피커가 뜰 때 띄운 백그라운드 fetch 도 죽이므로, worktree 모드에서는 보내지 않는다
-  [ "$MODE" != worktree ] && out="bg-cancel+"
-  if [ "$MODE" != worktree ] && pathish "${FZF_QUERY:-}"; then printf '%srebind(result)+first+%s' "$out" "$(search_action "$FZF_QUERY")"
-  else printf '%sunbind(result)+first+%s' "$out" "$(act change-footer "$(footer_now)")"; fi
-}
-on_result() {
-  st_get select_merged; if [ "$ST" = 1 ]; then st_del select_merged; printf 'unbind(result)+'; select_merged_actions; return 0; fi
-  cur_mode; [ "$MODE" != worktree ] && pathish "${FZF_QUERY:-}" && act change-footer "$(footer_now)"; return 0
-}
 to_mode() {  # $1 새 모드 → 목록·탭·푸터를 바꾸는 액션. worktree 는 마커를 다시 계산하도록 load 를 다시 묶는다
   local load=""; st_set mode "$1"
   # 다중 선택(tab)은 worktree 모드의 정리에만 쓴다. 다른 모드로 가면 선택을 비우고 tab 을 푼다
@@ -782,16 +757,6 @@ on_toggle_merged() {  # ctrl-t: 선택이 있으면 모두 풀고, 없으면 mer
 on_deselect() {  # 선택을 모두 푼다 (ctrl-t 의 해제 쪽. 하나씩은 tab / shift-tab). 푸터의 "selected N" 안내도 지운다
   st_del select_merged
   printf 'deselect-all+%s' "$(act change-footer "$(footer_now)")"
-}
-select_merged_actions() {
-  local i=0 n=0 out="" _name disp kind _rest
-  while IFS=$US read -r _name disp kind _rest; do   # 탭을 US 로 (on_cleanup_many 와 같은 이유)
-    i=$((i + 1))
-    case $kind in worktree|prunable|branch) ;; *) continue ;; esac
-    case $disp in *"${G}merged${R}"*) out+="pos($i)+select+"; n=$((n + 1)) ;; esac   # 색까지 맞춘다: 경로·제목의 "unmerged" 같은 글자에 걸리지 않게
-  done < <(tr '\t' '\037' < "$TMUX_DEV_STATE/rows")
-  [ "$n" -gt 0 ] || { nope "${Y}nothing merged${R}"; return; }
-  printf 'deselect-all+%sfirst+%s' "$out" "$(act change-footer "${G}selected $n merged${R} ${D}· ctrl-x clean up · tab toggle · ctrl-t deselect all${R}")"
 }
 on_marks() { cur_mode; [ "$MODE" = worktree ] && printf 'reload-sync(%s --list worktree --marks)' "$SELF"; return 0; }
 on_refresh() { cur_mode; to_mode "$MODE"; }
@@ -841,7 +806,7 @@ on_fill() {  # ctrl-]: 디렉토리 모드에서 커서 항목의 경로를 검�
 }
 on_help() {
   st_get help
-  if [ "$ST" = 1 ]; then st_del help; act change-preview "$SELF --preview {3} {4} {5}"
+  if [ "$ST" = 1 ]; then st_del help; act change-preview "sleep 0.12; $SELF --preview {3} {4} {5}"
   else st_set help 1; printf '%s+show-preview' "$(act change-preview "$SELF --help-keys")"; fi
 }
 # 레이아웃 목록 (lib 의 choose_layout_step 과 같되, 저장소 기본값 저장은 worktree 모드에서만)
@@ -921,11 +886,13 @@ pick() {
   local start_tab=""; [ "$MODE" = worktree ] || start_tab="unbind(tab,shift-tab)+"   # 다중 선택은 worktree 모드에서만
   style_opts
   # 정렬은 행 순서 그대로(--tiebreak index 가 마지막). 바인딩은 fzf 기본 키와 겹치지 않는 것만 (prefix S 와 같다).
+  # 미리보기 앞의 sleep 은 debounce 다: fzf 는 커서가 옮겨지면 돌던 미리보기를 끊으므로, 타이핑으로 커서가 계속 바뀌는 동안에는
+  # 미리보기의 git(status, log, 머지 판정)이 아예 뜨지 않는다. 멈추면 0.12초 뒤에 뜬다.
   # 마커: 마커 없는 목록을 먼저 그리고 load 이벤트에서 --marks 로 바꿔 끼운다. fetch 는 백그라운드로 (원격이 바뀌었을 때만 다시 읽는다)
   fzf --ansi --delimiter '\t' --with-nth 1,2 --nth 1 --tabstop 2 --scheme path --tiebreak pathname,index \
       "${STYLE[@]}" --border-label " open window · ${SESSION} " --header "$(tabs "$MODE")" --header-first --prompt '> ' \
       --footer "$(hint "$MODE")" --footer-border line \
-      --preview "$SELF --preview {3} {4} {5}" --preview-window 'right,45%,border-left' \
+      --preview "sleep 0.12; $SELF --preview {3} {4} {5}" --preview-window 'right,45%,border-left' \
       --multi --bind "start:unbind(result)+unbind($EVERY)+${start_tab}bg-transform($SELF --on fetch)" \
       --bind "$EVERY:transform($SELF --cleanup-tick)" \
       --bind "load:unbind(load)+transform($SELF --on marks)" \
@@ -1323,7 +1290,6 @@ on_after_cleanup() {
 # 상태 디렉토리는 피커가 끝나면 지워지므로 작업은 시작할 때 할 일을 모두 읽어 두고, 이후의 쓰기는 실패해도 넘어간다.
 EVERY='every(0.15)'
 SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-busy() { st_get busy; [ "$ST" = 1 ] || return 1; printf 'bell'; }   # 정리 중이면 벨만 (푸터는 틱이 그린다)
 start_job() {  # $1 one(상태 target) | many(상태 bulk) [$2 keep]
   st_del finished result fail progress
   st_set job "$1$US${2:-}$US$(picker_window)"
@@ -1580,14 +1546,6 @@ hook_remove() {
 }
 
 # --- 인자 ------------------------------------------------------------------------------
-# 콜백·목록·미리보기는 피커가 띄운 것이라 피커가 정해 둔 값을 상태에서 읽는다 (pick 이 쓴 session·base·root). 프로세스를
-# 띄우지 않는다. 상태가 없으면(셸에서 부른 --list 등) 아무것도 바꾸지 않는다: 지금 디렉토리, 인자로 받은 값 그대로.
-picker_ctx() {
-  st_get session; SESSION=${SESSION:-$ST}
-  st_get base; BASE=${BASE:-$ST}
-  st_get root; [ -n "$ST" ] && [ -d "$ST" ] && cd "$ST"
-  return 0
-}
 # 저장소 문맥까지 (repo_try: git 을 여러 번 띄우고 워크트리 수만큼 느려진다). 자주 도는 이벤트는 picker_ctx 만 쓴다 (--on)
 in_session_dir() { picker_ctx; repo_try || true; }
 arg=""
@@ -1597,15 +1555,13 @@ while [ $# -gt 0 ]; do
     --layout) LAYOUT=$2; shift 2 ;;
     -t)       SESSION=$2; shift 2 ;;
     --on)
-      # 자주 도는 이벤트(change: 키마다, result: 검색마다)는 저장소 문맥 없이 돈다. change 는 동기(transform)라 걸리는 시간만큼
-      # 입력이 밀린다: 상태 파일과 fzf 환경변수만 읽고 git·tmux 를 띄우지 않는다. result 는 백그라운드지만 같은 규칙이고, 없는
-      # 경로의 판정(classify 의 git 한 번)만 예외다. 이 둘에서는 저장소 변수(MAIN, WT_LIST …)가 비어 있어 쓰면 set -u 로 조용히
-      # 죽는다. test/tmux-dev/run 이 둘 다 확인한다. 나머지 콜백은 저장소 문맥까지 만든다 (기본)
-      case ${2:-} in change|result) picker_ctx ;; *) in_session_dir ;; esac
+      # 자주 도는 이벤트(change: 키마다, result: 검색마다)는 파일 머리의 빠른 길에서 이미 끝났다 (lib/worktree-events.sh).
+      # 나머지 콜백은 저장소 문맥까지 만든다
+      in_session_dir
       cur_mode; apply_scope "$MODE"
       # 콜백은 출력이 전부다. 마지막 조건식의 종료 코드로 set -e 가 끊지 않게 || true
       case $2 in
-        enter) on_enter "${3:-}" "${4:-}" "${5:-}" || true ;; layout) on_layout "${3:-}" "${4:-}" "${5:-}" || true ;;
+        layout) on_layout "${3:-}" "${4:-}" "${5:-}" || true ;;
         after-layout) on_after_layout || true ;; create) on_create "${3:-}" || true ;; after-location) on_after_location || true ;;
         loc-enter) on_loc_enter "${3:-}" || true ;; loc-layout) on_loc_layout "${3:-}" || true ;;
         loc-after-layout) on_loc_after_layout || true ;;
@@ -1633,6 +1589,9 @@ while [ $# -gt 0 ]; do
       SESSION=${SESSION:-$(tmux display-message -p '#S' 2>/dev/null || true)}   # 셸에서 부른 --list (상태 없음)
       case ${2:-} in
         worktree)  # 마커가 붙은 목록은 ctrl-t 가 읽도록 상태에도 남긴다 (마커 없는 목록이면 지운다)
+          # 마커는 피커 뒤에서 도는 일이라 우선순위를 낮춘다 (자식 git 들도 물려받는다). 브랜치·워크트리가 많으면 코어 수만큼의
+          # git 이 몇 초씩 CPU 를 다 쓰는데, 그동안 키마다 도는 fzf 콜백과 미리보기가 밀려 입력이 멈춘 것처럼 느껴졌다
+          [ "${3:-}" = --marks ] && { renice -n 10 -p $$ >/dev/null 2>&1 || true; }
           if [ "${3:-}" = --marks ] && [ -n "${TMUX_DEV_STATE:-}" ]; then list_mode worktree --marks | tee "$TMUX_DEV_STATE/rows"
           else [ -n "${TMUX_DEV_STATE:-}" ] && rm -f "$TMUX_DEV_STATE/rows"; list_mode worktree "${3:-}"; fi ;;
         subdirectory|directory) list_mode "$2" "${3:-}" ;;
