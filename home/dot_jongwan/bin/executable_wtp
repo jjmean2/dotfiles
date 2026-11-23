@@ -3,7 +3,8 @@
 #
 #   wtp foo            브랜치 이름에 foo 가 든 워크트리의 경로 (여럿이면 모두, 한 줄에 하나)
 #   wtp foo bar        조각 여러 개는 모두 들어 있어야 한다 (순서 무관, zoxide 처럼)
-#   wtp -i foo         여럿이면 fzf 로 하나 고른다 (하나뿐이면 묻지 않는다)
+#   wtp -i foo         여럿이면 fzf 로 하나 고른다 (하나뿐이면 묻지 않는다). fzf 가 없거나
+#                      WTP_PICKER=select 면 번호 메뉴(bash select). 터미널이 없으면 후보를 보이고 1
 #   wtp -l [foo]       브랜치와 경로를 표로 본다
 #   wtp -m             main 워크트리의 경로
 #   wtp init zsh       cd 까지 하는 셸 함수(wcd)와 그 Tab 완성의 정의를 출력한다 (아래 "셸 함수")
@@ -37,7 +38,8 @@ Usage: $PROG [options] [query...]
 Print the path of the git worktree whose branch name contains every query word.
 
 Options:
-  -i, --interactive  pick one with fzf when several match
+  -i, --interactive  pick one when several match (fzf, or a numbered menu
+                     without fzf or with WTP_PICKER=select)
   -l, --list         print "branch  path" rows instead of bare paths
   -m, --main         print the main worktree path and exit
   -C <dir>           run as if started in <dir>
@@ -246,9 +248,10 @@ if ((list)); then
 	exit 0
 fi
 
-if ((interactive && ${#matches[@]} > 1)); then
-	command -v fzf >/dev/null 2>&1 || die "fzf not found (needed for --interactive)"
+# 고르기: fzf → bash select 번호 메뉴 → (터미널이 없으면) 후보를 보이고 실패
+pick_fzf() {
 	# 한 줄 = "보이는 칸<TAB>실제 경로". 고른 줄의 둘째 칸만 내보낸다.
+	local picked rc
 	set +e
 	picked=$(
 		for i in "${matches[@]}"; do
@@ -264,6 +267,47 @@ if ((interactive && ${#matches[@]} > 1)); then
 	set -e
 	((rc == 0)) || exit 130
 	printf '%s\n' "${picked#*$'\t'}"
+}
+
+pick_select() {
+	# select 는 메뉴를 stderr 에 그리고 stdin 에서 읽는다. 둘 다 터미널로 돌려 $(...) 안이나
+	# 입력이 리다이렉트된 때도 고를 수 있게 한다. COLUMNS=1 은 한 줄에 하나씩 늘어놓게 한다.
+	local -a rows=()
+	local i choice='' # 값을 줘야 한다: bash 5 는 Ctrl-D 뒤 미설정으로 남겨 set -u 에 걸린다
+	for i in "${matches[@]}"; do
+		rows+=("$(row "$i")")
+	done
+	local PS3='worktree> ' COLUMNS=1
+	{
+		select choice in "${rows[@]}"; do
+			[[ -n $choice ]] && break
+		done
+	} </dev/tty 2>/dev/tty
+	# Ctrl-D 면 choice 가 비어 있다
+	[[ -n $choice ]] || exit 130
+	printf '%s\n' "${paths[${matches[$((REPLY - 1))]}]}"
+}
+
+# 제어 터미널이 있는가 (없으면 /dev/tty 를 열 수 없다)
+has_tty() { { : </dev/tty; } 2>/dev/null; }
+
+if ((interactive && ${#matches[@]} > 1)); then
+	if ! has_tty; then
+		{
+			printf '%s: several worktrees match; no terminal to pick one. Narrow the query:\n' "$PROG"
+			for i in "${matches[@]}"; do
+				row "$i"
+				printf '\n'
+			done
+		} >&2
+		exit 1
+	fi
+	# WTP_PICKER=select 로 fzf 가 있어도 번호 메뉴를 쓸 수 있다
+	if [[ ${WTP_PICKER-} != select ]] && command -v fzf >/dev/null 2>&1; then
+		pick_fzf
+	else
+		pick_select
+	fi
 	exit 0
 fi
 
