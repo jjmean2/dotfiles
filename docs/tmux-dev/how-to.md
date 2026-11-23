@@ -16,6 +16,7 @@
   - [dev 서버 명령 정하기](#dev-서버-명령-정하기)
 - [워크트리 위치와 초기 설정 바꾸기](#워크트리-위치와-초기-설정-바꾸기)
 - [탐색에서 디렉토리 빼기](#탐색에서-디렉토리-빼기)
+- [탐색이 느린 머신에서 목록을 바로 띄우기](#탐색이-느린-머신에서-목록을-바로-띄우기)
 - [키와 피커 크기 바꾸기](#키와-피커-크기-바꾸기)
 - [셸에서 쓰기](#셸에서-쓰기)
 - [Claude Code 와 함께 쓰기](#claude-code-와-함께-쓰기)
@@ -327,6 +328,45 @@ tmux-dev worktree --base develop feat-x
 - 파일이 없으면 `Library` 와 `node_modules` 를 뺀다.
 - 디렉토리 탐색은 각 저장소의 `.gitignore` 도 따른다. 저장소 탐색(`repository` 모드)은 따르지 않는다.
 - 빠진 곳도 [경로를 직접 쳐서](#목록에-없는-경로-열기) 열 수 있다.
+- 빼도 탐색이 느리면 [탐색 결과 캐시](#탐색이-느린-머신에서-목록을-바로-띄우기)를 켠다.
+
+---
+
+## 탐색이 느린 머신에서 목록을 바로 띄우기
+
+`prefix S`, `prefix W` 의 `directory`·`subdirectory` 모드, 새로 만들 때의 위치 목록은 열 때마다 디렉토리를 탐색한다.
+보안 에이전트(EDR)처럼 디렉토리를 열 때마다 검사하는 프로그램이 있는 머신에서는 이 탐색이 몇 초씩 걸려 찾는 항목이 늦게 뜬다.
+그런 머신에서만 탐색 결과 캐시를 켠다. 기본은 꺼져 있다.
+
+1. 탐색 시간을 잰다. 1~2초 안쪽이면 켤 필요가 없다(첫 행은 이미 바로 뜬다).
+
+   ```sh
+   time tmux-dev project --list repo | wc -l
+   time tmux-dev project --list dir  | wc -l
+   ```
+
+2. 먼저 [탐색에서 디렉토리 빼기](#탐색에서-디렉토리-빼기)로 큰 디렉토리(빌드 산출물, 내려받은 데이터)를 뺀다.
+3. 그래도 느리면 그 머신에서만 켠다. 이 저장소의 tmux 설정이면 머신별 파일 `~/.config/tmux/tmux.local.conf` 에 적는다.
+
+   ```tmux
+   set -g @tmux-dev-scan-cache on
+   ```
+
+   키를 누를 때 읽으므로 다음 번 피커부터 바로 적용된다. tmux 안에서 `prefix :` 로 쳐도 된다.
+
+켜면 이렇게 동작한다.
+
+- 피커를 열면 지난 탐색 결과가 바로 뜬다. 탐색은 피커와 따로 뒤에서 돌아 **다음에 열 때** 쓸 결과를 새로 쓴다.
+  피커를 바로 닫아도 끝까지 돈다. 처음 한 번(캐시가 없을 때)은 지금처럼 찾는 대로 채운다.
+- 그래서 지난번 이후에 만든 디렉토리는 한 번 더 열어야 목록에 나온다. 그 전에도 [경로를 직접 쳐서](#목록에-없는-경로-열기) 열 수 있다.
+- 그사이 지운 디렉토리가 목록에 남아 있을 수 있다. 고르면 `no longer exists` 안내만 뜨고 아무것도 만들지 않는다.
+  `repository` 모드에서는 지운 저장소가 목록에서 바로 빠진다.
+- 캐시는 `~/.cache/tmux-dev/scan/` 에 있다. 지워도 된다(다음에 열 때 처음부터 탐색한다).
+
+끄려면 그 줄을 지우거나 `set -g @tmux-dev-scan-cache off`. 끄면 캐시를 쓰지 않고 매번 탐색한다.
+
+`prefix W` 의 워크트리 마커가 늦게 뜨는 것은 탐색이 아니라 `git status` 때문이다.
+[문제 해결: `prefix W` 의 마커가 늦게 뜬다](troubleshooting.md#prefix-w-의-마커dirty가-늦게-뜬다)를 본다.
 
 ---
 
@@ -339,12 +379,12 @@ set -g @tmux-dev-project-key  S        # prefix S
 set -g @tmux-dev-worktree-key W        # prefix W
 set -g @tmux-dev-popup-size   85%,75%  # 피커 너비,높이 (% 또는 칸)
 set -g @tmux-dev-layout       plain    # 기본 레이아웃
-set -g @tmux-dev-scan-cache   off      # on: 홈 탐색 결과 캐시 (탐색이 느린 머신에서. 문제 해결 문서 참고)
+set -g @tmux-dev-scan-cache   off      # on: 탐색 결과 캐시 (탐색이 느린 머신에서)
 run-shell ~/.config/tmux/plugins/tmux-dev/tmux-dev.tmux
 ```
 
 키 옵션은 tmux.conf 를 다시 읽어야 적용된다 (`prefix :` 에서 `source-file ~/.config/tmux/tmux.conf`).
-크기·레이아웃·캐시 옵션은 키를 누를 때 읽으므로 바로 적용된다.
+크기·레이아웃·캐시 옵션은 키를 누를 때 읽으므로 바로 적용된다. 캐시 옵션은 [탐색이 느린 머신에서 목록을 바로 띄우기](#탐색이-느린-머신에서-목록을-바로-띄우기)를 본다.
 
 ---
 
