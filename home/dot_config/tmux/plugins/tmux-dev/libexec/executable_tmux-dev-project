@@ -144,8 +144,6 @@ ensure_session() {  # $1 실제 경로 → 세션 id (없으면 만들고 레이
   if [ -z "$sid" ]; then
     win=$(tmux new-session -d -s "$(session_name_for "$1")" -c "$1" -P -F '#{window_id}')
     sid=$(tmux display-message -p -t "$win" '#{session_id}')
-    # 표지는 쓰기만 한다: jw 플러그인의 handoff 가 이 창을 메인 체크아웃의 창으로 읽는다 (lib/panes.sh 머리말)
-    [ -d "$1/.git" ] && tmux set-option -w -t "$win" @worktree "$1"
     apply_layout "$(resolve_layout "$LAYOUT" "$1")" "$win" "$1"
   fi
   printf '%s' "$sid"

@@ -361,8 +361,8 @@ t_tmux() {
   expect_rc "tmux 안의 claude: 성공" 0
   expect "tmux: 부른 패널의 세션에 윈도우를 연다" 'open:     tmux main:1 (feat/t1)'
   expect_not "tmux: run 줄 없음" 'run:'
-  out=$(tm list-windows -t main -F '#{window_name}|#{@worktree}')
-  expect "tmux: 윈도우 이름과 @worktree" "feat/t1|$(wtdir "$M" feat-t1)"
+  out=$(tm list-windows -t main -F '#{window_name}|#{pane_start_path}|#{@worktree}')
+  expect "tmux: 윈도우 이름과 시작 경로. 표지는 붙이지 않는다" "feat/t1|$(wtdir "$M" feat-t1)|"
   out=$(cat "$M/log/claude.log")
   expect "tmux: 가짜 claude 가 그 워크트리에서 실행" "cwd=$(wtdir "$M" feat-t1)"
   expect "tmux: 세션 이름을 받았다" 'arg2=<<feat/t1@'
@@ -373,16 +373,11 @@ t_tmux() {
   check "tmux: 대신 거기에 패널을 연다" test "$(tm list-panes -t main:1 | wc -l | tr -d ' ')" = 2
   check "tmux: 윈도우 수는 그대로" test "$(tm list-windows -t main | wc -l | tr -d ' ')" = 2
 
-  # 윈도우는 표지(@worktree)가 아니라 패널의 경로로 찾는다: 표지가 없어도(prefix c 로 연 창처럼) 그 워크트리의 창이다
-  tm set-option -w -u -t main:1 @worktree
-  inside feat/t1 claude
-  expect "tmux: 표지 없는 윈도우도 그 워크트리의 윈도우다" 'open:     tmux main:1 (feat/t1)'
-  check "tmux: 패널의 경로로 찾아 거기에 패널을 연다" test "$(tm list-panes -t main:1 | wc -l | tr -d ' ')" = 3
-  check "tmux: 새 윈도우를 열지 않았다" test "$(tm list-windows -t main | wc -l | tr -d ' ')" = 2
-  # 반대로 표지만 있고 그 워크트리의 패널이 없는 창은 그 워크트리의 창이 아니다 (패널이 다른 곳으로 옮겨 간 뒤의 낡은 표지)
+  # 윈도우는 패널의 경로로 찾는다 (표지를 붙이지도 읽지도 않는다). 예전 버전이 남긴 표지가 있어도 따라가지 않는다:
+  # 표지만 있고 그 워크트리의 패널이 없는 창은 그 워크트리의 창이 아니다
   tm set-option -w -t main:0 @worktree "$(wtdir "$M" feat-t9)"
   inside feat/t9 claude
-  expect "tmux: 낡은 표지를 따라가지 않고 새 윈도우를 연다" 'open:     tmux main:2 (feat/t9)'
+  expect "tmux: 남아 있는 옛 표지를 따라가지 않고 새 윈도우를 연다" 'open:     tmux main:2 (feat/t9)'
   tm set-option -w -u -t main:0 @worktree; tm kill-window -t main:2
 
   inside feat/t2 agent --agent cursor
@@ -393,7 +388,7 @@ t_tmux() {
   expect "tmux: 첫 메시지가 글자 그대로" "$want"
 
   inside 'fix/#H' claude
-  out=$(tm list-windows -t main -F '#{window_name}|#{@worktree}')
+  out=$(tm list-windows -t main -F '#{window_name}|#{pane_start_path}')
   expect "tmux: 브랜치의 # 을 형식 문자로 읽지 않는다" "fix/#H|$(wtdir "$M" 'fix-#H')"
   tm kill-server 2>/dev/null
 }
