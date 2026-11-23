@@ -64,7 +64,7 @@ worktree_main() {
 # 읽기·쓰기는 bash 내장(read, printf 리다이렉션)이라 프로세스를 더 띄우지 않는다.
 st_get() { ST=""; [ -f "${TMUX_DEV_STATE:-/nonexistent}/$1" ] && IFS= read -r ST < "$TMUX_DEV_STATE/$1" || true; }
 st_set() { printf '%s\n' "$2" > "$TMUX_DEV_STATE/$1"; }
-st_del() { local k; for k in "$@"; do rm -f "$TMUX_DEV_STATE/$k"; done; }
+st_del() { local k; for k in "$@"; do [ -e "$TMUX_DEV_STATE/$k" ] && rm -f "$TMUX_DEV_STATE/$k"; done; return 0; }   # 없으면 rm 을 띄우지 않는다 (enter 가 키마다 부르는 길에 있다)
 picker_state_init() {  # $1 이름 → TMUX_DEV_STATE 를 만들고 내보내며, 끝날 때 지운다. 비정상 종료 흔적은 1시간 뒤 치운다
   TMUX_DEV_STATE=$(mktemp -d "${TMPDIR:-/tmp}/$1.XXXXXX"); export TMUX_DEV_STATE
   # shellcheck disable=SC2064  # 지금 값의 디렉토리를 지운다
@@ -88,7 +88,11 @@ hist_record() {  # $1 파일 $2 경로 $3 상한(줄)
 # --- 행 ------------------------------------------------------------------------
 # 행: "<~경로>\t<표시>\t<실제 경로>". fzf 는 1·2칸을 보여 주고(--with-nth 1,2) 1칸(경로)만 검색한다(--nth 1).
 # 표시를 경로 뒤에 두어야 경로 접두 일치(^~/...)가 맞는다.
-row() { printf '%s\t%s\t%s\n' "$(home_disp "$1")" "$2" "$1"; }
+row() {  # 행마다 부르므로 서브셸($(home_disp)) 없이
+  local d=$1
+  case $1 in "$HOME") d='~' ;; "$HOME"/*) d="~${1#"$HOME"}" ;; esac
+  printf '%s\t%s\t%s\n' "$d" "$2" "$1"
+}
 dir_rows() {  # SCAN_ROOT 아래 디렉토리 전부를 행으로 (표시 없음. 수만 개라 행마다 프로세스를 띄우지 않는다)
   scan_dirs | awk -v home="$HOME" -v OFS='\t' '{ d = $0; if (index(d, home "/") == 1) d = "~" substr(d, length(home) + 1); else if (d == home) d = "~"; print d, "", $0 }'
 }

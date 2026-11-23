@@ -36,17 +36,34 @@
 #   → 메인 저장소 세션에 윈도우를 열어 준다 (tmux-dev worktree 에 넘김). 세션 = 저장소, 윈도우 = 워크트리.
 set -euo pipefail
 
-SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
-LIB=$(cd "$(dirname "$SELF")/../lib" && pwd)
+# 피커의 콜백은 fzf 가 절대 경로로 부른다($SELF). 그때는 외부 명령·서브셸 없이 정하고, 셸에서 상대 경로로 불렀을 때만
+# cd 로 푼다 (dirname·basename 도 프로세스다. 키마다 넷씩 떴다. lib/project-events.sh 머리말)
+case $0 in
+  /*) SELF=$0; LIB=${0%/*}/../lib ;;
+  *)  SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0"); LIB=$(cd "$(dirname "$SELF")/../lib" && pwd) ;;
+esac
 # shellcheck source=../lib/common.sh
 . "$LIB/common.sh"
+# shellcheck source=../lib/picker.sh
+. "$LIB/picker.sh"           # 상태 디렉토리·판정·탭·테두리·위치 피커·레이아웃 목록. worktree 와 공유
+# shellcheck source=../lib/project-events.sh
+. "$LIB/project-events.sh"   # 키마다 도는 콜백(change, result)과 고르기(enter), 그것이 쓰는 푸터 함수
+
+# 빠른 길: 키마다(change) · 검색마다(result) 도는 콜백과 고르기(enter)는 여기서 끝낸다. 아래 정의와 dirs.sh·layout.sh 를
+# bash 가 읽지도 않게 하려는 것이다 (bash 는 스크립트를 읽는 대로 실행하므로 exit 뒤는 파싱하지 않는다). prefix W 와 같다
+if [ "${1:-}" = --on ]; then
+  case ${2:-} in
+    change) on_change || true; exit 0 ;;
+    result) on_result || true; exit 0 ;;
+    enter)  on_enter "${3:-}" || true; exit 0 ;;
+  esac
+fi
+
 # shellcheck source=../lib/dirs.sh
 . "$LIB/dirs.sh"             # 홈 탐색(scan_repos, scan_dirs)·미리보기. worktree 의 dir 모드와 공유
 # shellcheck source=../lib/layout.sh
 . "$LIB/layout.sh"           # 새 세션의 첫 윈도우에 한 번 적용. worktree 와 공유
-# shellcheck source=../lib/picker.sh
-. "$LIB/picker.sh"           # 상태 디렉토리·판정·탭·테두리·위치 피커·레이아웃 목록. worktree 와 공유
-WORKTREE_BIN="$(dirname "$SELF")/tmux-dev-worktree"
+WORKTREE_BIN="${SELF%/*}/tmux-dev-worktree"
 
 LAYOUT=""          # --layout 으로 명시한 값, 또는 피커의 alt-l. 비어 있으면 resolve_layout
 RECENT_MAX=20      # 목록 위쪽에 보여 줄 최근 항목 수
@@ -66,7 +83,7 @@ mode_name() { if [ "$1" = repo ]; then printf 'repository'; else printf 'directo
 #   decision fzf 를 끝낼 때 쓰는 결정 "<경로>US<만들기>US<레이아웃>US<save>US<고른 부모>" (빈 칸이 있어 US)
 
 # --- 후보 (행 꼴은 lib/picker.sh 의 row) ------------------------------------------------
-branch_mark() { local b; b=$(git_branch "$1"); [ -n "$b" ] && printf ' %s%s%s' "$C" "$b" "$R"; return 0; }
+branch_mark() { git_branch "$1"; BM=""; [ -n "$GB" ] && BM=" $C$GB$R"; return 0; }   # → BM. 행마다 부르므로 서브셸 없이
 session_list() {  # "<최근 붙은 시각>US<id>US<이름>US<@tmux-dev-path>US<session_path>", 최근 붙은 순
   tmux list-sessions -F "#{session_last_attached}${US}#{session_id}${US}#{session_name}${US}#{@tmux-dev-path}${US}#{session_path}" 2>/dev/null \
     | sort -t "$US" -k1,1nr || true
@@ -79,7 +96,7 @@ session_rows() {
     p=$tag; [ -n "$p" ] || p=$(canon_dir "$sp") || p=""
     [ -n "$p" ] || continue
     fits_mode "$1" "$p" || continue
-    row "$p" "${G}●${R} ${D}$name${R}$(branch_mark "$p")"
+    branch_mark "$p"; row "$p" "${G}●${R} ${D}$name${R}$BM"
   done < <(session_list)
 }
 recent_rows() {
@@ -87,12 +104,12 @@ recent_rows() {
   while IFS= read -r p; do
     [ "$n" -lt "$RECENT_MAX" ] || break
     fits_mode "$1" "$p" || continue   # 지금 없는 곳은 건너뛴다 (파일에서는 지우지 않는다)
-    row "$p" "${D}◷${R}$(branch_mark "$p")"; n=$((n + 1))
+    branch_mark "$p"; row "$p" "${D}◷${R}$BM"; n=$((n + 1))
   done < <(hist_paths "$TMUX_DEV_HISTORY")
 }
 scan_rows() {
   if [ "$1" = repo ]; then
-    local p; while IFS= read -r p; do row "$p" "$(branch_mark "$p")"; done < <(scan_repos)
+    local p; while IFS= read -r p; do branch_mark "$p"; row "$p" "$BM"; done < <(scan_repos)
   else
     dir_rows
   fi
@@ -173,11 +190,6 @@ apply_decision() {
 # --- 피커 화면 -------------------------------------------------------------------
 # 경로 판정(classify, name_ok), 탭(picker_tabs), 테두리(style_opts)는 lib/picker.sh 에 있다.
 tabs() { picker_tabs "$1" repo dir; }   # 맨 위 헤더의 모드 탭. 클릭하면 그 모드로 (on_tab_click)
-hint() { printf '%s' "${D}enter open · alt-enter new · alt-l layout · alt-m mode · alt-h keys${R}"; }
-create_hint() {  # 검색어가 있으면 늘 보이는 만들기 안내 (결과가 있어도 alt-enter 는 친 이름으로 만든다)
-  local q=${1%/} what="directory"; st_get mode; [ "${ST:-repo}" = repo ] && what="repository"
-  printf '%s' "alt-enter create $what ${B}'$q'${R} ${D}· enter open · alt-h keys${R}"
-}
 help_keys() {
   cat <<EOF
 ${B}prefix S: directory → session${R}
@@ -212,37 +224,6 @@ EOF
 }
 
 # --- 콜백 (fzf 가 이벤트마다 부른다. 액션 한 줄을 출력한다) -----------------------------
-footer_now() {  # 메인 목록의 푸터
-  local q=${FZF_QUERY:-}
-  if [ -z "$q" ]; then hint
-  elif pathish "$q"; then
-    if [ "${FZF_MATCH_COUNT:-1}" -eq 0 ]; then local mode; st_get mode; mode=${ST:-repo}; classify "$q" "$mode"; printf '%s' "$J_SAY"
-    else printf '%s' "enter open the item ${D}· alt-enter create at the typed path${R}"; fi
-  else create_hint "$q"; fi
-}
-decide() {  # $1 경로 $2 만들기(none|dir|repo) [$3 위치 피커에서 고른 부모] → 결정 파일을 쓰고 fzf 를 끝낸다
-  local l="" s=""; st_get layout; [ -n "$ST" ] && IFS=$'\t' read -r l s <<< "$ST"
-  st_set decision "$1$US$2$US$l$US$s$US${3:-}"   # 빈 칸이 있으므로 US. 탭이면 read 가 연속 탭을 하나로 합친다
-  printf 'accept'
-}
-# 열 대상을 정한다: 커서 항목, 아니면 경로 모양 검색어가 가리키는 있는 디렉토리. J_KIND/J_PATH 를 채운다.
-# 열 것이 없으면 안내 액션을 출력하고 1 (만들기는 alt-enter 의 몫이다)
-open_target() {  # $1 커서 항목의 실제 경로 (없으면 빈 값)
-  local mode q=${FZF_QUERY:-}; st_get mode; mode=${ST:-repo}
-  if [ -n "$1" ]; then J_PATH=$1; if [ -f "$1/.git" ]; then J_KIND=worktree; else J_KIND=open; fi; return 0; fi
-  if pathish "$q"; then
-    classify "$q" "$mode"
-    case $J_KIND in open|worktree) return 0 ;; esac
-    nope "$J_SAY"; return 1
-  fi
-  if [ -n "$q" ]; then nope "${Y}no match${R} · $(create_hint "$q")"; else nope "$(hint)"; fi
-  return 1
-}
-on_enter() {
-  st_del layout
-  open_target "${1:-}" || return 0
-  decide "$J_PATH" none
-}
 on_layout() {  # alt-l: 열 대상을 정해 두고 레이아웃 목록을 겹쳐 띄운다
   st_del layout
   open_target "${1:-}" || return 0
@@ -282,12 +263,6 @@ on_after_location() {  # 위치 피커에서 esc 면 그대로 목록, 골랐으
     *) nope "$J_SAY" ;;
   esac
 }
-on_change() {
-  local out="bg-cancel+"   # 이전 검색어로 돌던 푸터 판정(bg-transform)을 버린다. 늦게 끝난 낡은 결과가 덮지 않게
-  if pathish "${FZF_QUERY:-}"; then printf '%srebind(result)+first+%s' "$out" "$(search_action "$FZF_QUERY")"
-  else printf '%sunbind(result)+first+%s' "$out" "$(act change-footer "$(footer_now)")"; fi
-}
-on_result() { pathish "${FZF_QUERY:-}" && act change-footer "$(footer_now)"; return 0; }  # 경로 모양 검색어일 때만 묶인다
 on_esc() { printf 'abort'; }
 to_mode() {  # $1 새 모드 → 목록·탭·푸터를 바꾸는 액션 (푸터 판정이 모드를 읽으므로 상태를 먼저 바꾼다)
   st_set mode "$1"
@@ -308,7 +283,7 @@ on_fill() {  # ctrl-]: 커서 항목의 경로를 검색어에 (끝 슬래시 �
 }
 on_help() {
   st_get help
-  if [ "$ST" = 1 ]; then st_del help; act change-preview "$SELF --preview {3}"
+  if [ "$ST" = 1 ]; then st_del help; act change-preview "sleep 0.12; $SELF --preview {3}"
   else st_set help 1; printf '%s+show-preview' "$(act change-preview "$SELF --help-keys")"; fi
 }
 
@@ -326,7 +301,7 @@ pick() {
   fzf --ansi --delimiter '\t' --with-nth 1,2 --nth 1 --tabstop 2 --scheme path --tiebreak pathname,index \
       "${STYLE[@]}" --border-label ' open session ' --header "$(tabs repo)" --header-first --prompt '> ' \
       --footer "$(hint)" --footer-border line \
-      --preview "$SELF --preview {3}" --preview-window 'right,45%,border-left' \
+      --preview "sleep 0.12; $SELF --preview {3}" --preview-window 'right,45%,border-left' \
       --bind 'start:unbind(result)' \
       --bind "change:transform($SELF --on change)" \
       --bind "result:bg-transform($SELF --on result)" \
