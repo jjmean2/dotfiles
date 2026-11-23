@@ -77,10 +77,10 @@ _jw_prompt_git_render() {
 	_jw_prompt_git=
 	[[ -n $_ps_branch ]] || return 0
 
-	local paren='%F{cyan}' branch='%F{yellow}' red='%F{red}' green='%F{green}'
+	local paren='%F{cyan}' branch='%F{yellow}' red='%F{red}' green='%F{green}' blue='%F{blue}'
 	[[ -n $_ps_detached_color ]] && branch='%F{magenta}'
 	if [[ -n $_jw_git_stale ]]; then
-		paren='%F{8}' branch='%F{8}' red='%F{8}' green='%F{8}'
+		paren='%F{8}' branch='%F{8}' red='%F{8}' green='%F{8}' blue='%F{8}'
 	fi
 
 	local s=" %B${paren}(${branch}${_ps_branch//\%/%%}"
@@ -89,7 +89,7 @@ _jw_prompt_git_render() {
 	[[ -n $_ps_upstream_ahead ]] && s+="${green}⇡${_ps_upstream_ahead}"
 	[[ -n $_ps_upstream_behind ]] && s+="${red}⇣${_ps_upstream_behind}"
 	[[ -n $_ps_unstaged_icon ]] && s+=" ${red}${_ps_unstaged_icon}"
-	[[ -n $_ps_untracked_icon ]] && s+=" ${red}${_ps_untracked_icon}"
+	[[ -n $_ps_untracked_icon ]] && s+=" ${blue}${_ps_untracked_icon}"
 	[[ -n $_ps_staged_icon ]] && s+=" ${green}${_ps_staged_icon}"
 	s+="${paren})%f%b"
 	_jw_prompt_git=$s
