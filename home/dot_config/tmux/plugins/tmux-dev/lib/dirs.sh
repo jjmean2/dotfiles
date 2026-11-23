@@ -32,10 +32,11 @@ scan_dirs() {   # 한 줄에 절대 경로 하나 (숨김 제외, .gitignore 존
   "$FD" --base-directory "$SCAN_ROOT" --absolute-path --type d "${IGNORE_ARGS[@]}" 2>/dev/null | sed 's|/$||'
 }
 
-# git 브랜치 이름. 후보마다 git 을 띄우면 팝업이 느려지므로 .git/HEAD 를 직접 읽는다.
-# 저장소가 아니면 빈 문자열, detached 면 짧은 해시.
+# git 브랜치 이름 → GB. 후보마다 git 을 띄우면 팝업이 느려지므로 .git/HEAD 를 직접 읽는다.
+# 저장소가 아니면 빈 문자열, detached 면 짧은 해시. 저장소 모드는 행마다 부르므로 $(...) 서브셸 없이 전역에 둔다.
 git_branch() {
   local g=$1/.git line
+  GB=""
   [ -e "$g" ] || return 0
   if [ -f "$g" ]; then                       # worktree: "gitdir: <경로>"
     IFS= read -r line < "$g" || return 0
@@ -45,9 +46,9 @@ git_branch() {
   [ -f "$g/HEAD" ] || return 0
   IFS= read -r line < "$g/HEAD" || return 0
   case $line in
-    "ref: refs/heads/"*) printf '%s' "${line#ref: refs/heads/}" ;;
-    "ref: "*)            printf '%s' "${line#ref: }" ;;
-    *)                   printf '%s' "${line:0:7}" ;;
+    "ref: refs/heads/"*) GB=${line#ref: refs/heads/} ;;
+    "ref: "*)            GB=${line#ref: } ;;
+    *)                   GB=${line:0:7} ;;
   esac
 }
 
@@ -55,7 +56,7 @@ dir_preview() {  # 저장소면 브랜치와 최근 커밋, 그리고 내용
   local d=$1
   [ -d "$d" ] || return 0
   if [ -e "$d/.git" ]; then
-    printf '%s%s%s\n\n' "$B" "$(git_branch "$d")" "$R"
+    git_branch "$d"; printf '%s%s%s\n\n' "$B" "$GB" "$R"
     git -C "$d" log --oneline --color=always -8 2>/dev/null; echo
   fi
   ls -1Ap "$d" 2>/dev/null | head -40
