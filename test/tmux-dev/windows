@@ -120,7 +120,7 @@ eq "S: and the client goes there" van "$(client_session)"
 RUN tmux-dev project "$LIB" > /dev/null 2>&1
 eq "S: a missing session is created" lib "$(client_session)"
 eq "S: no @tmux-dev-path is written" "" "$(TM show-options -qv -t lib @tmux-dev-path)"
-eq "S: the first window of a repo session still gets @worktree (written only)" "$LIB" "$(TM show-options -wqv -t lib:0 @worktree)"
+eq "S: no @worktree is written on its first window" "" "$(TM show-options -wqv -t lib:0 @worktree)"
 
 TM new-session -d -s lnk -c "$H/link"
 before=$(nsess)
@@ -211,7 +211,7 @@ if TM list-commands new-pane > /dev/null 2>&1; then
   yes_has "picker: the main row is listed" "$first" "main"
   not_has "picker: the window the picker floats in is not taken for main's" "$first" "●"
   if wait_for 8 two_windows; then ok "picker: enter on main opens a main window"; else no "picker: enter on main opens a main window" "$(TM list-windows -t f1)"; fi
-  yes_has "picker: a window W makes still gets @worktree (written only, for handoff)" "$(TM list-windows -t f1 -F '#{@worktree}' | tr '\n' ' ')" "$LIB"
+  eq "picker: the window W makes carries no @worktree" "" "$(TM list-windows -t f1 -F '#{@worktree}' | tr -d '\n')"
 else
   echo "skip: this tmux has no new-pane (floating panes)"
 fi
@@ -229,16 +229,16 @@ job() {  # job <상태> [TMUX_PANE] → 정리 작업을 돌린다 (피커가 ru
 X=$WC/x; Y=$WC/y; Z=$WC/z
 TM new-session -d -s cl -c "$CL" -x 160 -y 50
 p0=$(TM display-message -p -t cl:0 '#{pane_id}')
-p1=$(newwin cl "$X"); TM set-option -w -t "$p1" @worktree "$X"       # W 가 만든 창 (표지 있음)
+p1=$(newwin cl "$X"); TM set-option -w -t "$p1" @worktree "$X"       # 예전 버전이 만든 창 (옛 표지가 남아 있다)
 p2=$(newwin cl "$X")                                                  # prefix c 로 연 창 (표지 없음)
-p3a=$(newwin cl "$H/notes"); TM set-option -w -t "$p3a" @worktree "$X"   # 섞인 창: 다른 곳의 패널 + ...
+p3a=$(newwin cl "$H/notes"); TM set-option -w -t "$p3a" @worktree "$X"   # 섞인 창(옛 표지는 X 를 가리킨다): 다른 곳의 패널 + ...
 p3b=$(TM split-window -d -P -F '#{pane_id}' -t "$p3a" -c "$CL"); cd_pane "$p3b" "$X"   # ... 메인에서 시작해 지금 X 에 있는 패널
 p4=$(newwin cl "$X"); cd_pane "$p4" "$Y"                             # X 에서 시작했지만 지금은 다른 워크트리 Y 에
 st=$(mkstate cl)
 printf 'one\n' > "$st/cleanup_scope"; printf 'worktree\037%s\037x\n' "$X" > "$st/target"
 plan=$( (cd "$CL" && RUN env TMUX_DEV_STATE="$st" tmux-dev worktree --cleanup-preview clean) 2>&1 | strip)
 sh=$(TM display-message -p -t "$p1" '#{pane_current_command}')   # 패널에서 도는 프로그램 이름도 보여 준다 (macOS 의 /bin/sh 는 bash)
-yes_has "preview: the marked window" "$plan" "close window ●$(idx_of "$p1") ($sh)"
+yes_has "preview: the window with an old marker" "$plan" "close window ●$(idx_of "$p1") ($sh)"
 yes_has "preview: the unmarked window" "$plan" "close window ●$(idx_of "$p2") ($sh)"
 # Claude Code 의 패널은 명령 이름이 버전 숫자로 나온다. 미리보기에서 알아볼 수 있게 claude 로 바꿔 읽는지 (패널 한 줄을 직접 먹인다)
 # shellcheck disable=SC2016  # $1 은 안쪽 bash 가 펼친다
@@ -252,13 +252,12 @@ printf 'one\037\037\n' > "$st/job"
 job "$st"
 res=$(strip < "$st/result" 2>/dev/null)
 yes_has "cleanup: reports success" "$res" "cleaned up"
-if pane_gone "$p1"; then ok "cleanup: closes the marked window's pane"; else no "cleanup: closes the marked window's pane"; fi
+if pane_gone "$p1"; then ok "cleanup: closes the pane in the worktree (old marker or not)"; else no "cleanup: closes the pane in the worktree (old marker or not)"; fi
 if pane_gone "$p2"; then ok "cleanup: closes the unmarked window's pane (and the program in it)"; else no "cleanup: closes the unmarked window's pane (and the program in it)"; fi
 if pane_gone "$p3b"; then ok "cleanup: closes the pane that sits in the worktree"; else no "cleanup: closes the pane that sits in the worktree"; fi
-if pane_alive "$p3a"; then ok "cleanup: keeps the other pane of a mixed window"; else no "cleanup: keeps the other pane of a mixed window"; fi
+if pane_alive "$p3a"; then ok "cleanup: keeps the other pane of a mixed window (an old marker does not get it closed)"; else no "cleanup: keeps the other pane of a mixed window (an old marker does not get it closed)"; fi
 if pane_alive "$p4"; then ok "cleanup: keeps a pane that moved to another worktree"; else no "cleanup: keeps a pane that moved to another worktree"; fi
 if pane_alive "$p0"; then ok "cleanup: keeps the main window"; else no "cleanup: keeps the main window"; fi
-eq "cleanup: a surviving window loses the stale @worktree" "" "$(TM show-options -wqv -t "$p3a" @worktree)"
 if [ ! -e "$X" ]; then ok "cleanup: the worktree is removed"; else no "cleanup: the worktree is removed"; fi
 eq "cleanup: the branch is archived and deleted" "0 1" "$(G -C "$CL" for-each-ref refs/heads/x | wc -l | tr -d ' ') $(G -C "$CL" for-each-ref 'refs/archive/*/x' | wc -l | tr -d ' ')"
 

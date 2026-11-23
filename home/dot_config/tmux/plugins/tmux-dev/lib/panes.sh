@@ -2,7 +2,7 @@
 # tmux-dev: 창을 패널의 경로로 찾는다. libexec/tmux-dev-project 와 tmux-dev-worktree 가 source 한다
 # (키마다 도는 빠른 길에서는 읽지 않는다. 여기는 tmux 를 부르는 쪽이 쓴다).
 #
-# 왜 경로인가: 전에는 만든 창에 사용자 옵션(@worktree, @dir)을, 세션에 @tmux-dev-path 를 붙여 두고 그것으로 찾았다.
+# 왜 경로인가: 전에는 만든 창에 사용자 옵션(worktree, dir)을, 세션에 tmux-dev-path 를 붙여 두고 그것으로 찾았다.
 # 표지는 창이라는 자리에 붙는데 "워크트리 안에 있다" 는 패널의 성질이다. 그래서 prefix c 로 연 창은 잡히지 않았고(같은 워크트리의
 # 창이 하나 더 생겼다), break-pane 으로 떼어 낸 패널은 표지를 잃고 남은 창은 무관한 패널만 있어도 표지를 지녔으며, 정리는 표지 없는
 # 창의 프로세스를 지워지는 디렉토리에 남겼다. tmux 는 패널마다 두 경로를 이미 들고 있다:
@@ -19,7 +19,7 @@
 #   디렉토리의 창(dir_window_for)  현재 경로가 정확히 그 디렉토리인 패널이 있는 가장 앞 창, 없으면 시작 경로가 그런 창.
 #                             디렉토리는 겹칠 수 있어(app 과 app/docs) "안에 있으면" 이 아니라 같을 때만이다
 #   피커 자신은 뺀다          피커는 그 창의 modal 패널이고 세션 디렉토리로 cd 해 있다. 세지 않는다 (pane_modal_flag)
-# 표지 @worktree 는 아직 쓰기만 한다 (jw 플러그인의 handoff 가 읽는다). tmux-dev 는 읽지 않는다.
+# 표지는 이제 쓰지도 읽지도 않는다. 떠 있는 서버의 세션·창에 예전 값이 남아 있어도 아무 일도 하지 않는다.
 
 # list-panes 의 한 줄. 앞에 칸을 덧붙여 쓸 수 있다 (project 의 open_worktree). US 는 lib/picker.sh
 # shellcheck disable=SC2034  # 부른 쪽 스크립트가 쓴다
