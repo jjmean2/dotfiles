@@ -150,5 +150,5 @@ tmux-dev 는 새 세션·윈도우의 셸을 프로젝트(워크트리) 디렉�
 | `tmux-dev worktree --path <브랜치>` | 워크트리가 만들어질 경로 |
 | `tmux-dev project --layouts` | 쓸 수 있는 레이아웃 (개인 레이아웃 포함) |
 | `tmux show -gv @tmux-dev-layout` | 전역 기본 레이아웃 (비어 있으면 `plain`) |
-| `tmux show -v @tmux-dev-path` | 지금 세션의 세션 디렉토리 |
-| `tmux show -wv @worktree` | 지금 윈도우의 워크트리 경로 |
+| `tmux display -p '#{session_path}'` | 지금 세션의 세션 디렉토리 |
+| `tmux list-panes -s -F '#{window_index} #{pane_start_path} #{pane_current_path}'` | 윈도우를 찾을 때 보는 패널별 시작·현재 경로 |

@@ -1,0 +1,296 @@
+#!/bin/bash
+# shellcheck disable=SC2088  # '~/…' 는 목록에 찍힌 글자다 (셸이 펼치면 안 된다)
+# test/tmux-dev/windows — tmux-dev 가 세션·창을 표지(@tmux-dev-path, @worktree, @dir)가 아니라 경로로 찾는지 확인한다.
+#
+#   test/tmux-dev/windows      실패한 항목이 있으면 종료 코드 1
+#
+# 무엇을 지키나 (home/dot_config/tmux/plugins/tmux-dev/lib/panes.sh 머리말의 규칙):
+#   세션 = 시작 경로(session_path)가 그 디렉토리인 세션. 순정 `tmux new -c` 세션도 같다
+#   워크트리의 창 = 그 워크트리가 주인인 패널(현재 경로가 그 안, 아니면 시작 경로가 그 안)이 있는 가장 앞 창
+#   디렉토리의 창 = 현재(없으면 시작) 경로가 정확히 그 디렉토리인 패널이 있는 창
+#   정리(ctrl-x)가 닫는 것 = 그 워크트리가 주인인 패널. 다른 곳의 패널과 그 창은 남는다 ← 유일하게 지우는 동작이라 실제로 돌린다
+#
+# 방법: 임시 HOME 과 버리는 저장소를 만들고, 이름이 다른 소켓(-L)의 tmux 서버를 따로 띄운다. 스크립트가 부르는 `tmux` 는
+#   그 소켓만 쓰는 래퍼다 (PATH 앞). 사용 중인 서버·홈·저장소는 건드리지 않는다. fzf 는 띄우지 않는다: 셸 호출(tmux-dev
+#   project|worktree <대상>, --list, --cleanup-job)로 같은 길을 타고, 피커 패널이 필요한 항목만 가짜 fzf 로 런처를 돌린다.
+#   배포되지 않는 자리(home/ 밖)라 chezmoi apply 로 홈에 들어가지 않는다.
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+SRC=$ROOT/home/dot_config/tmux/plugins/tmux-dev
+REAL_TMUX=$(command -v tmux) || { echo "tmux is required" >&2; exit 1; }
+command -v git >/dev/null || { echo "git is required" >&2; exit 1; }
+T=$(mktemp -d "${TMPDIR:-/tmp}/tmuxdevwin.XXXXXX"); T=$(cd "$T" && pwd -P)
+SOCK_NAME=tmux-dev-test-$$
+HOLD=""
+finish() {
+  "$REAL_TMUX" -L "$SOCK_NAME" kill-server 2>/dev/null
+  [ -z "$HOLD" ] || { kill "$HOLD"; wait "$HOLD"; } 2>/dev/null
+  /bin/rm -rf "$T"
+}
+trap finish EXIT
+pass=0; fail=0
+ok() { pass=$((pass + 1)); printf 'ok   %s\n' "$1"; }
+no() { fail=$((fail + 1)); printf 'FAIL %s\n' "$1"; [ $# -lt 2 ] || printf '%s\n' "$2" | sed 's/^/       | /'; }
+eq() { if [ "$2" = "$3" ]; then ok "$1"; else no "$1" "want: $2"$'\n'"got:  $3"; fi; }   # eq <이름> <기대> <실제>
+has() { case $1 in *"$2"*) return 0 ;; esac; return 1; }
+yes_has() { if has "$2" "$3"; then ok "$1"; else no "$1" "missing: $3"$'\n'"in: $2"; fi; }
+not_has() { if has "$2" "$3"; then no "$1" "unexpected: $3"$'\n'"in: $2"; else ok "$1"; fi; }
+
+# --- 플러그인(배포된 이름으로)·가짜 도구 ----------------------------------------------------
+H=$T/home; PL=$T/plugin; FZ=$T/fzf
+mkdir -p "$H/proj" "$H/notes" "$H/real" "$PL/bin" "$PL/lib" "$PL/libexec" "$T/bin" "$T/tmp" "$FZ"
+ln -s "$H/real" "$H/link"
+for f in "$SRC"/bin/* "$SRC"/libexec/*; do
+  b=$(basename "$f"); d=$(basename "$(dirname "$f")")
+  /bin/cp -f "$f" "$PL/$d/${b#executable_}"; chmod +x "$PL/$d/${b#executable_}"
+done
+/bin/cp -f "$SRC"/lib/* "$PL/lib/"
+cat > "$T/bin/tmux" <<EOF
+#!/bin/sh
+exec "$REAL_TMUX" -L "$SOCK_NAME" "\$@"
+EOF
+# 가짜 fzf: 받은 목록을 남기고, decide 파일이 있으면 그 내용을 결정으로 쓴다 (메인 목록에서 enter 를 누른 것과 같다)
+cat > "$T/bin/fzf" <<EOF
+#!/bin/sh
+cat > "$FZ/stdin"
+[ -f "$FZ/decide" ] && cat "$FZ/decide" > "\$TMUX_DEV_STATE/decision"
+: > "$FZ/done"
+exit 0
+EOF
+chmod +x "$T/bin/tmux" "$T/bin/fzf"
+printf 'set -g default-shell /bin/sh\n' > "$T/tmux.conf"
+
+BASE_ENV=(env -i PATH="$T/bin:$PL/bin:$PATH" HOME="$H" TMPDIR="$T/tmp" TERM=xterm-256color LC_ALL=en_US.UTF-8
+          GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid)
+TM() { "${BASE_ENV[@]}" tmux "$@"; }
+G() { "${BASE_ENV[@]}" git "$@"; }
+
+# --- 저장소 ------------------------------------------------------------------------------
+mkrepo() { G init -q -b main "$1"; mkdir -p "$1/docs"; : > "$1/docs/x"; G -C "$1" add -A; G -C "$1" commit -q -m init; }
+addwt() { G -C "$1" worktree add -q -b "$2" "$3" main; }   # addwt <저장소> <브랜치> <경로>
+APP=$H/proj/app; LIB=$H/proj/lib; CL=$H/proj/cl
+mkrepo "$APP"; mkrepo "$LIB"; mkrepo "$CL"
+WT=$H/.local/share/tmux-dev/worktrees/app; WC=$H/.local/share/tmux-dev/worktrees/cl
+mkdir -p "$WT" "$WC" "$APP/.claude/worktrees"
+for b in feat-a feat-b feat-c; do addwt "$APP" "$b" "$WT/$b"; done
+addwt "$APP" nest "$APP/.claude/worktrees/nest"
+for b in x y z solo self b1 b2; do addwt "$CL" "$b" "$WC/$b"; done
+ln -s "$WT/feat-b" "$H/link-b"
+
+# --- 서버 ---------------------------------------------------------------------------------
+(cd "$H" && "${BASE_ENV[@]}" tmux -f "$T/tmux.conf" new-session -d -s boot -x 160 -y 50) || { echo "cannot start tmux" >&2; exit 1; }
+SOCK=$(TM display-message -p -t boot: '#{socket_path}'); PID=$(TM display-message -p -t boot: '#{pid}')
+case $SOCK in *"$SOCK_NAME") ;; *) echo "not the test server: $SOCK" >&2; exit 1 ;; esac
+RUN() { "${BASE_ENV[@]}" TMUX="$SOCK,$PID,0" "$@"; }   # "tmux 안" 에서 부른 것처럼
+# 붙어 있는 클라이언트 하나 (switch-client 가 옮길 대상). 제어 모드라 터미널이 필요 없다
+mkfifo "$T/fifo"; sleep 900 > "$T/fifo" & HOLD=$!
+TM -C attach-session -t boot < "$T/fifo" > /dev/null 2>&1 &
+strip() { sed $'s/\033\\[[0-9;]*m//g'; }
+wait_for() {  # wait_for <초> <명령…> : 명령이 성공할 때까지
+  local i n=$(($1 * 10)); shift
+  for ((i = 0; i < n; i++)); do "$@" && return 0; sleep 0.1; done
+  return 1
+}
+have_client() { [ -n "$(TM list-clients -F '#{client_name}')" ]; }
+wait_for 5 have_client || { echo "no client attached" >&2; exit 1; }
+CLIENT=$(TM list-clients -F '#{client_name}' | head -1)
+client_session() { TM list-clients -F '#{client_session}' | head -1; }
+cwd_is() { [ "$(TM display-message -p -t "$1" '#{pane_current_path}')" = "$2" ]; }
+cd_pane() { TM send-keys -t "$1" "cd '$2'" Enter; wait_for 5 cwd_is "$1" "$2" || no "setup: cd $2 in $1"; }
+pane_alive() { TM list-panes -a -F '#{pane_id}' | grep -qx "$1"; }
+pane_gone() { ! pane_alive "$1"; }
+nwin() { TM list-windows -t "$1" -F x | wc -l | tr -d ' '; }
+nsess() { TM list-sessions -F x | wc -l | tr -d ' '; }
+active_win() { TM display-message -p -t "$1:" '#{window_id}'; }
+newwin() { TM new-window -d -P -F '#{pane_id}' -t "$1:" -c "$2"; }   # newwin <세션> <경로> → 패널 id (prefix c 꼴: 표지 없음)
+win_of() { TM display-message -p -t "$1" '#{window_id}'; }
+idx_of() { TM display-message -p -t "$1" '#{window_index}'; }
+wlist() { (cd "$2" && RUN tmux-dev worktree -t "$1" --list "$3") 2> "$T/stderr" | strip; }   # wlist <세션> <cwd> <모드>
+mark() {  # mark <목록> <1칸> → 2칸 (없으면 빈 값)
+  awk -F'\t' -v n="$2" '{ k = $1; sub(/ +$/, "", k); if (k == n) { print $2; exit } }' <<< "$1"
+}
+
+# ================================================================================================
+echo "# 세션: 시작 경로로 찾는다"
+TM new-session -d -s van -c "$APP"
+before=$(nsess)
+RUN tmux-dev project "$APP" > /dev/null 2>&1
+eq "S: a vanilla session on the path is reused" "$before" "$(nsess)"
+eq "S: and the client goes there" van "$(client_session)"
+
+RUN tmux-dev project "$LIB" > /dev/null 2>&1
+eq "S: a missing session is created" lib "$(client_session)"
+eq "S: no @tmux-dev-path is written" "" "$(TM show-options -qv -t lib @tmux-dev-path)"
+eq "S: the first window of a repo session still gets @worktree (written only)" "$LIB" "$(TM show-options -wqv -t lib:0 @worktree)"
+
+TM new-session -d -s lnk -c "$H/link"
+before=$(nsess)
+RUN tmux-dev project "$H/real" > /dev/null 2>&1
+eq "S: a session started through a symlink is found by its real path" "$before lnk" "$(nsess) $(client_session)"
+
+# 같은 경로의 세션이 둘: 목록의 이름과 가는 곳이 같아야 하고, 최근에 붙었던 쪽이다
+TM new-session -d -s lib-b -c "$LIB"
+TM switch-client -c "$CLIENT" -t lib; sleep 1.1
+TM switch-client -c "$CLIENT" -t lib-b; sleep 1.1
+TM switch-client -c "$CLIENT" -t boot
+row=$(RUN tmux-dev project --list repo 2>/dev/null | strip | awk -F'\t' -v p="$LIB" '$3 == p { print $2; exit }')
+yes_has "S: the row names the most recently attached session" "$row" "lib-b"
+RUN tmux-dev project "$LIB" > /dev/null 2>&1
+eq "S: enter goes to that same session" lib-b "$(client_session)"
+
+# ================================================================================================
+echo "# 워크트리의 창: 패널의 주인으로 찾는다"
+order=$(TM new-session -d -s ord -c "$H/notes" \; new-window -d -t ord:5 -c "$H/notes" \; new-window -d -t ord:2 -c "$H/notes" \; \
+        split-window -d -t ord:5 -c "$H/notes" \; list-panes -s -t ord -F '#{window_index}' | tr '\n' ' ')
+eq "tmux: list-panes -s lists panes by window index, a window's panes together" "0 2 5 5 " "$order"
+TM kill-session -t ord
+
+L=$(wlist van "$APP" worktree)
+yes_has "W: the main row finds the unmarked first window" "$(mark "$L" main)" "●0"
+eq "W: --list runs clean" "" "$(cat "$T/stderr")"
+
+cd_pane van:0 "$H/notes"
+yes_has "W: still main's window after cd outside every worktree (start path)" "$(mark "$(wlist van "$APP" worktree)" main)" "●0"
+cd_pane van:0 "$WT/feat-c"
+L=$(wlist van "$APP" worktree)
+yes_has "W: a pane sitting in another worktree belongs to that worktree" "$(mark "$L" feat-c)" "●0"
+not_has "W: and no longer to main" "$(mark "$L" main)" "●"
+cd_pane van:0 "$APP"
+
+pa=$(newwin van "$WT/feat-a")
+yes_has "W: a window opened with prefix c in a worktree is found" "$(mark "$(wlist van "$APP" worktree)" feat-a)" "●$(idx_of "$pa")"
+before=$(nwin van)
+(cd "$APP" && RUN tmux-dev worktree -t van feat-a) > /dev/null 2>&1
+eq "W: enter goes there instead of opening a second window" "$before $(win_of "$pa")" "$(nwin van) $(active_win van)"
+
+pn=$(newwin van "$APP/.claude/worktrees/nest")
+L=$(wlist van "$APP" worktree)
+yes_has "W: a worktree nested under main owns its pane" "$(mark "$L" nest)" "●$(idx_of "$pn")"
+yes_has "W: main keeps its own window" "$(mark "$L" main)" "●0"
+
+# break-pane: 패널이 새 창으로 나가면 창도 따라 바뀐다
+pa2=$(TM split-window -d -P -F '#{pane_id}' -t "$pa" -c "$WT/feat-a")
+TM break-pane -d -s "$pa2" -t van:     # -t 가 없으면 붙어 있는 클라이언트의 세션에 생긴다
+TM kill-pane -t "$pa"
+yes_has "W: after break-pane the worktree's window is where the pane went" "$(mark "$(wlist van "$APP" worktree)" feat-a)" "●$(idx_of "$pa2")"
+
+pb=$(newwin van "$H/link-b")
+cd_pane "$pb" "$H/notes"
+yes_has "W: a start path given through a symlink is resolved" "$(mark "$(wlist van "$APP" worktree)" feat-b)" "●$(idx_of "$pb")"
+
+# prefix S 로 워크트리 경로를 골랐을 때도 같은 규칙
+TM switch-client -c "$CLIENT" -t boot
+before=$(nwin van)
+RUN tmux-dev project "$WT/feat-a" > /dev/null 2>&1
+eq "S: picking a worktree goes to its unmarked window (no new window)" "$before van $(win_of "$pa2")" "$(nwin van) $(client_session) $(active_win van)"
+
+# ================================================================================================
+echo "# 디렉토리의 창"
+newwin van "$H/notes" > /dev/null
+L=$(wlist van "$APP" directory)
+yes_has "W dir: an unmarked window's directory is listed as open" "$(mark "$L" '~/notes')" "●"
+before=$(nwin van)
+(cd "$APP" && RUN tmux-dev worktree -t van "$H/notes") > /dev/null 2>&1
+eq "W dir: enter goes to it instead of opening another" "$before" "$(nwin van)"
+(cd "$APP" && RUN tmux-dev worktree -t van "$APP/docs") > /dev/null 2>&1
+eq "W dir: a new directory window is opened when none matches" "$((before + 1))" "$(nwin van)"
+eq "W dir: no @dir is written" "" "$(TM list-windows -a -F '#{@dir}' | tr -d '\n')"
+yes_has "W dir: the ●N of a row is the window enter goes to" "$(mark "$(wlist van "$APP" directory)" '~/proj/app/docs')" "●$(TM display-message -p -t van: '#{window_index}')"
+eq "W: a session that does not exist lists nothing and does not fail" "0 " "$( (cd "$APP" && RUN tmux-dev worktree -t nosuch --list directory) > /dev/null 2> "$T/stderr"; echo "$? $(cat "$T/stderr")")"
+
+# ================================================================================================
+echo "# 피커 패널은 세지 않는다 (실제 런처, 가짜 fzf)"
+if TM list-commands new-pane > /dev/null 2>&1; then
+  TM new-session -d -s f1 -c "$LIB" -x 160 -y 50
+  pf=$(newwin f1 "$H/notes"); TM kill-window -t f1:0     # 남은 창의 패널은 notes 에서 시작했고 거기 있다 (main 과 무관)
+  printf 'worktree\037%s\037main\037\037\037\037\n' "$LIB" > "$FZ/decide"
+  RUN tmux-dev open worktree "$CLIENT" "$pf" "$H/notes" > /dev/null 2>&1
+  fz_done() { [ -f "$FZ/done" ]; }
+  two_windows() { [ "$(nwin f1)" = 2 ]; }
+  wait_for 8 fz_done || no "setup: the picker ran"
+  first=$(head -1 "$FZ/stdin" | strip)
+  yes_has "picker: the main row is listed" "$first" "main"
+  not_has "picker: the window the picker floats in is not taken for main's" "$first" "●"
+  if wait_for 8 two_windows; then ok "picker: enter on main opens a main window"; else no "picker: enter on main opens a main window" "$(TM list-windows -t f1)"; fi
+else
+  echo "skip: this tmux has no new-pane (floating panes)"
+fi
+
+# ================================================================================================
+echo "# 정리(ctrl-x)가 닫는 패널"
+mkstate() {  # mkstate <세션> → 상태 디렉토리 (pick 이 써 두는 것)
+  local s; s=$(mktemp -d "$T/state.XXXXXX")
+  printf '%s\n' "$1" > "$s/session"; printf '%s\n' "$CL" > "$s/root"; printf '%s\n' main > "$s/base"
+  printf '%s\n' "$s"
+}
+job() {  # job <상태> [TMUX_PANE] → 정리 작업을 돌린다 (피커가 run-shell -b 로 띄우는 것과 같은 명령)
+  (cd "$CL" && RUN env TMUX_DEV_STATE="$1" TMUX_PANE="${2:-}" tmux-dev worktree --cleanup-job) > "$T/job.out" 2>&1
+}
+X=$WC/x; Y=$WC/y; Z=$WC/z
+TM new-session -d -s cl -c "$CL" -x 160 -y 50
+p0=$(TM display-message -p -t cl:0 '#{pane_id}')
+p1=$(newwin cl "$X"); TM set-option -w -t "$p1" @worktree "$X"       # W 가 만든 창 (표지 있음)
+p2=$(newwin cl "$X")                                                  # prefix c 로 연 창 (표지 없음)
+p3a=$(newwin cl "$H/notes"); TM set-option -w -t "$p3a" @worktree "$X"   # 섞인 창: 다른 곳의 패널 + ...
+p3b=$(TM split-window -d -P -F '#{pane_id}' -t "$p3a" -c "$CL"); cd_pane "$p3b" "$X"   # ... 메인에서 시작해 지금 X 에 있는 패널
+p4=$(newwin cl "$X"); cd_pane "$p4" "$Y"                             # X 에서 시작했지만 지금은 다른 워크트리 Y 에
+st=$(mkstate cl)
+printf 'one\n' > "$st/cleanup_scope"; printf 'worktree\037%s\037x\n' "$X" > "$st/target"
+plan=$( (cd "$CL" && RUN env TMUX_DEV_STATE="$st" tmux-dev worktree --cleanup-preview clean) 2>&1 | strip)
+sh=$(TM display-message -p -t "$p1" '#{pane_current_command}')   # 패널에서 도는 프로그램 이름도 보여 준다 (macOS 의 /bin/sh 는 bash)
+yes_has "preview: the marked window" "$plan" "close window ●$(idx_of "$p1") ($sh)"
+yes_has "preview: the unmarked window" "$plan" "close window ●$(idx_of "$p2") ($sh)"
+yes_has "preview: one pane of the mixed window" "$plan" "close 1 of 2 panes in window ●$(idx_of "$p3a") ($sh)"
+not_has "preview: not the pane that moved to another worktree" "$plan" "●$(idx_of "$p4")"
+not_has "preview: not the main window" "$plan" "●0"
+
+printf 'one\037\037\n' > "$st/job"
+job "$st"
+res=$(strip < "$st/result" 2>/dev/null)
+yes_has "cleanup: reports success" "$res" "cleaned up"
+if pane_gone "$p1"; then ok "cleanup: closes the marked window's pane"; else no "cleanup: closes the marked window's pane"; fi
+if pane_gone "$p2"; then ok "cleanup: closes the unmarked window's pane"; else no "cleanup: closes the unmarked window's pane"; fi
+if pane_gone "$p3b"; then ok "cleanup: closes the pane that sits in the worktree"; else no "cleanup: closes the pane that sits in the worktree"; fi
+if pane_alive "$p3a"; then ok "cleanup: keeps the other pane of a mixed window"; else no "cleanup: keeps the other pane of a mixed window"; fi
+if pane_alive "$p4"; then ok "cleanup: keeps a pane that moved to another worktree"; else no "cleanup: keeps a pane that moved to another worktree"; fi
+if pane_alive "$p0"; then ok "cleanup: keeps the main window"; else no "cleanup: keeps the main window"; fi
+eq "cleanup: a surviving window loses the stale @worktree" "" "$(TM show-options -wqv -t "$p3a" @worktree)"
+if [ ! -e "$X" ]; then ok "cleanup: the worktree is removed"; else no "cleanup: the worktree is removed"; fi
+eq "cleanup: the branch is archived and deleted" "0 1" "$(G -C "$CL" for-each-ref refs/heads/x | wc -l | tr -d ' ') $(G -C "$CL" for-each-ref 'refs/archive/*/x' | wc -l | tr -d ' ')"
+
+# dirty 면 아무것도 닫지 않는다
+: > "$Z/untracked"; pz=$(newwin cl "$Z")
+st=$(mkstate cl); printf 'worktree\037%s\037z\n' "$Z" > "$st/target"; printf 'one\037\037\n' > "$st/job"
+job "$st"
+yes_has "cleanup: a dirty worktree is refused" "$(strip < "$st/result")" "dirty"
+if pane_alive "$pz" && [ -d "$Z" ]; then ok "cleanup: and nothing was closed or removed"; else no "cleanup: and nothing was closed or removed"; fi
+
+# 한꺼번에: 항목마다 패널을 다시 읽는다
+pb1=$(newwin cl "$WC/b1"); pb2=$(newwin cl "$WC/b2")
+st=$(mkstate cl); printf 'worktree\037%s\037b1\nworktree\037%s\037b2\n' "$WC/b1" "$WC/b2" > "$st/bulk"; printf 'many\037\037\n' > "$st/job"
+job "$st"
+if pane_gone "$pb1" && pane_gone "$pb2" && [ ! -e "$WC/b1" ] && [ ! -e "$WC/b2" ]; then ok "cleanup: bulk closes each worktree's panes"
+else no "cleanup: bulk closes each worktree's panes" "$(strip < "$st/result")"; fi
+
+# 세션의 패널이 모두 그 워크트리 안: 세션은 남는다
+TM new-session -d -s solo -c "$CL" -x 160 -y 50; ps0=$(TM display-message -p -t solo:0 '#{pane_id}'); cd_pane "$ps0" "$WC/solo"
+st=$(mkstate solo); printf 'worktree\037%s\037solo\n' "$WC/solo" > "$st/target"; printf 'one\037\037\n' > "$st/job"
+job "$st"
+if pane_gone "$ps0" && TM has-session -t '=solo' 2>/dev/null; then ok "cleanup: the session survives when every pane was in the worktree"
+else no "cleanup: the session survives when every pane was in the worktree" "$(strip < "$st/result")"; fi
+eq "cleanup: the window opened to keep it is at the session directory" "$CL" "$(TM display-message -p -t solo: '#{pane_start_path}')"
+
+# 피커가 떠 있는 창을 정리: 피커(modal 패널)는 남고 그 창의 다른 패널만 닫힌다
+if TM list-commands new-pane > /dev/null 2>&1; then
+  TM new-session -d -s self -c "$CL" -x 160 -y 50; pt=$(TM display-message -p -t self:0 '#{pane_id}'); cd_pane "$pt" "$WC/self"
+  pm=$(TM new-pane -O -K -B none -P -F '#{pane_id}' -t "$pt" -c "$CL" -x 60 -y 20 'sleep 60')
+  st=$(mkstate self); printf 'worktree\037%s\037self\n' "$WC/self" > "$st/target"; printf 'one\037\037%s\n' "$(win_of "$pm")" > "$st/job"
+  job "$st" "$pm"
+  if pane_gone "$pt" && pane_alive "$pm"; then ok "cleanup: in the picker's own window only the other panes close"
+  else no "cleanup: in the picker's own window only the other panes close" "$(strip < "$st/result")"; fi
+  yes_has "cleanup: and says the window closes with the picker" "$(strip < "$st/result")" "this window closes when you leave the picker"
+  TM kill-pane -t "$pm"
+  if TM has-session -t '=self' 2>/dev/null; then ok "cleanup: the session outlives the picker's window"; else no "cleanup: the session outlives the picker's window"; fi
+fi
+
+printf '\n%d passed, %d failed\n' "$pass" "$fail"
+[ "$fail" = 0 ]

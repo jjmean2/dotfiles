@@ -6,7 +6,7 @@
 #   worktree      세션 디렉토리가 git 저장소일 때만. 워크트리 = 브랜치 = 윈도우. 없으면 워크트리를 만들어 준다
 #   subdirectory  세션 디렉토리 아래의 아무 디렉토리. directory 와 같은 흐름이고 시작 경로만 제한한다
 #   directory     홈 전체의 아무 디렉토리 (prefix S 의 디렉토리 모드와 같은 탐색). 열면 지금 세션의 윈도우가 된다
-#   세션 디렉토리 = 세션 옵션 @tmux-dev-path (prefix S 가 붙인다), 없으면 session_path. 패널의 cwd 가 아니다.
+#   세션 디렉토리 = 세션의 시작 경로(session_path). 패널의 cwd 가 아니다.
 #   tmux 의 세션·윈도우를 대체하지 않고 그 위에 얹는 관례다. prefix c 의 보통 윈도우, 순정 `tmux new -c <워크트리>` 모두 정상.
 #   순정 대응은 `git worktree add -b <브랜치> <경로> main` + `tmux new-window -n <브랜치> -c <경로>`.
 #
@@ -35,11 +35,12 @@
 #                     subdirectory / directory: 친 이름으로 새 디렉토리 (prefix S 와 같은 위치 피커. 경로를 치면 그 자리에)
 #   alt-l             레이아웃을 골라서 열기 (이번만. 레이아웃 목록의 alt-enter 는 worktree 모드에서 저장소 기본으로도 저장).
 #                     만들어야 하는 행이면 확인 목록이 뜨고 커서가 create with layout… 에 놓인다
-#   ctrl-x            worktree 모드에서 커서 항목 정리 (워크트리, 로컬 브랜치). 정리 목록이 겹쳐 뜬다: clean up(창 → 워크트리 →
-#                     백업 → 브랜치 삭제) / keep branch(창 → 워크트리 제거까지). 미리보기가 할 일을 보여 준다.
+#   ctrl-x            worktree 모드에서 커서 항목 정리 (워크트리, 로컬 브랜치). 정리 목록이 겹쳐 뜬다: clean up(패널 → 워크트리 →
+#                     백업 → 브랜치 삭제) / keep branch(패널 → 워크트리 제거까지). 미리보기가 할 일을 보여 준다
+#                     (닫을 창·패널과 거기서 도는 프로그램까지). 닫는 것은 그 워크트리 안에 있는 패널이다 (lib/panes.sh).
 #                     머지 안 된 브랜치가 있으면 안전한 행(keep branch, 없으면 back)이 먼저 오고 clean up 에 경고가 붙는다.
 #                     다시 묻지 않는다: 위험한 쪽은 커서를 내려야 고를 수 있다. 선택이 있으면 선택 전체(clean up N / keep branches.
-#                     못 하는 것은 건너뛰고 이유별 개수를 결과에). 창 닫기 → 워크트리 제거 → refs/archive/<날짜>/<브랜치> 백업(-2, -3) → 브랜치 삭제.
+#                     못 하는 것은 건너뛰고 이유별 개수를 결과에). 패널 닫기 → 워크트리 제거 → refs/archive/<날짜>/<브랜치> 백업(-2, -3) → 브랜치 삭제.
 #                     메인 체크아웃·베이스 브랜치·원격 브랜치·locked 는 하지 않고, dirty 면 실패한다. 피커는 열린 채로 남는다.
 #                     워크트리는 .trash/ 로 옮겨 바로 비우고 실제 삭제는 뒤에서 한다. 정리하는 동안 푸터에 스피너와 진행이 돈다
 #   alt-p             미리보기 오른쪽 → 아래 → 숨김
@@ -72,8 +73,10 @@
 #   tmux-dev.worktree.setup     새 워크트리를 만든 뒤 그 안에서 한 번 실행할 셸 명령 (예: cp "$TMUX_WORKTREE_MAIN/.env" .)
 #                               환경변수 TMUX_WORKTREE_MAIN / TMUX_WORKTREE_PATH / TMUX_WORKTREE_BRANCH 를 받는다.
 #
-# 윈도우 식별: 워크트리 윈도우는 사용자 옵션 @worktree <경로>, 디렉토리 윈도우는 @dir <경로>. 메인 체크아웃 행은
-# 옵션이 없을 때 패널 경로로 보완한다 (project 가 세션을 만들며 첫 윈도우에 @worktree 를 둔다). 탐색 범위는 세션 하나다.
+# 윈도우 식별: 패널의 경로로 한다 (lib/panes.sh). 워크트리의 창 = 그 워크트리가 주인인 패널(현재 경로가 그 안, 아니면
+# 시작 경로가 그 안)이 있는 가장 앞 창. 디렉토리의 창 = 현재(없으면 시작) 경로가 정확히 그 디렉토리인 패널이 있는 창.
+# 그래서 prefix c 로 연 창, break-pane·join-pane 으로 옮긴 패널도 같은 규칙으로 잡힌다. 탐색 범위는 세션 하나다.
+# 사용자 옵션 @worktree <경로> 는 만든 창에 아직 쓰기만 한다 (jw 플러그인의 handoff 가 읽는다. 여기서는 읽지 않는다).
 set -euo pipefail
 # git 의 "덤으로 잡는 락"을 끈다 (= git --no-optional-locks). git status 는 읽기만 하는 것 같아도 stat 캐시를 index 에 다시
 # 쓰느라 도는 내내 index.lock 을 쥔다. fzf 는 preview·reload·bg-transform 을 끊을 때 프로세스 그룹째 SIGKILL 을 보내므로
@@ -113,6 +116,8 @@ fi
 . "$LIB/layout.sh"
 # shellcheck source=../lib/dirs.sh
 . "$LIB/dirs.sh"
+# shellcheck source=../lib/panes.sh
+. "$LIB/panes.sh"            # 창을 패널의 경로로 찾는다 (주인 규칙). project 와 공유
 
 HISTORY_MAX=500
 TMUX_DEV_WINDOWS="${TMUX_DEV_WINDOWS:-${TMUX_DEV_HISTORY%/*}/windows}"   # 피커로 연 윈도우의 경로 (최근 순)
@@ -127,6 +132,7 @@ repo_try() {  # 저장소가 아니면 1 (죽지 않는다)
   COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
   WT_LIST=$(list_worktrees)                              # 워크트리 목록은 한 번만 읽는다
   WT_PATHS=$(cut -f1 <<< "$WT_LIST")
+  wt_set "$WT_PATHS"                                     # 패널의 주인을 가릴 워크트리들 (lib/panes.sh)
   MAIN=${WT_PATHS%%$'\n'*}
   [ -n "$MAIN" ] && [ -d "$MAIN/.git" ] || die "bare repositories are not supported"
   NAME=$(conf name); NAME=${NAME:-$(basename "$MAIN")}
@@ -182,37 +188,17 @@ list_worktrees() {  # "<경로>\t<브랜치>\t<플래그>" (메인이 첫 줄. �
     esac
   done < <(git worktree list --porcelain; echo)
 }
-# 세션의 윈도우: "<인덱스> US <id> US <@worktree> US <활성 패널 경로> US <@dir>" (옵션은 비어 있을 수 있다)
-list_windows() { [ -n "$SESSION" ] && tmux list-windows -t "$SESSION" -F "#{window_index}${US}#{window_id}${US}#{@worktree}${US}#{pane_current_path}${US}#{@dir}" 2>/dev/null || true; }
-# 워크트리 경로 → 그 윈도우. 결과는 WIN(id, 없으면 빈 문자열)과 WIN_IDX(인덱스)에 둔다 (행마다 $(...) 서브셸을 띄우지
-# 않기 위해 echo 대신 전역). @worktree 가 우선, 메인은 패널 경로로 보완(메인 안이되 다른 워크트리 안은 아닌 패널을 가진,
-# 옵션 없는 가장 앞 윈도우). 윈도우 목록은 한 번만 읽어 둔다 (행마다 tmux 를 부르면 워크트리 19개에 ~100ms).
-WIN_LIST=""; WIN_LIST_READY=""; WIN=""; WIN_IDX=""
-window_for() {
-  local want=$1 idx id tag pane _dir inside
-  WIN=""; WIN_IDX=""
-  [ -n "$WIN_LIST_READY" ] || { WIN_LIST=$(list_windows); WIN_LIST_READY=1; }
-  while IFS=$US read -r idx id tag pane _dir; do
-    [ "$tag" = "$want" ] && { WIN=$id; WIN_IDX=$idx; return 0; }
-    if [ "$want" = "${MAIN:-}" ] && [ -z "$tag" ] && [ -z "$WIN" ]; then
-      case $pane in "$MAIN"|"$MAIN"/*)
-        inside=0
-        while IFS= read -r other; do
-          [ -z "$other" ] || [ "$other" = "$MAIN" ] && continue
-          case $pane in "$other"|"$other"/*) inside=1; break ;; esac
-        done <<< "$WT_PATHS"
-        [ "$inside" = 0 ] && { WIN=$id; WIN_IDX=$idx; } ;;
-      esac
-    fi
-  done <<< "$WIN_LIST"
-  [ -n "$WIN" ]
-}
+# 세션의 패널 (lib/panes.sh 의 PANE_FMT. 창 번호 순). 한 번만 읽어 둔다: 행마다 tmux 를 부르면 워크트리 19개에 ~100ms.
+# 워크트리 경로 → 창은 window_for, 디렉토리 → 창은 dir_window_for (둘 다 lib/panes.sh. 결과는 WIN·WIN_IDX)
+list_panes() { [ -n "$SESSION" ] && tmux list-panes -s -t "$SESSION" -F "$PANE_FMT" 2>/dev/null || true; }
+PANES_READY=""
+panes_reload() { panes_read < <(list_panes); PANES_READY=1; }
+panes_load() { [ -n "$PANES_READY" ] || panes_reload; }
 
 # --- 세션 디렉토리 -----------------------------------------------------------------
-# prefix S 가 붙인 @tmux-dev-path, 없으면 session_path. 지워졌으면 빈 값.
+# 세션의 시작 경로(session_path)를 실제 경로로. 지워졌으면 빈 값.
 session_dir() {
-  local p; p=$(tmux show-options -qv -t "$SESSION" @tmux-dev-path 2>/dev/null || true)
-  [ -n "$p" ] || p=$(tmux display-message -p -t "$SESSION:" '#{session_path}' 2>/dev/null || true)
+  local p; p=$(tmux display-message -p -t "$SESSION:" '#{session_path}' 2>/dev/null || true)
   [ -n "$p" ] && canon_dir "$p" || true
 }
 
@@ -304,6 +290,7 @@ rows_worktree() {  # $1 = --marks 면 상태 마커(dirty, merged/new/+N)까지 
     cache_prune
   fi
   load_hist
+  panes_load
   NOW=$(date +%s); PDIR=$(project_dir 2>/dev/null || true); [ -n "$PDIR" ] || PDIR=/nonexistent
   # 정렬 키 (묶음, 묶음 안 순서): 0 창 열림(창 번호) · 1 최근(최근 순) · 2 진행 중 워크트리(메인 먼저, 그다음 최근 커밋 순)
   #   · 3 끝난 워크트리(merged) · 4 진행 중 브랜치 · 5 끝난 브랜치 · 6 원격. 상태는 마커를 읽은 뒤에야 알므로 끝난 것이
@@ -394,14 +381,16 @@ short_loc() {
 trim() { if [ "${#1}" -gt "$2" ]; then printf '%s…' "${1:0:$(( $2 - 1 ))}"; else printf '%s' "$1"; fi; }
 trim_to() { if [ "${#1}" -gt "$2" ]; then TRIM="${1:0:$(( $2 - 1 ))}…"; else TRIM=$1; fi; }   # 행마다 쓰는 쪽: $(...) 없이 TRIM 에
 # subdirectory / directory: 이 세션에 열린 윈도우의 디렉토리(●N) → 최근(◷) → 탐색. 앞에 나온 것이 이긴다 (경로 기준)
+# 열린 윈도우의 디렉토리 = 패널들의 현재 경로, 그다음 시작 경로. ●N 은 Enter 가 갈 창이다 (open_window_for. 같은 함수로 정한다).
+# 시작 경로가 워크트리 루트인데 그 패널이 지금 다른 워크트리에 있으면 가리키는 창이 없으므로 여기서는 빠진다 (탐색 쪽에서 나온다)
 rows_dir() {  # $1 모드
-  local idx _id tag _pane dir p n=0
+  local p n=0
   {
-    [ -n "$WIN_LIST_READY" ] || { WIN_LIST=$(list_windows); WIN_LIST_READY=1; }
-    while IFS=$US read -r idx _id tag _pane dir; do
-      p=${dir:-$tag}; [ -n "$p" ] && [ -d "$p" ] && under_loc_root "$p" || continue
-      row "$p" "${G}●${idx}${R}"
-    done <<< "$WIN_LIST"
+    panes_load
+    for p in "${P_CUR[@]+"${P_CUR[@]}"}" "${P_START[@]+"${P_START[@]}"}"; do
+      [ -n "$p" ] && [ -d "$p" ] && under_loc_root "$p" && open_window_for "$p" || continue
+      row "$p" "${G}●${WIN_IDX}${R}"
+    done
     while IFS= read -r p; do
       [ "$n" -lt "$RECENT_MAX" ] || break
       [ -d "$p" ] && under_loc_root "$p" || continue
@@ -950,13 +939,11 @@ resolve_dir() {
   fi
   KIND=dir; BRANCH=""; TARGET=$want
 }
-ensure_dir_window() {  # 디렉토리 $TARGET 의 윈도우로. @dir 이 같은 윈도우가 있으면 그리로, 없으면 만들고 레이아웃
-  local id tag win
-  while IFS=$US read -r id tag; do
-    [ "$tag" = "$TARGET" ] && { tmux select-window -t "$id"; return; }
-  done < <(tmux list-windows -t "$SESSION" -F "#{window_id}${US}#{@dir}" 2>/dev/null)
+ensure_dir_window() {  # 디렉토리 $TARGET 의 윈도우로. 그 디렉토리의 창(dir_window_for)이 있으면 그리로, 없으면 만들고 레이아웃
+  local win
+  panes_load
+  if dir_window_for "$TARGET"; then tmux select-window -t "$WIN"; return; fi
   win=$(tmux new-window -P -F '#{window_id}' -t "$SESSION:" -n "$(basename "$TARGET")" -c "$TARGET")
-  tmux set-option -w -t "$win" @dir "$TARGET"
   apply_layout "$(resolve_layout "$LAYOUT" "$TARGET")" "$win" "$TARGET"
 }
 run_setup() {  # 새 워크트리 안에서 tmux-dev.worktree.setup 을 한 번
@@ -979,9 +966,10 @@ add_worktree() {  # $@ = git worktree add 의 인자 (경로 뒤)
 }
 ensure_window() {  # 워크트리 $TARGET(브랜치 $BRANCH)의 윈도우로. 없으면 만들고 레이아웃
   local win
+  panes_load
   if window_for "$TARGET"; then tmux select-window -t "$WIN"; return; fi
   win=$(tmux new-window -P -F '#{window_id}' -t "$SESSION:" -n "$BRANCH" -c "$TARGET")
-  tmux set-option -w -t "$win" @worktree "$TARGET"
+  tmux set-option -w -t "$win" @worktree "$TARGET"   # 쓰기만 한다: jw 플러그인의 handoff 가 읽는다 (lib/panes.sh 머리말)
   apply_layout "$(resolve_layout "$LAYOUT" "$MAIN")" "$win" "$TARGET"
 }
 open_target() {  # KIND/BRANCH/TARGET 을 연다. 셸에서 부르면 만들기 전에 묻는다 (피커는 이미 물었다: CONFIRMED)
@@ -1116,12 +1104,12 @@ on_after_create() {  # 메인 목록: 확인 목록에서 골랐으면 결정, e
 # worktree 모드에서 워크트리·로컬 브랜치를 정리한다. 피커 안에서 끝나고 피커는 열린 채로 남는다 (이어서 다른 것을 정리하거나 연다).
 #   ctrl-x → 검사 (메인 체크아웃·베이스 브랜치·원격 브랜치·locked 는 하지 않는다, dirty 면 실패) → 정리 목록
 #          (머지 안 됐으면 안전한 행이 먼저) → 실행 → 목록을 다시 읽고 푸터에 결과(백업 ref)
-#   실행 순서: 창 닫기 → 워크트리 제거(git worktree remove, 강제 없이. missing 이면 prune) → 브랜치 백업 → 브랜치 삭제.
+#   실행 순서: 패널 닫기 → 워크트리 제거(git worktree remove, 강제 없이. missing 이면 prune) → 브랜치 백업 → 브랜치 삭제.
 #   창을 먼저 닫는 것은 그 안의 프로세스(셸, nvim, 에이전트)를 먼저 끝내기 위해서다.
-# 피커가 그 창 안의 패널이면(prefix W 를 modal floating pane 으로 띄울 때) 창을 닫으면 피커도 같이 죽는다. modal pane 은
-# move-pane·join-pane 으로 옮길 수 없다(tmux 3.8: "pane is modal"). 그래서 그 창의 다른 패널만 닫고 @worktree 를 지운다.
+# 닫는 단위는 패널이다 (close_panes). 피커는 그 창 안의 modal 패널이라(prefix W) 주인을 가릴 때부터 빠져 있어 닫히지 않는다.
+# modal pane 은 move-pane·join-pane 으로 옮길 수 없다(tmux 3.8: "pane is modal"). 그래서 그 창의 다른 패널만 닫힌다.
 # 피커가 끝나면 마지막 패널이 사라지며 창도 닫히고 tmux 가 다른 창으로 옮겨 준다 (3.8 에서 확인).
-# 세션의 마지막 창을 닫아야 하면 세션이 끝나지 않도록 세션 디렉토리에 창을 하나 먼저 연다.
+# 닫고 나면 세션에 남는 창이 없을 때는 세션이 끝나지 않도록 세션 디렉토리에 창을 하나 먼저 연다.
 picker_window() {  # 피커가 창 안의 modal 패널이면 그 창 id, 아니면 빈 값 (팝업은 패널이 아니다)
   [ -n "${TMUX_PANE:-}" ] || return 0
   [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_modal_flag}' 2>/dev/null)" = 1 ] || return 0
@@ -1177,6 +1165,7 @@ on_cleanup() {  # ctrl-x. $1 종류 $2 경로 $3 브랜치 $4 선택한 행들�
 on_cleanup_many() {  # $1 선택한 행들 (fzf 의 {+f}: 한 줄에 한 행, 칸은 탭)
   local _name disp kind path branch ok=0 wins=0 wts=0 brs=0 unmerged=0 skip="" r x
   local -a reasons=()
+  panes_load
   : > "$TMUX_DEV_STATE/bulk"
   # 칸 구분은 탭이지만 IFS=$'\t' read 는 연속 탭을 하나로 합친다 (브랜치 행은 경로 칸이 비어 브랜치가 경로 자리로 밀린다).
   # 그래서 탭을 US 로 바꿔 읽는다 (US 는 공백 IFS 가 아니라 빈 칸을 지킨다)
@@ -1205,7 +1194,7 @@ on_cleanup_many() {  # $1 선택한 행들 (fzf 의 {+f}: 한 줄에 한 행, �
   printf 'execute(%s --choose-cleanup)+transform(%s --on after-cleanup)' "$SELF" "$SELF"
 }
 # --- 정리 목록 (ctrl-x 로 겹쳐 뜬다. 레이아웃 목록과 같은 구조) ---------------------------------
-# 항목: clean up(창 → 워크트리 → 백업 → 브랜치 삭제) / keep branch(창 → 워크트리 제거까지, 브랜치는 남긴다).
+# 항목: clean up(패널 → 워크트리 → 백업 → 브랜치 삭제) / keep branch(패널 → 워크트리 제거까지, 브랜치는 남긴다).
 # 고른 것은 상태 cleanup_choice 에 남기고 메인 목록의 after-cleanup 이 이어받는다. esc·ctrl-c·back 이면 아무것도 안 한다.
 # 브랜치만 있는 행은 keep 이 할 일이 없어 clean up 만 있다.
 # 머지 안 된 브랜치가 있으면 다시 묻지 않는 대신 안전한 행(keep, 없으면 back)을 맨 위(커서 자리)에 두고 clean up 에 경고를 붙인다.
@@ -1248,7 +1237,7 @@ next_archive_ref() {  # archive_branch 가 쓸 이름을 미리 (만들지 않�
 }
 plan_lines() {  # $1 clean | keep $2 종류 $3 경로 $4 브랜치 → 할 일을 한 줄씩 (정리 목록의 미리보기)
   local ref
-  [ -n "$3" ] && window_for "$3" && echo "close window ●$WIN_IDX"
+  [ -n "$3" ] && close_plan "$3"
   case $2 in worktree) echo "remove worktree $(home_disp "$3")" ;; prunable) echo "prune missing worktree $(home_disp "$3")" ;; esac
   real_branch "$4" || return 0
   if [ "$1" = keep ]; then echo "${G}keep branch $4${R} ${D}(enter on its row later to recreate the worktree)${R}"; return 0; fi
@@ -1294,7 +1283,7 @@ start_job() {  # $1 one(상태 target) | many(상태 bulk) [$2 keep]
   st_del finished result fail progress
   st_set job "$1$US${2:-}$US$(picker_window)"
   # 세션 이름(사용자가 정한 글자)은 셸 명령줄에 싣지 않는다: 작업이 상태 session 에서 읽는다 (pick 이 써 둔다)
-  # run-shell 의 출력은 패널에 뜨므로 버린다. 피커 패널(TMUX_PANE)은 close_windows 가 남겨야 해서 넘긴다
+  # run-shell 의 출력은 패널에 뜨므로 버린다. TMUX_PANE 은 피커가 속한 창을 아는 데 쓴다 (picker_window)
   tmux run-shell -b "$(printf 'TMUX_DEV_STATE=%q TMUX_PANE=%q %q --cleanup-job >/dev/null 2>&1' \
     "$TMUX_DEV_STATE" "${TMUX_PANE:-}" "$SELF")" 2>/dev/null || { st_del job; nope "${Y}could not start the clean-up${R}"; return; }
   st_set busy 1; st_set tick 0
@@ -1355,13 +1344,13 @@ bulk_run() {  # $1 keep|"" $2 피커 창 $3.. "종류 US 경로 US 브랜치". �
   [ -n "$any_self" ] && msg+=" ${D}· this window closes when you leave the picker${R}"
   JOB_MSG=$msg
 }
-keep_session_window() {  # 세션의 마지막 창을 닫기 전에 세션 디렉토리에 창을 하나 연다 (메인 체크아웃이면 @worktree 도)
+keep_session_window() {  # 남는 창이 없어지기 전에 세션 디렉토리에 창을 하나 연다 (메인 체크아웃이면 쓰기 전용 표지 @worktree 도)
   local root win; st_get root; root=${ST:-$MAIN}
   win=$(tmux new-window -d -P -F '#{window_id}' -t "$SESSION:" -c "$root")
   [ "$root" = "$MAIN" ] && tmux set-option -w -t "$win" @worktree "$MAIN"
   return 0
 }
-# 닫은 패널의 프로세스가 실제로 끝날 때까지 기다린다 (최대 5초). kill-pane·kill-window 는 SIGHUP 만 보내고 바로 돌아오므로,
+# 닫은 패널의 프로세스가 실제로 끝날 때까지 기다린다 (최대 5초). kill-pane 은 SIGHUP 만 보내고 바로 돌아오므로,
 # 기다리지 않으면 끝나면서 파일을 쓰는 프로세스(에디터, 에이전트)보다 뒤의 dirty 검사가 먼저 돌 수 있다.
 # 기다릴 대상은 쉘(pane_pid)만이 아니라 그 패널의 터미널(pane_tty)을 쓰는 프로세스 전부다: 쉘보다 늦게 끝나는 nvim·claude,
 # 그 자식, 백그라운드 작업. 닫기 전에 모은다 (닫은 뒤에는 터미널이 사라진다). setsid 로 떨어진 데몬은 원래 창과 상관없다.
@@ -1373,29 +1362,51 @@ pane_pids() {  # $1 패널 → 그 패널의 터미널을 쓰는 프로세스들
   [ -n "$tty" ] && ps -o pid= -t "${tty#/dev/}" 2>/dev/null | tr -d ' '
   return 0
 }
-close_windows() {  # $1 워크트리 경로 $2 피커가 속한 창(없으면 빈 값). 피커 창을 다뤘으면 SELF_CLOSING=1
+# 닫을 것은 창이 아니라 패널이다: 그 워크트리가 주인인 패널(lib/panes.sh 의 pane_owner. 지금 그 안에 있는 프로세스, 그리고
+# 거기서 시작해 어느 워크트리에도 있지 않은 패널). 표지(@worktree) 없는 창의 패널도 닫히고, 한 창에 다른 곳의 패널이 섞여
+# 있으면 그 패널과 창은 남는다. 정리 목록의 미리보기(close_plan)와 실제 닫기(close_panes)가 같은 P_OWN 을 본다.
+close_plan() {  # $1 워크트리 경로 → 닫을 것을 창마다 한 줄씩 (어떤 프로그램이 도는 패널인지도)
+  local i=0 j n own cmds
+  panes_load; n=${#P_ID[@]}
+  while [ "$i" -lt "$n" ]; do
+    own=0; cmds=""; j=$i
+    while [ "$j" -lt "$n" ] && [ "${P_WIN[$j]}" = "${P_WIN[$i]}" ]; do
+      if [ "${P_OWN[$j]}" = "$1" ]; then own=$((own + 1)); cmds+="${cmds:+, }${P_CMD[$j]}"; fi
+      j=$((j + 1))
+    done
+    if [ "$own" -gt 0 ] && [ "$own" -eq $((j - i)) ]; then echo "close window ●${P_IDX[$i]} ${D}($cmds)${R}"
+    elif [ "$own" -gt 0 ]; then echo "close $own of $((j - i)) panes in window ●${P_IDX[$i]} ${D}($cmds)${R}"; fi
+    i=$j
+  done
+  return 0
+}
+close_panes() {  # $1 워크트리 경로 $2 피커가 속한 창(없으면 빈 값). 그 창에 피커만 남으면 SELF_CLOSING=1
   SELF_CLOSING="" CLOSE_PENDING=""
   [ -n "$SESSION" ] && [ -n "$1" ] || return 0
-  local id tag p total pid i alive
-  local -a pids=()
-  while IFS=$US read -r id tag; do
-    [ "$tag" = "$1" ] || continue
-    total=$(tmux list-windows -t "$SESSION" 2>/dev/null | wc -l | tr -d ' ')
-    [ "$total" -le 1 ] && keep_session_window
-    if [ -n "$2" ] && [ "$id" = "$2" ]; then
-      for p in $(tmux list-panes -t "$id" -F '#{pane_id}'); do
-        [ "$p" = "$TMUX_PANE" ] && continue
-        while IFS= read -r pid; do [ -n "$pid" ] && pids+=("$pid"); done < <(pane_pids "$p")
-        tmux kill-pane -t "$p"
-      done
-      tmux set-option -w -u -t "$id" @worktree
-      SELF_CLOSING=1
+  local id tag pid i alive last="" keepwins=0 selfkill="" selfkeep=""
+  local -a kill=() pids=()
+  panes_reload   # 늘 새로 읽는다: 한꺼번에 정리할 때 앞 항목이 패널을 닫았다
+  for ((i = 0; i < ${#P_ID[@]}; i++)); do
+    if [ "${P_OWN[$i]}" = "$1" ]; then
+      kill+=("${P_ID[$i]}")
+      if [ "${P_WIN[$i]}" = "$2" ]; then selfkill=1; fi
     else
-      for p in $(tmux list-panes -t "$id" -F '#{pane_id}'); do
-        while IFS= read -r pid; do [ -n "$pid" ] && pids+=("$pid"); done < <(pane_pids "$p")
-      done
-      tmux kill-window -t "$id"
+      if [ "${P_WIN[$i]}" != "$last" ]; then keepwins=$((keepwins + 1)); last=${P_WIN[$i]}; fi   # 한 창의 패널은 이어서 나온다
+      if [ "${P_WIN[$i]}" = "$2" ]; then selfkeep=1; fi
     fi
+  done
+  [ "${#kill[@]}" -gt 0 ] || return 0
+  # 닫고 나면 남는 창이 없을 때 (피커만 남는 창은 피커와 함께 닫히므로 세지 않는다) 세션이 끝나지 않게 창을 하나 먼저 연다
+  if [ "$keepwins" -eq 0 ]; then keep_session_window; fi
+  for id in "${kill[@]}"; do
+    while IFS= read -r pid; do [ -n "$pid" ] && pids+=("$pid"); done < <(pane_pids "$id")
+    tmux kill-pane -t "$id"
+  done
+  if [ -n "$selfkill" ] && [ -z "$selfkeep" ]; then SELF_CLOSING=1; fi
+  # 남은 창이 이 워크트리의 표지를 지니고 있으면 지운다 (피커 창, 다른 곳의 패널이 섞여 있던 창). 표지는 쓰기만 하지만
+  # 쓰는 동안은 맞게 둔다: jw 플러그인의 handoff 가 그 창을 "이 워크트리의 창" 으로 읽는다
+  while IFS=$US read -r id tag; do
+    if [ "$tag" = "$1" ]; then tmux set-option -w -u -t "$id" @worktree 2>/dev/null || true; fi
   done < <(tmux list-windows -t "$SESSION" -F "#{window_id}${US}#{@worktree}" 2>/dev/null)
   [ "${#pids[@]}" -gt 0 ] || return 0
   for ((i = 0; i < 50; i++)); do
@@ -1406,11 +1417,11 @@ close_windows() {  # $1 워크트리 경로 $2 피커가 속한 창(없으면 �
   CLOSE_PENDING=1
   return 0
 }
-# 하나를 정리한다: 창 → 워크트리 → 백업 → 브랜치. 결과는 ONE_REF(백업 ref, 없으면 빈 값), 실패면 1 과 ONE_ERR.
+# 하나를 정리한다: 패널 → 워크트리 → 백업 → 브랜치. 결과는 ONE_REF(백업 ref, 없으면 빈 값), 실패면 1 과 ONE_ERR.
 # $4 피커가 속한 창 (picker_window. 한꺼번에 정리할 때 한 번만 구한다) $5 keep 이면 브랜치는 그대로 (백업·삭제 없음)
 # 커밋 안 된 변경은 실행할 때 다시 본다. ctrl-x 의 검사(cleanable) 뒤에도 창 안의 에이전트·에디터가 파일을 쓸 수 있고,
 # 빠른 제거의 git worktree move 와 뒤의 remove --force --force 는 dirty 를 막지 않는다 (git worktree remove 만 막는다).
-# 창을 닫기 전에 한 번(괜히 창을 닫지 않게), 닫은 뒤(그 안의 프로세스가 끝난 뒤) 옮기기 직전에 한 번.
+# 패널을 닫기 전에 한 번(괜히 닫지 않게), 닫은 뒤(그 안의 프로세스가 끝난 뒤) 옮기기 직전에 한 번.
 dirty_guard() {  # $1 워크트리 경로 $2 덧붙일 안내. dirty 면 1 과 ONE_ERR
   local n; [ -d "$1" ] || return 0
   n=$(dirty_count "$1") || { ONE_ERR="cannot check $(home_disp "$1") (git status failed) · nothing removed$2"; return 1; }
@@ -1422,11 +1433,11 @@ clean_one() {
   local kind=$1 path=$2 branch=$3 out
   ONE_REF="" ONE_ERR=""
   if [ "$kind" = worktree ]; then dirty_guard "$path" "" || return 1; fi
-  step "closing windows"; close_windows "$path" "${4:-}"
+  step "closing panes"; close_panes "$path" "${4:-}"
   case $kind in
     worktree)
-      [ -n "$CLOSE_PENDING" ] && { ONE_ERR="processes in its windows are still running · nothing removed (its windows were closed)"; return 1; }
-      dirty_guard "$path" " (its windows were closed)" || return 1
+      [ -n "$CLOSE_PENDING" ] && { ONE_ERR="processes in its panes are still running · nothing removed (its panes were closed)"; return 1; }
+      dirty_guard "$path" " (its panes were closed)" || return 1
       step "removing worktree"; trash_worktree "$path" || return 1 ;;
     prunable) git worktree prune ;;
   esac
