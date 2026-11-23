@@ -3,7 +3,8 @@
 Claude Code 를 여러 tmux 윈도우·패널에 띄워 두면 어느 것이 끝났고 어느 것이 나를 기다리는지 돌아다니며 봐야 한다.
 agent-state 는 에이전트의 상태를 **한 번 기록하고**, 그것을 **여러 도구가 각자 보여 주게** 하는 구조다.
 
-- 만드는 쪽: Claude Code 플러그인 [`claude-plugins/agent-state`](../claude-plugins/agent-state/README.md) (훅 + `bin/agent-state`)
+- 만드는 쪽: Claude Code 플러그인 [`claude-plugins/agent-state`](../claude-plugins/agent-state/README.md) (훅 + `bin/agent-state`).
+  Cursor CLI 도 이 플러그인을 가져와 같은 훅을 돌린다 (아래 "Cursor CLI 훅 대응", 2026-11-24)
 - 받는 쪽: tmux 어댑터 `home/dot_config/tmux/plugins/agent-state` (탭·패널 테두리 표시, 키), 터미널 알림, 그 밖에 레코드를 읽는 아무 도구
 
 2026-11-19 에 정한 설계다. 근거가 된 실측은 Claude Code 2.1.327, tmux 3.8 기준 (Ghostty 1.4.0 은 문서만 확인).
@@ -165,6 +166,55 @@ tmux 안이면 레코드와 같은 내용을 **그 에이전트가 떠 있는 �
 "봤는지" 는 보는 도구마다 다른 일이라서다. 그래서 `agent-state list` 는 tmux 와 다를 수 있다. 훅은 `UserPromptSubmit` 에서는 같은 상태여도
 늘 다시 써서, 손으로 지운 패널도 다음 턴에 바로잡는다.
 
+## Cursor CLI 훅 대응
+
+Cursor CLI(`agent`)는 `~/.claude/plugins/installed_plugins.json` 에 설치된 Claude 플러그인을 가져오고, 그 `hooks/hooks.json` 의 이벤트를
+자기 이벤트로 바꿔 **같은 명령 줄**을 부른다. 그래서 따로 설치하는 것 없이 한 플러그인이 두 에이전트를 맡는다.
+2026-11-24 에 Cursor CLI 2026.11.22 로 확인했다 (기록용 훅을 격리 tmux 의 `agent` 에 올려 실측, `agent --plugin-dir` 로 고친 플러그인을 올려 끝까지 확인).
+
+| hooks.json 의 이벤트 | Cursor 가 부르는 때 | 상태 |
+|---|---|---|
+| `SessionStart` | `sessionStart` | `idle` + 낡은 레코드 정리 |
+| `UserPromptSubmit` | `beforeSubmitPrompt` | `running` |
+| `PostToolUse` | `postToolUse` | `running` (레코드가 있는 세션만) |
+| `Stop` | `stop` | `status` 가 `completed` → `done`, `aborted` → `idle`, `error` → `error` |
+| `SessionEnd` | `sessionEnd` | 레코드·패널 표시 제거 |
+| `PermissionRequest`, `Notification` | 부르지 않는다 (Cursor 에 없는 이벤트) | — |
+| `PostToolUseFailure`, `StopFailure` | 부르지 않는다 (Cursor 가 모르는 이름이라 건너뛴다) | — |
+
+Claude 와 달라서 스크립트가 따로 다루는 것:
+
+- **누가 불렀나.** 명령 줄이 같으므로 입력으로 가린다: Cursor 의 입력에만 `cursor_version` 이 있다.
+- **이벤트 이름.** 입력의 `hook_event_name` 은 Cursor 이름(`beforeSubmitPrompt`)이다. 그래서 hooks.json 이 명령 끝에 자기 이벤트 이름을
+  붙여 넘긴다(`hook claude Stop`). 스크립트는 Cursor 의 이름을 몰라도 된다.
+- **필드 순서.** Cursor 는 공통 필드(`session_id` 등)를 `tool_input` 같은 이벤트별 필드 **뒤**에 붙인다. `jget` 은 맨 처음 나온 키를
+  고르므로 세션은 늘 첫 필드인 `conversation_id`(= `session_id`)로 읽고, 작업 폴더와 대화 기록은 환경 변수
+  (`CURSOR_PROJECT_DIR`, `CURSOR_TRANSCRIPT_PATH`)로 얻는다. 입력의 최상위 `cwd` 는 빈 문자열이다.
+- **패널 주인.** Cursor 는 훅을 셸(`/bin/zsh -c …`)을 거쳐 띄운다. `$PPID` 는 훅과 함께 사라지는 그 셸이고 그 부모가 `agent` 다.
+  부모가 셸이면 한 단계 위를 주인으로 삼는다. `ps` 는 세션마다 한 번(`sessionStart`)이고 그 뒤로는 레코드의 `pid` 를 쓴다.
+- **중단.** 사람이 턴을 중단하면 `stop` 이 `aborted` 와 `error` 로 거의 동시에 **두 번** 온다(순서는 그때그때 다르다).
+  `error` 쪽은 0.5초 기다렸다가 그 사이 `idle` 이 됐으면 넘어간다. 고치기 전에는 중단할 때마다 "Stopped" 알림이 나갔다.
+  Claude 에는 중단을 알리는 훅이 없지만(위 공백) Cursor 는 이것으로 `running` 이 남지 않는다.
+- **서브에이전트.** Task 로 띄운 서브에이전트의 도구 호출은 자기 `conversation_id` 로 `postToolUse` 만 온다(시작·끝 훅은 없다).
+  받으면 지울 길 없는 `running` 레코드가 남으므로, 레코드가 없는 세션의 `PostToolUse` 는 넘어간다.
+- **새 채팅.** `/clear`(새 채팅)에는 훅이 없다. 다음 프롬프트가 새 `conversation_id` 로 올 뿐이고, 끝날 때의 `sessionEnd` 는 지금 채팅이
+  아니라 **처음** 채팅의 id 로 온다. `agent` 프로세스 하나가 보는 채팅은 하나이므로 프롬프트·시작·끝에서 같은 주인(pid)의 다른
+  `cursor-*` 레코드를 지운다. 패널 표시는 주인 pid 로 묶여 있어 채팅이 바뀌어도 이어진다.
+- **훅은 입력 칸을 막지 않는다.** `stop` 훅을 6초 걸리게 해도 중단 뒤 입력 칸은 0.15초 만에 돌아왔다(위 0.5초 대기가 보이지 않는다).
+- **알림.** Cursor 는 스스로 터미널 알림을 보낸다: 승인 대기 `OSC 777 ; notify ; Cursor ; Approve command: …`, 끝남 `… ; Cursor is waiting for you`
+  (tmux 안에서는 패스스루로 감싼다). 겹치지 않게 Cursor 세션에서는 `error` 만 알린다.
+- **옵션.** Claude 의 플러그인 옵션(`CLAUDE_PLUGIN_OPTION_*`)은 Cursor 에 없다. `AGENT_STATE_NOTIFY_ON`·`AGENT_STATE_NOTIFY_VIA` 환경 변수를
+  `agent` 를 띄우는 셸에 두면 훅까지 간다(`agent` 의 환경을 물려받는다).
+
+**Cursor 에서의 공백.**
+
+| 경우 | 표시 |
+|---|---|
+| 승인 창이 떠 있는 동안 | `running` 그대로. Cursor 에는 승인 대기를 알리는 훅이 없다(`preToolUse`·`beforeShellExecution` 은 자동 승인되는 명령에도 와서 가릴 수 없다). Cursor 자신의 알림에 기댄다 |
+| 진짜 오류로 멈춤 (`stop` 의 `status: error` 만 옴) | `error` 로 가도록 했지만 재현해 보지는 못했다 |
+| tmux 밖 | 확인하지 않았다. Claude 와 같은 규칙(Ghostty·iTerm2 에서는 진행 표시를 내지 않음)을 그대로 쓴다 |
+| Cursor 데스크톱 앱 | tmux 패널도 자기 tty 도 없어 레코드 파일만 남는다 (확인하지 않았다) |
+
 ## 알림
 
 `waiting`·`done`·`error` 로 **바뀔 때만** 보낸다(같은 상태가 다시 와도 한 번). 주인이 아닌 중첩 세션은 보내지 않는다.
@@ -303,6 +353,8 @@ tmux 어댑터는 모든 머신에 둔다. 플러그인이 없는 머신에서�
 
 ## 다른 에이전트 붙이기
 
+Cursor CLI 는 위처럼 Claude 플러그인을 가져오므로 따로 붙일 것이 없다. 그런 길이 없는 에이전트는:
+
 `agent-state emit <상태> --agent <이름> [--session S] [--reason R] [--pid P]` 가 일반 입구다. 예: Codex 의 `notify` 설정(턴이 끝날 때
 프로그램을 부른다)에 `agent-state emit done --agent codex` 를 건다. 상태 어휘와 패널 옵션이 같으면 tmux 표시는 그대로 동작한다.
 
@@ -310,6 +362,10 @@ tmux 어댑터는 모든 머신에 둔다. 플러그인이 없는 머신에서�
 
 - 이벤트 순서: 기록만 하는 훅 플러그인을 `claude --plugin-dir` 로 올려 격리 tmux 서버(`tmux -L <이름> -f /dev/null`)의 패널에서
   진짜 Claude 를 띄우고 `send-keys` 로 조작했다. 중단 키는 사용자 설정이 Option+q 라 `M-q`, vim 입력 모드에서는 Esc 가 모드 전환에 먹힌다.
+- 번역: `claude-plugins/agent-state/test/run` 이 가짜 훅 입력(Claude, 그리고 Cursor 에서 기록한 입력)을 넣고 레코드를 확인한다.
+- Cursor: 기록용 훅을 임시 작업 폴더의 `.cursor/hooks.json`·`.claude/settings.json` 에 걸고, 고친 플러그인은 `agent --plugin-dir <경로>` 로 올린다.
+  `AGENT_STATE_DIR` 를 임시 디렉터리로 주면 실제 레코드와 섞이지 않는다. 터미널로 나간 이스케이프는 `tmux pipe-pane` 으로 받아 본다.
+  `/quit` 은 입력 칸이 비어 있고 메뉴에 `/quit  Exit` 가 뜬 것을 확인한 뒤 Enter (아니면 프롬프트로 나간다).
 - 단위: 같은 격리 서버에서 가짜 훅 입력을 `bin/agent-state hook claude` 에 넣고 패널 옵션·파일·클라이언트 출력을 본다.
   클라이언트는 `script -q -F <로그> tmux attach` 로 붙인다(`-F` 가 없으면 출력이 늦게 써져 패스스루가 안 온 것처럼 보인다).
 

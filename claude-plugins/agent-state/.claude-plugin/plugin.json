@@ -1,7 +1,7 @@
 {
   "name": "agent-state",
-  "version": "0.2.0",
-  "description": "Claude Code 의 진행 상태(작업 중·대기·끝남·오류)를 터미널 도구가 읽을 수 있게 기록하고(파일 + tmux 패널 옵션), 사람이 필요해지면 터미널 알림을 보낸다",
+  "version": "0.3.0",
+  "description": "Claude Code(와 이 플러그인을 가져다 쓰는 Cursor CLI)의 진행 상태(작업 중·대기·끝남·오류)를 터미널 도구가 읽을 수 있게 기록하고(파일 + tmux 패널 옵션), 사람이 필요해지면 터미널 알림을 보낸다",
   "author": {
     "name": "jjmean2"
   },

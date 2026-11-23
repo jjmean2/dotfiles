@@ -3,6 +3,8 @@
 Claude Code 가 지금 무엇을 하는지(작업 중·사람을 기다림·끝남·오류)를 **터미널 도구가 읽을 수 있게 기록**하고,
 사람이 필요해지면 **터미널 알림**을 보내는 Claude Code 플러그인. 마켓플레이스 `justwonder` 에 있다.
 
+Cursor CLI(`agent`)도 설치된 Claude 플러그인의 훅을 가져와 돌리므로 같은 플러그인으로 상태가 기록된다 (아래 "Cursor CLI").
+
 훅은 보여 주는 방식을 정하지 않는다. 기록과 알림만 하고, 어떻게 보일지는 받는 쪽(tmux 탭, 상태바 앱, 스크립트)이 정한다.
 설계와 계약 전체는 [`docs/agent-state.md`](../../docs/agent-state.md).
 
@@ -36,6 +38,27 @@ claude plugin install agent-state@justwonder      # 제거: claude plugin uninst
 
 `waiting`·`done`·`error` 로 바뀌면 알림을 보낸다(아래 옵션).
 
+## Cursor CLI
+
+따로 설치할 것이 없다. Cursor 는 `~/.claude/plugins` 에 설치된 Claude 플러그인을 가져오고(끄는 설정: `importThirdPartyPlugins`),
+`hooks/hooks.json` 의 이벤트를 자기 이벤트로 바꿔 같은 명령을 부른다. 플러그인을 갱신할 때는 Claude 쪽에서 한다
+(`claude plugin marketplace update justwonder` 뒤 `claude plugin update agent-state@justwonder` — Cursor 는 그 캐시 사본을 읽고, 새로 띄운 `agent` 부터 적용된다). 레코드는 `cursor-<conversation id>.json`, `@agent_name` 은 `cursor`.
+
+| 상태 | 들어가는 Cursor 훅 (hooks.json 의 이름) |
+|---|---|
+| `idle` | `sessionStart` (SessionStart), 중단된 `stop` (status `aborted`) |
+| `running` | `beforeSubmitPrompt` (UserPromptSubmit), `postToolUse` (PostToolUse) |
+| `done` | `stop` (status `completed`) |
+| `error` | `stop` (status `error`) |
+| (없음) | `sessionEnd` (SessionEnd) |
+
+Claude 와 다른 점 (Cursor CLI 2026.11.22 실측, 자세한 것은 설계 문서):
+
+- **`waiting` 이 없다.** Cursor 에는 승인 창이 뜨는 순간을 알리는 훅이 없어서, 승인을 기다리는 동안에도 `running` 으로 보인다.
+  대신 Cursor 가 스스로 터미널 알림을 보낸다("Approve command: …", 끝나면 "Cursor is waiting for you").
+- 그래서 이 플러그인은 Cursor 에서는 **오류만 알린다** (끝남 알림은 Cursor 것과 겹친다).
+- 옵션은 환경 변수로 준다: `AGENT_STATE_NOTIFY_ON`, `AGENT_STATE_NOTIFY_VIA` (Claude 의 플러그인 옵션은 Cursor 에 전달되지 않는다).
+
 ## 옵션
 
 `/config` 의 플러그인 항목이나 `/plugin configure agent-state@justwonder` 로 바꾼다.
@@ -58,6 +81,10 @@ agent-state list --json     # 레코드 원문 (한 줄에 하나)
 agent-state emit waiting --agent codex --reason input   # 다른 에이전트·스크립트용 입구
 agent-state gc              # 주인 프로세스가 죽은 레코드·패널 표시 지우기
 ```
+
+## 시험
+
+`test/run` 이 가짜 훅 입력(Claude·Cursor)으로 번역 결과를 확인한다. 실제 에이전트는 부르지 않는다.
 
 ## 한계
 

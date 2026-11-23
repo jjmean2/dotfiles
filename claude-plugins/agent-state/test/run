@@ -1,0 +1,147 @@
+#!/bin/bash
+# test/run — bin/agent-state 의 훅 번역을 가짜 입력으로 확인한다. 실제 claude·agent 는 부르지 않는다.
+#
+#   test/run [claude|cursor]…     인자가 없으면 전부
+#
+# 스크립트는 env -i 와 /bin/sh 로 돌린다. tmux 밖(TMUX_PANE 없음)이라 레코드 파일만 본다. 터미널로 나가는 것(진행 표시·알림)은
+# 끈다: TERM_PROGRAM=ghostty 면 tmux 밖에서 진행 표시를 내지 않고, 알림은 AGENT_STATE_NOTIFY_ON=off.
+# Cursor 입력은 2026.11.22 판에서 기록한 것을 줄인 것이다(필드 순서 그대로). 실패한 항목이 있으면 종료 코드 1.
+AS=$(cd "$(dirname "$0")/../bin" && pwd)/agent-state
+T=$(mktemp -d "${TMPDIR:-/tmp}/agent-state-test.XXXXXX"); T=$(cd "$T" && pwd -P)
+trap '/bin/rm -rf "$T"' EXIT
+pass=0; fail=0
+ok() { pass=$((pass + 1)); printf 'ok   %s\n' "$1"; }
+no() { fail=$((fail + 1)); printf 'FAIL %s\n' "$1"; [ $# -lt 2 ] || printf '%s\n' "$2" | sed 's/^/       | /'; }
+has() { case $1 in *"$2"*) return 0 ;; esac; return 1; }
+
+# hook <이벤트|-> <입력> [VAR=값…]  : 훅을 직접 띄운다(부모 = 이 셸). "-" 면 이벤트 이름 없이 부른다.
+hook() {
+  local ev=$1 in=$2; shift 2
+  [ "$ev" != - ] || ev=
+  # shellcheck disable=SC2086
+  printf '%s' "$in" | env -i PATH=/usr/bin:/bin AGENT_STATE_DIR="$D" AGENT_STATE_NOTIFY_ON=off TERM_PROGRAM=ghostty "$@" \
+    /bin/sh "$AS" hook claude $ev
+}
+# wrapped <이벤트> <입력> [VAR=값…] : Cursor 처럼 셸을 한 번 거쳐 띄운다(훅의 부모 = 곧 사라지는 셸, 그 부모 = 이 셸).
+wrapped() {
+  local ev=$1 in=$2; shift 2
+  printf '%s' "$in" | env -i PATH=/usr/bin:/bin AGENT_STATE_DIR="$D" AGENT_STATE_NOTIFY_ON=off TERM_PROGRAM=ghostty "$@" \
+    /bin/sh -c '/bin/sh "$0" hook claude "$1"; :' "$AS" "$ev"
+}
+rec() { cat "$D/$1.json" 2>/dev/null; }
+# is <이름> <레코드> <있어야 할 글자>…
+is() {
+  local n=$1 r; r=$(rec "$2"); shift 2
+  local w; for w in "$@"; do has "$r" "$w" || { no "$n" "want: $w
+got:  ${r:-(레코드 없음)}"; return; }; done
+  ok "$n"
+}
+gone() { if [ -e "$D/$2.json" ]; then no "$1" "$(rec "$2")"; else ok "$1"; fi; }   # gone <이름> <레코드> : 레코드가 없어야 한다
+
+t_claude() {
+  D=$T/claude; mkdir -p "$D"
+  local s=11111111-aaaa c
+  c='"session_id":"'$s'","transcript_path":"/t/'$s'.jsonl","cwd":"/work/proj","permission_mode":"default"'
+  hook SessionStart "{$c,\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}"
+  is "claude: SessionStart → idle" "claude-$s" '"state":"idle"' '"agent":"claude"' "\"pid\":$$," '"cwd":"/work/proj"' "\"transcript\":\"/t/$s.jsonl\""
+  hook UserPromptSubmit "{$c,\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"hi\"}"
+  is "claude: UserPromptSubmit → running" "claude-$s" '"state":"running"'
+  hook PermissionRequest "{$c,\"hook_event_name\":\"PermissionRequest\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}"
+  is "claude: PermissionRequest → waiting permission" "claude-$s" '"state":"waiting","reason":"permission"'
+  hook Notification "{$c,\"hook_event_name\":\"Notification\",\"notification_type\":\"permission_prompt\"}"
+  is "claude: Notification 은 waiting 을 그대로 둔다" "claude-$s" '"state":"waiting","reason":"permission"'
+  hook PostToolUse "{$c,\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}"
+  is "claude: PostToolUse → running" "claude-$s" '"state":"running"'
+  hook PermissionRequest "{$c,\"hook_event_name\":\"PermissionRequest\",\"tool_name\":\"AskUserQuestion\"}"
+  is "claude: AskUserQuestion → waiting question" "claude-$s" '"state":"waiting","reason":"question"'
+  hook Stop "{$c,\"hook_event_name\":\"Stop\"}"
+  is "claude: Stop → done" "claude-$s" '"state":"done"'
+  hook StopFailure "{$c,\"hook_event_name\":\"StopFailure\",\"error\":\"rate_limit\"}"
+  is "claude: StopFailure → error + 이유" "claude-$s" '"state":"error","reason":"rate_limit"'
+  hook SessionStart "{$c,\"hook_event_name\":\"SessionStart\",\"source\":\"compact\"}"
+  is "claude: SessionStart(compact) 는 상태를 그대로 둔다" "claude-$s" '"state":"error"'
+  hook SessionEnd "{$c,\"hook_event_name\":\"SessionEnd\",\"reason\":\"other\"}"
+  gone "claude: SessionEnd → 레코드 없음" "claude-$s"
+
+  # 이벤트 이름 없이 불러도(예전 hooks.json) 입력의 hook_event_name 으로 같은 결과
+  s=22222222-bbbb; c='"session_id":"'$s'","cwd":"/work/proj"'
+  hook - "{$c,\"hook_event_name\":\"UserPromptSubmit\"}"
+  is "claude: 이벤트 이름 없이 → 입력에서 읽는다" "claude-$s" '"state":"running"'
+  hook - "{$c,\"hook_event_name\":\"Stop\"}"
+  is "claude: 이벤트 이름 없이 Stop → done" "claude-$s" '"state":"done"'
+}
+
+t_cursor() {
+  D=$T/cursor; mkdir -p "$D"
+  local s=3cafa7f2-ca97 e
+  # Cursor 가 모든 입력 끝에 붙이는 공통 필드. 이벤트 이름은 Cursor 식이다.
+  ctail() { printf '"session_id":"%s","hook_event_name":"%s","cursor_version":"2026.11.22-e9042b2","workspace_roots":["/work/proj"],"user_email":null,"transcript_path":null' "$s" "$1"; }
+  e=(CURSOR_PROJECT_DIR=/work/proj CURSOR_VERSION=2026.11.22-e9042b2)
+
+  wrapped SessionStart "{\"conversation_id\":\"$s\",\"generation_id\":\"$s\",\"model\":\"default\",\"is_background_agent\":false,$(ctail sessionStart)}" "${e[@]}"
+  is "cursor: sessionStart → idle, 주인 = 셸의 부모" "cursor-$s" '"state":"idle"' '"agent":"cursor"' "\"pid\":$$," '"cwd":"/work/proj"'
+  gone "cursor: claude 레코드를 만들지 않는다" "claude-$s"
+
+  wrapped UserPromptSubmit "{\"conversation_id\":\"$s\",\"generation_id\":\"g1\",\"model\":\"default\",\"prompt\":\"hi\",\"attachments\":[],$(ctail beforeSubmitPrompt)}" "${e[@]}" \
+    CURSOR_TRANSCRIPT_PATH=/t/cursor.jsonl
+  is "cursor: beforeSubmitPrompt → running, 대화 기록은 환경 변수에서" "cursor-$s" '"state":"running"' "\"pid\":$$," '"transcript":"/t/cursor.jsonl"'
+
+  # tool_input 이 공통 필드보다 앞에 오고 같은 이름의 키를 가질 수 있다: 세션·작업 폴더가 흔들리면 안 된다.
+  wrapped Stop "{\"conversation_id\":\"$s\",\"model\":\"default\",\"status\":\"completed\",\"loop_count\":0,$(ctail stop)}" "${e[@]}"
+  wrapped PostToolUse "{\"conversation_id\":\"$s\",\"model\":\"default\",\"tool_name\":\"Shell\",\"tool_input\":{\"session_id\":\"other\",\"cwd\":\"/elsewhere\",\"command\":\"ls\"},\"cwd\":\"\",$(ctail postToolUse)}" "${e[@]}"
+  is "cursor: postToolUse → running (tool_input 의 session_id·cwd 에 속지 않는다)" "cursor-$s" '"state":"running"' '"cwd":"/work/proj"'
+  gone "cursor: tool_input 의 session_id 로 레코드를 만들지 않는다" "cursor-other"
+
+  # 서브에이전트의 도구 호출: 다른 conversation_id 로 PostToolUse 만 온다. 레코드를 만들지 않는다.
+  wrapped PostToolUse "{\"conversation_id\":\"13658891-sub\",\"generation_id\":\"13658891-sub\",\"tool_name\":\"Shell\",\"tool_input\":{\"command\":\"ls\"},\"session_id\":\"13658891-sub\",\"hook_event_name\":\"postToolUse\",\"cursor_version\":\"2026.11.22-e9042b2\"}" "${e[@]}"
+  gone "cursor: 서브에이전트의 postToolUse 는 레코드를 만들지 않는다" "cursor-13658891-sub"
+
+  wrapped Stop "{\"conversation_id\":\"$s\",\"model\":\"default\",\"status\":\"completed\",\"loop_count\":0,$(ctail stop)}" "${e[@]}"
+  is "cursor: stop(completed) → done" "cursor-$s" '"state":"done"'
+  wrapped UserPromptSubmit "{\"conversation_id\":\"$s\",\"prompt\":\"again\",$(ctail beforeSubmitPrompt)}" "${e[@]}"
+  wrapped Stop "{\"conversation_id\":\"$s\",\"model\":\"default\",\"status\":\"aborted\",\"loop_count\":0,$(ctail stop)}" "${e[@]}"
+  is "cursor: stop(aborted) → idle" "cursor-$s" '"state":"idle"'
+  # 사람이 중단하면 stop 이 aborted 와 error 로 거의 동시에 온다: 어느 쪽이 먼저 돌아도 idle 로 끝나야 한다.
+  wrapped Stop "{\"conversation_id\":\"$s\",\"model\":\"default\",\"status\":\"error\",\"loop_count\":0,$(ctail stop)}" "${e[@]}"
+  is "cursor: 중단 뒤에 온 stop(error) 는 넘어간다 (aborted 가 먼저)" "cursor-$s" '"state":"idle"'
+  wrapped UserPromptSubmit "{\"conversation_id\":\"$s\",\"prompt\":\"again\",$(ctail beforeSubmitPrompt)}" "${e[@]}"
+  wrapped Stop "{\"conversation_id\":\"$s\",\"model\":\"default\",\"status\":\"error\",\"loop_count\":0,$(ctail stop)}" "${e[@]}" &
+  wrapped Stop "{\"conversation_id\":\"$s\",\"model\":\"default\",\"status\":\"aborted\",\"loop_count\":0,$(ctail stop)}" "${e[@]}"
+  wait
+  is "cursor: 중단 (error 가 먼저 돌기 시작) → idle" "cursor-$s" '"state":"idle"'
+  wrapped UserPromptSubmit "{\"conversation_id\":\"$s\",\"prompt\":\"again\",$(ctail beforeSubmitPrompt)}" "${e[@]}"
+  wrapped Stop "{\"conversation_id\":\"$s\",\"model\":\"default\",\"status\":\"error\",\"loop_count\":0,$(ctail stop)}" "${e[@]}"
+  is "cursor: stop(error) 만 오면 → error" "cursor-$s" '"state":"error"'
+
+  # Cursor 가 넘기지 않는 이벤트 이름으로 불려도(직접 건 경우) 아무 일도 없다.
+  wrapped PermissionRequest "{\"conversation_id\":\"$s\",\"tool_name\":\"Shell\",$(ctail preToolUse)}" "${e[@]}"
+  is "cursor: 모르는 이벤트는 건너뛴다" "cursor-$s" '"state":"error"'
+
+  # 새 채팅(/clear)에는 훅이 없고 다음 프롬프트가 새 conversation_id 로 온다: 같은 agent 의 앞 채팅 레코드를 지운다.
+  local old=$s; s=20acd821-next
+  wrapped UserPromptSubmit "{\"conversation_id\":\"$s\",\"prompt\":\"new chat\",$(ctail beforeSubmitPrompt)}" "${e[@]}"
+  is "cursor: 새 채팅의 첫 프롬프트 → running" "cursor-$s" '"state":"running"' "\"pid\":$$,"
+  gone "cursor: 같은 agent 의 앞 채팅 레코드는 지운다" "cursor-$old"
+
+  # 끝날 때의 sessionEnd 는 처음 채팅의 id 로 온다: 그 agent 의 레코드를 모두 지운다.
+  wrapped SessionEnd "{\"conversation_id\":\"$old\",\"reason\":\"completed\",\"final_status\":\"completed\",$(ctail sessionEnd)}" "${e[@]}"
+  gone "cursor: sessionEnd(처음 채팅의 id) → 지금 채팅의 레코드도 없음" "cursor-$s"
+
+  # 셸을 거치지 않고 바로 띄우면(부모 = 셸이 아닌 프로세스, 여기서는 perl) 주인을 한 단계 더 올라가지 않는다.
+  s=4dbb0000-direct
+  local parent
+  parent=$(printf '%s' "{\"conversation_id\":\"$s\",$(ctail sessionStart)}" |
+    env -i PATH=/usr/bin:/bin AGENT_STATE_DIR="$D" AGENT_STATE_NOTIFY_ON=off TERM_PROGRAM=ghostty "${e[@]}" \
+      /usr/bin/perl -e 'system { "/bin/sh" } "sh", @ARGV; print $$' "$AS" hook claude SessionStart)
+  is "cursor: 셸 없이 띄우면 주인 = 부모" "cursor-$s" '"state":"idle"' "\"pid\":$parent,"
+}
+
+[ $# -gt 0 ] || set -- claude cursor
+for t in "$@"; do
+  case $t in
+    claude|cursor) "t_$t" ;;
+    *) echo "test/run: unknown section '$t'" >&2; exit 2 ;;
+  esac
+done
+printf '\n%s passed, %s failed\n' "$pass" "$fail"
+[ "$fail" -eq 0 ]

@@ -1,8 +1,8 @@
 #!/bin/sh
-# agent-state: 코딩 에이전트(Claude Code 등)의 진행 상태를 기록하고, 사람이 알아야 할 때 알린다.
+# agent-state: 코딩 에이전트(Claude Code, Cursor CLI 등)의 진행 상태를 기록하고, 사람이 알아야 할 때 알린다.
 # 설계와 계약(상태 어휘·레코드·tmux 옵션): docs/agent-state.md
 #
-#   agent-state hook claude          Claude Code 훅 입력(JSON, stdin)을 상태로 번역한다 (hooks/hooks.json 이 부른다)
+#   agent-state hook claude [이벤트]  훅 입력(JSON, stdin)을 상태로 번역한다 (hooks/hooks.json 이 부른다. Cursor 도 같은 줄을 부른다)
 #   agent-state emit <상태> [옵션]    다른 에이전트·스크립트용 일반 입구. 옵션: --agent A --session S --reason R
 #                                    --pid P (기본: 부모 프로세스) --cwd D
 #   agent-state list [--json]        살아 있는 레코드 목록
@@ -152,6 +152,8 @@ notify() {
     *) case $STATE in waiting|done|error) ;; *) return 0 ;; esac ;;
   esac
   [ -n "$TTY" ] || return 0
+  # Cursor 는 끝나면 스스로 알린다("Cursor is waiting for you", OSC 777 — 실측. 승인 대기도 마찬가지). 겹치지 않게 오류만 알린다.
+  if [ "$AGENT" = cursor ] && [ "$STATE" = 'done' ]; then return 0; fi
 
   where=${CWD%/}; where=${where##*/}
   case $STATE in
@@ -188,6 +190,7 @@ notify() {
 label() {
   case $AGENT in
     claude) printf 'Claude' ;;
+    cursor) printf 'Cursor' ;;
     codex)  printf 'Codex' ;;
     *)      printf '%s' "$AGENT" ;;
   esac
@@ -241,13 +244,17 @@ fast_running() {
 
 # ---------- 하위 명령 ----------
 
+# hooks/hooks.json 의 한 줄을 Claude Code 와 Cursor 가 함께 부른다 (Cursor 는 설치된 Claude 플러그인의 훅을 가져와 돌린다).
+# 이벤트 이름($1)은 그 줄이 걸린 Claude 쪽 이름이고, 누가 불렀는지는 입력으로 가린다: Cursor 의 입력에만 cursor_version 이 있다.
 hook_claude() {
   IN=$(cat)
+  EV=${1-}
+  case $IN in *'"cursor_version":"'*) hook_cursor; return 0 ;; esac
   AGENT=claude
   PID=$PPID              # 훅은 claude 프로세스가 직접 띄운다 (실측: 훅의 부모 = claude)
   jget session_id;      SESSION=$JV
   [ -n "$SESSION" ] || return 0
-  jget hook_event_name; EV=$JV
+  [ -n "$EV" ] || { jget hook_event_name; EV=$JV; }   # 이벤트 이름 없이 불렸으면 입력에서 읽는다
   state_dir; record_path
 
   # 빠른 길은 도구 호출 훅에만. UserPromptSubmit 은 턴마다 한 번이라 늘 다시 쓴다: 사람이 tmux 에서 표시를 지웠거나
@@ -290,6 +297,79 @@ hook_claude() {
     StopFailure) jget error; transition error "$JV" ;;
     SessionEnd)  jget reason; end_session "$JV" ;;
   esac
+}
+
+# Cursor CLI (agent). 실측 2026.11.22: 입력의 hook_event_name 은 Cursor 이름(beforeSubmitPrompt 등)이라 쓰지 않고 $1 을 쓴다.
+# 입력의 공통 필드(session_id 등)는 tool_input 같은 이벤트별 필드 **뒤**에 오므로 "맨 처음 나온 키" 로는 믿을 수 없다 →
+# 세션은 늘 첫 필드인 conversation_id(session_id 와 같은 값)로, 작업 폴더·대화 기록은 환경 변수로 얻는다.
+# 사람을 기다리는 순간을 알리는 훅(PermissionRequest·Notification)은 Cursor 에 없다: 승인 창이 떠 있는 동안에도 running 이다.
+hook_cursor() {
+  AGENT=cursor
+  jget conversation_id; SESSION=$JV
+  [ -n "$SESSION" ] || return 0
+  state_dir; record_path
+  # 서브에이전트(Task)의 도구 호출은 자기 conversation_id 로 온다(실측: 도구 훅만 오고 시작·끝 훅은 없다).
+  # 레코드가 없는 세션의 PostToolUse 는 그것이므로 넘어간다 — 받으면 지울 길 없는 running 레코드가 남는다.
+  if [ "$EV" = PostToolUse ]; then
+    [ -e "$F" ] || return 0
+    fast_running && return 0
+  fi
+
+  CWD=${CURSOR_PROJECT_DIR:-$PWD}
+  TRANSCRIPT=${CURSOR_TRANSCRIPT_PATH-}
+  TOOL=''
+  cursor_pid
+  case $EV in
+    SessionStart)     gc_quiet; cursor_one_chat; transition idle ;;
+    UserPromptSubmit) cursor_one_chat; FORCE=1; transition running ;;
+    PostToolUse)      transition running ;;
+    Stop)
+      jget status
+      case $JV in
+        aborted) transition idle ;;       # 사람이 멈췄다: 알릴 일이 아니다
+        error)
+          # 사람이 중단하면 stop 이 aborted 와 error 로 거의 동시에 두 번 온다(실측, 순서는 그때그때 다르다).
+          # 잠깐 기다렸다가 그 사이 aborted 가 idle 로 바꿔 놓았으면 중단이었던 것이므로 넘어간다.
+          sleep 0.5 2>/dev/null
+          read_record
+          [ "$OLD_STATE" != idle ] || return 0
+          transition error ;;
+        *)       transition 'done' ;;
+      esac ;;
+    SessionEnd)       cursor_one_chat; end_session other ;;
+  esac
+}
+
+# 패널의 주인 = agent 프로세스. Cursor 는 훅을 셸(`zsh -c …`)을 거쳐 띄워서(실측) $PPID 는 훅과 함께 사라지는 셸이고, 그 부모가 agent 다.
+# ps 는 세션마다 한 번만 부른다: 그 뒤로는 레코드에 적어 둔 pid 가 살아 있으면 그것을 쓴다.
+cursor_pid() {
+  PID=''
+  if [ "$EV" != SessionStart ] && [ -r "$F" ]; then
+    IFS= read -r line <"$F" || :
+    p=${line#*\"pid\":}; p=${p%%,*}
+    case $p in ''|*[!0-9]*) ;; *) kill -0 "$p" 2>/dev/null && PID=$p ;; esac
+  fi
+  [ -z "$PID" ] || return 0
+  out=$(ps -o ppid=,comm= -p "$PPID" 2>/dev/null) || out=
+  # shellcheck disable=SC2086
+  set -- $out
+  c=${2-}; c=${c##*/}
+  case ${c#-} in
+    sh|bash|zsh|dash|ksh|fish) PID=${1-} ;;   # 셸을 거쳤다: 한 단계 위
+  esac
+  case $PID in ''|*[!0-9]*|0|1) PID=$PPID ;; esac
+}
+
+# 새 채팅(`/clear`)에는 훅이 없다(실측): 다음 프롬프트가 새 conversation_id 로 올 뿐이라 앞 채팅의 레코드가 남는다.
+# 끝날 때의 sessionEnd 도 지금 채팅이 아니라 **처음** 채팅의 id 로 온다(실측).
+# agent 프로세스 하나가 보는 채팅은 하나이므로, 같은 주인(pid)의 다른 cursor 레코드는 지운다.
+cursor_one_chat() {
+  for f in "$SD"/cursor-*.json; do
+    [ -e "$f" ] && [ "$f" != "$F" ] || continue
+    IFS= read -r line <"$f" || [ -n "$line" ] || continue
+    p=${line#*\"pid\":}; p=${p%%,*}
+    [ "$p" != "$PID" ] || rm -f "$f"
+  done
 }
 
 emit() {
@@ -351,7 +431,7 @@ cmd=${1-}; [ $# -gt 0 ] && shift
 case $cmd in
   hook)
     case ${1-} in
-      claude) hook_claude ;;
+      claude) shift; hook_claude "$@" ;;
       *) cat >/dev/null ;;
     esac
     exit 0 ;;
