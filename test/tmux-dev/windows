@@ -211,6 +211,7 @@ if TM list-commands new-pane > /dev/null 2>&1; then
   yes_has "picker: the main row is listed" "$first" "main"
   not_has "picker: the window the picker floats in is not taken for main's" "$first" "●"
   if wait_for 8 two_windows; then ok "picker: enter on main opens a main window"; else no "picker: enter on main opens a main window" "$(TM list-windows -t f1)"; fi
+  yes_has "picker: a window W makes still gets @worktree (written only, for handoff)" "$(TM list-windows -t f1 -F '#{@worktree}' | tr '\n' ' ')" "$LIB"
 else
   echo "skip: this tmux has no new-pane (floating panes)"
 fi
@@ -239,6 +240,10 @@ plan=$( (cd "$CL" && RUN env TMUX_DEV_STATE="$st" tmux-dev worktree --cleanup-pr
 sh=$(TM display-message -p -t "$p1" '#{pane_current_command}')   # 패널에서 도는 프로그램 이름도 보여 준다 (macOS 의 /bin/sh 는 bash)
 yes_has "preview: the marked window" "$plan" "close window ●$(idx_of "$p1") ($sh)"
 yes_has "preview: the unmarked window" "$plan" "close window ●$(idx_of "$p2") ($sh)"
+# Claude Code 의 패널은 명령 이름이 버전 숫자로 나온다. 미리보기에서 알아볼 수 있게 claude 로 바꿔 읽는지 (패널 한 줄을 직접 먹인다)
+# shellcheck disable=SC2016  # $1 은 안쪽 bash 가 펼친다
+got=$(printf '0\037@1\037%%1\0370\0372.1.330\037/x\037/x\n' | "${BASE_ENV[@]}" bash -c '. "$1/common.sh"; . "$1/picker.sh"; . "$1/panes.sh"; panes_read; printf %s "${P_CMD[0]}"' _ "$PL/lib" 2>&1)
+eq "preview: a Claude Code pane (command = version number) is named claude" claude "$got"
 yes_has "preview: one pane of the mixed window" "$plan" "close 1 of 2 panes in window ●$(idx_of "$p3a") ($sh)"
 not_has "preview: not the pane that moved to another worktree" "$plan" "●$(idx_of "$p4")"
 not_has "preview: not the main window" "$plan" "●0"
@@ -248,7 +253,7 @@ job "$st"
 res=$(strip < "$st/result" 2>/dev/null)
 yes_has "cleanup: reports success" "$res" "cleaned up"
 if pane_gone "$p1"; then ok "cleanup: closes the marked window's pane"; else no "cleanup: closes the marked window's pane"; fi
-if pane_gone "$p2"; then ok "cleanup: closes the unmarked window's pane"; else no "cleanup: closes the unmarked window's pane"; fi
+if pane_gone "$p2"; then ok "cleanup: closes the unmarked window's pane (and the program in it)"; else no "cleanup: closes the unmarked window's pane (and the program in it)"; fi
 if pane_gone "$p3b"; then ok "cleanup: closes the pane that sits in the worktree"; else no "cleanup: closes the pane that sits in the worktree"; fi
 if pane_alive "$p3a"; then ok "cleanup: keeps the other pane of a mixed window"; else no "cleanup: keeps the other pane of a mixed window"; fi
 if pane_alive "$p4"; then ok "cleanup: keeps a pane that moved to another worktree"; else no "cleanup: keeps a pane that moved to another worktree"; fi

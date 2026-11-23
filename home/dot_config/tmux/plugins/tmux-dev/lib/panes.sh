@@ -66,6 +66,9 @@ panes_read() {  # stdin: PANE_FMT 줄들 → P_*
   while IFS=$US read -r idx win id modal cmd start cur; do
     [ -n "$id" ] || continue
     [ "$modal" != 1 ] || continue
+    # Claude Code 는 실행 파일의 실제 이름이 버전 숫자라(~/.local/share/claude/versions/2.1.330) 명령 이름이 숫자로 나온다.
+    # 정리 미리보기에서 무엇이 닫히는지 알아볼 수 있게 claude 로 보인다 (tmux.conf 의 탭 이름과 같은 규칙)
+    [[ $cmd =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] && cmd=claude
     pane_owner "$start" "$cur" || OWNER=""
     P_IDX+=("$idx"); P_WIN+=("$win"); P_ID+=("$id"); P_CMD+=("$cmd"); P_START+=("$START"); P_CUR+=("$cur"); P_OWN+=("$OWNER")
   done
