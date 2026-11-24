@@ -190,7 +190,7 @@ list_worktrees() {  # "<경로>\t<브랜치>\t<플래그>" (메인이 첫 줄. �
 }
 # 세션의 패널 (lib/panes.sh 의 PANE_FMT. 창 번호 순). 한 번만 읽어 둔다: 행마다 tmux 를 부르면 워크트리 19개에 ~100ms.
 # 워크트리 경로 → 창은 window_for, 디렉토리 → 창은 dir_window_for (둘 다 lib/panes.sh. 결과는 WIN·WIN_IDX)
-list_panes() { [ -n "$SESSION" ] && tmux list-panes -s -t "$SESSION" -F "$PANE_FMT" 2>/dev/null || true; }
+list_panes() { [ -n "$SESSION" ] && tmux_list list-panes -s -t "$SESSION" -F "$PANE_FMT" || true; }
 PANES_READY=""
 panes_reload() { panes_read < <(list_panes); PANES_READY=1; }
 panes_load() { [ -n "$PANES_READY" ] || panes_reload; }
