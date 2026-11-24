@@ -1,0 +1,120 @@
+#!/bin/sh
+# tmux-fingers 를 한 번에 하나만 돌리는 감싸개와, 키가 fingers 테이블에 갇혔을 때의 비상 탈출.
+# tmux.conf 의 "tmux-fingers" 절이 부른다. 왜 필요한지와 갇히는 원리는 그 절에 있다.
+#
+# 사용: fingers start <pane_id> [--mode jump]   prefix F / J 가 부른다. 실행 파일의 start 를 돌리고, 끝나면 남은
+#                                               흔적을 고치고(heal) 실행 표시를 지운다
+#       fingers busy                            이미 실행 중일 때 prefix F / J 가 부른다. 표시가 낡았으면 지운다
+#       fingers exit                            fingers 테이블의 q / Esc / C-c. 받을 프로세스가 없으면 rescue 로 넘어간다
+#       fingers rescue                          갇힌 상태를 손으로 푼다. tmux 밖(다른 터미널, ssh)에서도 돈다
+#
+# 실행 표시: 서버 사용자 옵션 @fingers-running. prefix F 를 누른 순간 tmux 가 "pending" 으로 세우고(키 바인딩
+#       안이라 프로세스가 뜨기 전에 동기로 선다), start 가 자기 PID 로 바꾸고, 끝날 때 지운다.
+# heal 과 rescue: 둘 다 아래 restore 를 돌린다. rescue 는 그 앞에 남은 start 프로세스를 끝내고, 고칠 것이 없어도
+#       알린다. heal 은 프로세스를 건드리지 않고(이미 끝났다) 고친 것이 있을 때만 알린다. start 가 죽거나
+#       겹쳐 떠서 prefix 를 None 으로 남겨도 heal 이 되돌리므로, 키가 root 테이블에 돌아왔는데 prefix 만 죽은
+#       경우(q 가 그냥 셸로 가는 경우)도 스스로 풀린다.
+
+bin="$HOME/.local/bin/tmux-fingers"
+# 실행 파일과 같은 자리 (실행 파일은 XDG_STATE_HOME 을 보지 않고 늘 ~/.local/state 에 쓴다).
+logdir="$HOME/.local/state/tmux-fingers"
+
+# 갇힌 흔적을 되돌리고, 고친 것마다 한 줄씩 출력한다.
+restore() {
+    # 패널. fingers 는 "[fingers]" 윈도우에 cat 패널을 만들고 대상 패널과 자리를 맞바꾼다. 중간에 멈췄으면
+    # cat 패널이 사용자 윈도우에, 사용자 패널이 [fingers] 윈도우에 남는다. 둘을 짝지어 다시 바꾼다.
+    panes=$(tmux list-panes -a -F '#{pane_id}	#{window_name}	#{pane_start_command}')
+    strays=$(printf '%s\n' "$panes" | awk -F '\t' '$2 != "[fingers]" && $3 == "cat" { print $1 }')
+    hostages=$(printf '%s\n' "$panes" | awk -F '\t' '$2 == "[fingers]" && $3 != "cat" { print $1 }')
+    for stray in $strays; do
+        set -- $hostages
+        [ $# -gt 0 ] || break
+        tmux swap-pane -d -s "$1" -t "$stray" && echo "pane $1"
+        shift
+        hostages="$*"
+    done
+    # 사용자 패널이 남지 않은 [fingers] 윈도우만 닫는다. 사용자 패널이 남은 윈도우는 이름만 바꿔 둔다.
+    tmux list-panes -a -F '#{window_id}	#{window_name}	#{pane_start_command}' | awk -F '\t' '
+        $2 == "[fingers]" { seen[$1] = 1; if ($3 != "cat") keep[$1] = 1 }
+        END { for (w in seen) print (w in keep ? "keep" : "kill"), w }' |
+    while read -r what win; do
+        if [ "$what" = kill ]; then tmux kill-window -t "$win"; else tmux rename-window -t "$win" fingers-rescued; fi
+        echo "window $win"
+    done
+
+    # 키 테이블. fingers 는 세션 옵션 key-table 을 fingers 로 바꾸고(set-window-option 으로 부르지만 세션 옵션이라
+    # 세션에 붙는다) 클라이언트를 fingers 테이블로 보낸다. 세션 값은 지워 전역(root)을 따르게 한다.
+    for s in $(tmux list-sessions -F '#{session_id}'); do
+        if [ "$(tmux show-options -qv -t "$s" key-table)" = fingers ]; then
+            tmux set-option -u -t "$s" key-table && echo "key-table $s"
+        fi
+    done
+    tmux list-clients -F '#{client_name}	#{client_key_table}' | while IFS='	' read -r c table; do
+        if [ "$table" = fingers ]; then tmux switch-client -c "$c" -T root && echo "client $c"; fi
+    done
+
+    # prefix. fingers 가 None 으로 꺼 둔 것을 prefix F 를 누를 때 적어 둔 값으로 되돌린다.
+    # 적어 둔 값이 없으면(F 를 누르지 않았는데 꺼짐) 기본값(C-b / 없음)으로 둔다. 그때 prefix2 는 prefix R 로 되살린다.
+    for opt in prefix prefix2; do
+        [ "$(tmux show-options -gqv "$opt")" = None ] || continue
+        saved=$(tmux show-options -gqv "@fingers-saved-$opt")
+        if [ -n "$saved" ] && [ "$saved" != None ]; then
+            tmux set-option -g "$opt" "$saved"
+        else
+            tmux set-option -gu "$opt"
+        fi
+        [ "$(tmux show-options -gqv "$opt")" = None ] || echo "$opt"
+    done
+}
+
+rescue() {
+    # 남은 start 프로세스를 끝낸다. 소켓을 잃은 프로세스는 입력을 영영 받지 못해 스스로 끝나지 않는다.
+    # 이 서버의 것만 가려내지 않는다 (tmux 서버를 하나만 쓰는 것이 전제). 끝나면 감싸개가 표시를 지운다.
+    pkill -f 'tmux-fingers start' 2>/dev/null
+    fixed=$(restore)
+    tmux set-option -gu @fingers-running
+    if [ -n "$fixed" ]; then
+        tmux display-message "tmux-fingers: 갇힌 상태를 풀었다 ($(echo $fixed))"
+    else
+        tmux display-message 'tmux-fingers: 고칠 것이 없었다'
+    fi
+}
+
+case "$1" in
+start)
+    shift
+    trap 'tmux set-option -gu @fingers-running' EXIT
+    trap 'exit 1' HUP INT TERM
+    tmux set-option -g @fingers-running "$$"
+    mkdir -p "$logdir"
+    "$bin" start "$@" >>"$logdir/fingers.log" 2>&1
+    fixed=$(restore)
+    [ -z "$fixed" ] || tmux display-message "tmux-fingers: 끝난 뒤 남은 흔적을 고쳤다 ($(echo $fixed))"
+    ;;
+busy)
+    # PID 가 적혀 있는데 그 프로세스가 없으면 표시가 낡은 것이다 (감싸개가 SIGKILL 로 죽은 경우 등).
+    running=$(tmux show-options -gqv @fingers-running)
+    case "$running" in
+    '' | *[!0-9]*) tmux display-message 'tmux-fingers: 이미 실행 중' ;;
+    *)
+        if kill -0 "$running" 2>/dev/null; then
+            tmux display-message 'tmux-fingers: 이미 실행 중'
+        else
+            tmux set-option -gu @fingers-running
+            tmux display-message 'tmux-fingers: 낡은 실행 표시를 지웠다. 다시 누른다'
+        fi
+        ;;
+    esac
+    ;;
+exit)
+    # 듣는 프로세스가 있으면 평소처럼 나간다. 없으면(소켓 파일이 없거나 연결 거부) 갇힌 것이니 rescue 로 푼다.
+    "$bin" send-input exit 2>/dev/null || rescue
+    ;;
+rescue)
+    rescue
+    ;;
+*)
+    echo "usage: fingers start <pane_id> [--mode jump] | busy | exit | rescue" >&2
+    exit 2
+    ;;
+esac
