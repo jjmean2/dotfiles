@@ -19,6 +19,13 @@
 
 # shellcheck disable=SC2034  # 부른 쪽 스크립트가 쓴다
 US=$'\x1f'         # tmux·git 포맷 출력의 칸 구분자 (빈 칸이 있을 수 있다)
+# tmux 목록 명령(list-panes·list-sessions … -F)을 부르고 US 를 되살린다. tmux 는 -F 출력의 제어 문자를 글자로 바꿔 내보낸다
+# (US → "\037" 네 글자, 탭 → "_". tmux 3.4 에서 확인). 그대로 IFS=$US 로 읽으면 한 줄이 한 칸이 되어 패널·세션을 하나도
+# 못 찾는다 (prefix W 가 열린 워크트리 창을 못 찾아 새 창을 만들었다). 실패하면 아무것도 출력하지 않는다
+tmux_list() {
+  local line
+  tmux "$@" 2>/dev/null | while IFS= read -r line; do printf '%s\n' "${line//\\037/$US}"; done
+}
 : "${RECENT_MAX:=20}"
 TMUX_DEV_PARENTS="${TMUX_DEV_PARENTS:-${TMUX_DEV_HISTORY%/*}/parents}"   # 위치 피커로 무언가를 만든 부모 디렉토리 (최근 순)
 
