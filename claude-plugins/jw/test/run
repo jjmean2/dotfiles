@@ -8,6 +8,10 @@
 BIN=$(cd "$(dirname "$0")/../bin" && pwd)
 BW=$BIN/branch-worktree; HO=$BIN/worktree-handoff; PF=$BIN/pr-review-fetch
 T=$(mktemp -d "${TMPDIR:-/tmp}/jwtest.XXXXXX"); T=$(cd "$T" && pwd -P)
+# UTF-8 로케일: en_US.UTF-8 이 없는 시스템(리눅스 컨테이너 등)에서는 C.UTF-8. 둘 다 없으면 en_US.UTF-8 (경고만 난다)
+LOC=$(locale -a 2>/dev/null | awk 'tolower($0) ~ /^en_us\.utf-?8$/ { print; f = 1; exit } tolower($0) ~ /^c\.utf-?8$/ && !c { c = $0 }
+  END { if (!f && c) print c }')
+LOC=${LOC:-en_US.UTF-8}
 pass=0; fail=0
 ok() { pass=$((pass + 1)); printf 'ok   %s\n' "$1"; }
 no() { fail=$((fail + 1)); printf 'FAIL %s\n' "$1"; [ $# -lt 2 ] || printf '%s\n' "$2" | sed 's/^/       | /'; }
@@ -48,7 +52,7 @@ run() {
   local root=$1; shift
   local envs=(HOME="$root/home" PATH="$root/bin:/usr/bin:/bin" XDG_STATE_HOME="$root/state"
     XDG_CONFIG_HOME="$root/config" XDG_DATA_HOME="$root/data" STUB_LOG_DIR="$root/log" TMPDIR="$root/tmp"
-    LC_ALL=en_US.UTF-8)
+    LC_ALL="$LOC")
   while [ "$1" != -- ]; do envs+=("$1"); shift; done; shift
   out=$(cd "${CWD:-$root/repo}" && env -i "${envs[@]}" /bin/bash "$@" <"${STDIN:-/dev/null}" 2>&1); rc=$?
 }
@@ -342,10 +346,13 @@ t_tmux() {
   TMUX_BIN=$(command -v tmux || true)
   [ -n "$TMUX_BIN" ] || { echo "skip tmux (tmux 없음)"; return 0; }
   M=$T/tm; mkroot "$M"; sock="jwtest$$"
-  tm() { "$TMUX_BIN" -L "$sock" -f /dev/null "$@"; }
+  # 패널 셸을 로그인 셸로 띄우지 않는다. 로그인 셸은 /etc/profile 로 PATH 를 다시 짜서, 진짜 claude 가 깔린 곳이 가짜 도구보다
+  # 앞에 올 수 있다 (그러면 진짜 claude 가 뜬다)
+  printf '%s\n' 'set -g default-command "exec /bin/sh"' >"$M/tmux.conf"
+  tm() { "$TMUX_BIN" -L "$sock" -f "$M/tmux.conf" "$@"; }
   ( cd "$M/repo" && env -i HOME="$M/home" PATH="$M/bin:$(dirname "$TMUX_BIN"):/usr/bin:/bin" SHELL=/bin/sh TERM=xterm-256color \
       XDG_STATE_HOME="$M/state" XDG_CONFIG_HOME="$M/config" XDG_DATA_HOME="$M/data" STUB_LOG_DIR="$M/log" \
-      LC_ALL=en_US.UTF-8 "$TMUX_BIN" -L "$sock" -f /dev/null new-session -d -s main -x 200 -y 50 )
+      LC_ALL="$LOC" "$TMUX_BIN" -L "$sock" -f "$M/tmux.conf" new-session -d -s main -x 200 -y 50 )
   tm new-session -d -s other -x 80 -y 24   # 가장 최근 세션은 other. 윈도우는 부른 패널의 세션(main)에 생겨야 한다
   inside() {   # inside <브랜치> <가짜 도구 로그> <worktree-handoff 인자…> : main 세션의 첫 패널에서 돌리고 끝나길 기다린다
     local br=$1 logname=$2; shift 2
