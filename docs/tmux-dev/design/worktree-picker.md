@@ -183,6 +183,15 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
     쉘보다 늦게 끝나는 nvim·claude 와 그 자식, 백그라운드 작업이 들어간다. 5초 안에 다 끝나지 않으면 지우지 않고 실패한다
     (`processes in its windows are still running`). 살아남은 프로세스의 cwd 는 옮긴 휴지통을 따라가서, 시간이 지났다고
     진행하면 거기 쓴 것이 강제 삭제로 사라진다. (PR #144 리뷰)
+- **서브모듈이 든 워크트리는 서브모듈에만 있는 것을 보고 --force 로 지운다 (2026-11-25).** git 은 초기화된 서브모듈이 있는
+  워크트리를 `move`·`remove` 모두 거부한다(`working trees containing submodules cannot be moved or removed`). 서브모듈의 저장소가
+  `<common>/worktrees/<id>/modules/` 에 있어 워크트리와 함께 사라지기 때문이다. 예전에는 이 에러로 실패해 패널만 닫히고 워크트리·
+  브랜치가 남았다. 이제 `dirty_guard` 가 `submodule_guard` 를 부르고, `trash_worktree` 는 이 에러일 때만 `remove --force` 로 넘어간다.
+  대상은 git 의 판정과 같게 잡는다: `modules/` 아래 저장소 전부(중첩, deinit 해서 체크아웃 없는 것 포함) + `submodule foreach
+  --recursive` 로 체크아웃된 것 전부(흡수 안 된 옛 `.git` 디렉토리 포함). 각각에서 원격 추적 브랜치에 없는 커밋(로컬 브랜치·HEAD 기준,
+  원격이 없으면 전부), `refs/stash`, 커밋 안 된 변경(`.gitmodules` 의 `ignore=` 로 상위 status 에 숨을 수 있어 직접 센다)을 본다.
+  하나라도 있거나 판정을 못 하면 아무것도 지우지 않는다. Claude Code 의 WorktreeRemove 훅(`hook_remove`)은 Claude 가 지우기로
+  정한 뒤라 예전처럼 `--force --force` 로 지운다.
   - `git status` 가 실패하면(깨진 `.git`, `safe.directory` 소유자 검사, 권한) 판정 못 함 = 막는다. 파이프(`… | wc -l`)로 세면
     실패해도 `0` 이 찍히고, `||`·`if` 안에서 불린 함수에서는 `set -e` 도 꺼져 있어 "깨끗함" 으로 읽혔다. 행 마커는 `dirty ?`,
     ctrl-x 는 `cannot check …`, 한꺼번에 정리는 `unchecked` 로 건너뛴다. (PR #144 리뷰)
