@@ -317,8 +317,20 @@ tmux.conf 의 상태바·탭·패널 테두리(4~6번 섹션)는 이 어댑터�
 
 tmux 기본 `choose-tree` 를 floating pane 에 띄운다(tmux man 의 `new-pane -E; choose-tree -hk` 꼴, 크기·스타일은 `@float-*` 를 따른다).
 
-- `-f '#{E:@agent_st}'`(패널 옵션 또는 진행 표시에서 읽은 상태): 에이전트가 있는 패널만. 그런 패널이 없는 윈도우·세션은 트리에서 빠진다.
+- `-f`: 에이전트가 있는 패널만. 상태(`#{E:@agent_st}`, `idle` 포함)가 있거나, 상태는 없어도 전면 명령(`#{pane_current_command}`)이
+  `@agent-state-agent-cmds` 정규식에 맞는 패널이다(기본: 버전 숫자 꼴인 Claude Code, `claude` `codex` `cursor-agent` `gemini` `opencode` `aider`).
+  그런 패널이 없는 윈도우·세션은 트리에서 빠진다. 목적은 상태와 상관없이 에이전트 패널이 어디 있는지 한눈에 보는 것.
 - `-F`: 패널 줄 = `◆ waiting (permission)  /경로`, 윈도우·세션 줄 = 이름. 아이콘과 상태 글자는 상태바와 같은 색(`@agent-state-color-*`)에 굵게다.
+- 모아 보기에만 있는 두 줄 (탭·상태바·테두리에는 내지 않는다. 새로 기록하는 값도 없다 — 그릴 때 포맷으로만 가린다):
+
+  | 표시 | 뜻 | 색 |
+  |---|---|---|
+  | `○ idle` | 레코드(②)가 `idle` — 세션은 있고 할 일 없음. `done` 을 들어와서 지운 패널도 여기 | `@c_sub` |
+  | `◌ unknown` | 상태는 없는데 에이전트 명령이 떠 있다 — 플러그인 없는 세션, 첫 훅 전, ③만 있던 패널을 지운 뒤 | `@c_dim` |
+
+  아이콘 `@agent-state-icon-{idle,unknown}`, 색 `@agent-state-color-{idle,unknown}`. 비어 있는 원(○)과 점선 원(◌)으로
+  "알지만 한가함" 과 "모름" 을 가르고, 흐린 색이라 주의가 필요한 줄보다 눈에 덜 띈다.
+  한계: Cursor CLI 는 명령이 `node` 라 포맷만으로는 못 잡는다(플러그인이 있으면 SessionStart 에서 `idle` 이 되므로 보통은 문제없다).
   `choose-tree` 도 줄을 `format_draw()` 로 그려서 `#[fg=…]` 가 먹는다(tmux `mode-tree.c`). 커서가 있는 줄은 선택 색이 이겨 색이 빠진다.
 - 한 번만 뜬다: modal floating pane(`new-pane -O`, 창마다 하나)으로 띄우고, 활성 패널이 modal 이면(`if -F '#{pane_modal_flag}'`) 아무것도 안 한다.
   `prefix s`·`w` 는 지금 패널에 모드를 열어 tmux 가 같은 모드를 다시 열지 않지만(`window_pane_set_mode`), 이건 누를 때마다 새 패널을

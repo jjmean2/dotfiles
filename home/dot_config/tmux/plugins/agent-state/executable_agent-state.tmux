@@ -16,6 +16,7 @@
 #                       — 백그라운드 세션은 자기 tty 로 OSC 9;4 를 내고 데몬이 붙어 있는 패널로 넘겨 주므로 여기로 잡힌다
 #   pane-focus-in 훅    다른 데서 들어오면 그 패널의 done 을 지운다 (봤으므로, bin/agent-state-ack)
 #   prefix a            에이전트가 있는 패널만 모은 choose-tree (floating pane). Enter 로 그 패널로 간다
+#                       여기서만 idle(○)과 정보 없음(◌ unknown: 에이전트 명령이 떠 있는데 상태가 없다)까지 보여 준다
 #   prefix M-a          나를 기다리는 다음 패널로 바로 가기 (waiting → error → done, 오래된 것부터)
 #   prefix M-A          지금 패널의 표시 지우기 (Esc 로 거절·중단하면 훅이 오지 않아 남는 표시용)
 #
@@ -28,7 +29,12 @@
 # 설정 (run-shell 줄보다 앞에서 set -g, 없으면 기본값)
 #   @agent-state-enable           on      off 면 아무것도 등록하지 않는다 (위)
 #   @agent-state-icon-{running,waiting,done,error}    ⋯ ◆ ✔ ✘
+#   @agent-state-icon-{idle,unknown}                  ○ ◌    모아 보기에서만 쓴다
 #   @agent-state-color-{running,waiting,done,error}   (아이콘 글자색)   빈 값 = 색 안 바꿈
+#   @agent-state-color-{idle,unknown}                 기본 @c_sub @c_dim (없으면 #a6adc8 #7f849c). 모아 보기에서만
+#   @agent-state-agent-cmds       (정규식) 모아 보기에서 "정보 없음" 으로 잡을 패널 명령(#{pane_current_command}).
+#                                 기본값은 아래 cmds_re. Claude Code 는 명령 이름이 버전 숫자(2.1.330)로 보인다.
+#                                 빈 값이면 정보 없음을 찾지 않는다
 #                                 기본값은 tmux.conf 팔레트의 신호색 @c_run @c_attn @c_ok @c_err 이다 (참조로 넣으므로
 #                                 팔레트를 바꾸면 따라간다). 팔레트가 없는 설정에서는 #3b9eff #ffc400 #22e06b #ff3d5a.
 #                                 탭 바탕을 칠하는 색은 여기가 아니라 기본 층이 정한다 (@c_attn, @c_err).
@@ -80,6 +86,15 @@ c_wait=$(opt @agent-state-color-waiting "$(tok @c_attn '#ffc400')")
 c_done=$(opt @agent-state-color-done "$(tok @c_ok '#22e06b')")
 c_err=$(opt @agent-state-color-error "$(tok @c_err '#ff3d5a')")
 tab_paint=$(optd @agent-state-tab-paint on)
+# 모아 보기 전용. 탭·상태바·테두리에는 내지 않는다(그 둘은 "할 일 없음" 이라 눈에 띌 이유가 없다).
+i_idle=$(optd @agent-state-icon-idle '○')
+i_unk=$(optd @agent-state-icon-unknown '◌')
+c_idle=$(opt @agent-state-color-idle "$(tok @c_sub '#a6adc8')")
+c_unk=$(opt @agent-state-color-unknown "$(tok @c_dim '#7f849c')")
+# 정보 없음 = 상태는 없는데 에이전트로 보이는 명령이 패널 전면에 떠 있다 (플러그인을 안 깐 claude, 아직 훅이 안 온 세션,
+# ③만 있던 패널을 지운 뒤 등). 포맷만 쓴다(fork 없음). Cursor CLI 는 명령이 node 라 여기로는 못 잡는다(tmux.conf 의 S-Enter 참고).
+# 정규식에 쉼표는 쓰지 않는다 (포맷 구분자다).
+cmds_re=$(opt @agent-state-agent-cmds '^([0-9]+[.][0-9]+[.][0-9]+|claude|codex|cursor-agent|gemini|opencode|aider)$')
 
 # 색을 입힌 아이콘. 뒤의 #[default] 는 그 포맷의 바탕 스타일(window-status-style 등)로 되돌린다.
 paint() { if [ -n "$1" ]; then printf '#[fg=%s]%s#[default]' "$1" "$2"; else printf '%s' "$2"; fi; }
@@ -175,7 +190,11 @@ if [ -n "$key_tree" ]; then
   st_col="#{?#{==:$st,waiting},$(paint_b "$c_wait" "$i_wait waiting"),"
   st_col+="#{?#{==:$st,error},$(paint_b "$c_err" "$i_err error"),"
   st_col+="#{?#{==:$st,done},$(paint_b "$c_done" "$i_done done"),"
-  st_col+="#{?#{==:$st,running},$(paint_b "$c_run" "$i_run running"),}}}}"
+  st_col+="#{?#{==:$st,running},$(paint_b "$c_run" "$i_run running"),"
+  st_col+="#{?#{==:$st,idle},$(paint_b "$c_idle" "$i_idle idle"),"
+  st_col+="#{?$st,$st,$(paint_b "$c_unk" "$i_unk unknown")}}}}}}"
+  # 모아 보기에 넣을 패널: 상태가 있거나(idle 포함), 상태는 없어도 에이전트 명령이 떠 있으면.
+  if [ -n "$cmds_re" ]; then pick="#{?$st,1,#{m/r:$cmds_re,#{pane_current_command}}}"; else pick="$st"; fi
   line="#{?pane_format,$st_col#{?@agent_reason, (#{@agent_reason}),}  #{pane_current_path},#{?window_format,#{window_name},#{session_name}}}"
   # 한 번만 뜨게: prefix s·w 는 지금 패널에 choose-tree 를 열고, 이미 그 모드면 tmux 가 다시 열지 않는다(window_pane_set_mode).
   # 여기는 누를 때마다 새 패널을 만드므로 그 보호가 없어 모아 보기 안에서 prefix a 를 다시 누르면 패널이 쌓였다.
@@ -183,7 +202,7 @@ if [ -n "$key_tree" ]; then
   #   if -F    활성 패널이 modal 이면(= 이미 떠 있다) 아무것도 안 한다. 없으면 "window already has a modal pane" 오류가 뜬다
   # 묶을 명령은 if 에 문자열 하나로 넘기고 tmux 가 키를 누를 때 파싱한다. 값마다 작은따옴표로 싼다(값에 작은따옴표는 없다).
   open="new-pane -O -E -x '${size%,*}' -y '${size#*,}' -s '$fs' -S '$fb' -R '$fb' -B '$fl' ; move-pane -P centre ;"
-  open+=" choose-tree -hk -f '$st' -F '$line'"
+  open+=" choose-tree -hk -f '$pick' -F '$line'"
   tmux bind-key "$key_tree" if-shell -F '#{pane_modal_flag}' '' "$open"
 fi
 [ -z "$key_jump" ] || tmux bind-key "$key_jump" run-shell -b "$DIR/bin/agent-state-jump '#{client_name}' '#{pane_id}'"
