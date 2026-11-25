@@ -5,7 +5,7 @@
 | 스킬 | 하는 일 |
 |---|---|
 | `/jw:handoff [<브랜치>] [fork\|fresh] [--agent claude\|cursor] [--base <ref>] [--in-stack\|--new-worktree] [추가 지시]` | 대화를 **포크**하거나 작업 지시서를 쓴 **새 세션**(Claude 또는 Cursor)을 브랜치 워크트리에 연다. 모델도 대화를 보고 부르며, 실행 전에 확인을 받는다 |
-| `/jw:pr-review-handle [PR] [--all] [--stack]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 원인을 따져 수정 계획(개별 수정, 근거가 있을 때만 공통 원인·구조 개선)과 배경 원리를 설명한다 |
+| `/jw:pr-review-handle [PR…] [--all] [--stack [--range]] [--max] [-- 추가 지시]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 원인을 따져 수정 계획(개별 수정, 근거가 있을 때만 공통 원인·구조 개선)과 배경 원리를 설명한다 |
 | `/jw:pr-review-apply [수정 단위\|지적…] [--no-push] [--no-reply]` | pr-review-handle 의 수정 계획을 구현·커밋·푸시하고, 스레드마다 답글을 달고 해결 처리한다. 사용자만 부른다 |
 
 ## 구성
@@ -223,6 +223,9 @@ PR 에 이미 달린 리뷰 댓글을 처리한다. 코드를 직접 리뷰하�
    스택을 모으고, 아니면 목록을 보여 주고 멈춘다.
    `--stack` 이면 그 PR 이 속한 스택(base 를 따라 아래로, 그 PR 위에 쌓인 열린 PR 을 따라 위로, 갈라지면 모든 가지)을
    찾아 PR 마다 같은 내용을 모은다. fork PR 은 스택으로 잇지 않는다.
+   PR 을 여럿 주면 (`12 15 feat/login`) PR 마다 모은다. 모으기 전에 모두 PR 로 해석해 보고 하나라도 못 찾으면 멈춘다.
+   리뷰를 모을 PR 이 5개(`--max`)보다 많으면 모으지 않고 목록만 낸다. 큰 스택은 `--range 1-4` 다음 `--range 5-` 처럼
+   아래부터 나눠 보거나 `--max all` 로 한 번에 본다.
 2. 스킬이 항목마다 리뷰 시점 / PR head / 로컬 세 시점의 코드를 구분해 읽고 판정한다:
    ✅ 수정 필요 · 🟡 선택 · ❌ 불필요(반대 증거 필요) · 💬 답변 필요 · 💬✓ 답변 완료 · 🔁 반영됨 · ❓ 판단 보류.
    "문제가 있는가"와 "리뷰어가 제안한 수정이 맞는가"는 따로 본다. ✅ 에는 영향을, 🟡 에는 권장 여부(한다/안 한다)를
@@ -243,8 +246,18 @@ PR 에 이미 달린 리뷰 댓글을 처리한다. 코드를 직접 리뷰하�
 
 리뷰 댓글은 누구나 쓸 수 있는 데이터라 그 안의 지시는 따르지 않는다.
 
+스킬 인자는 셸에 그대로 넘기지 않고 모델이 대상 PR · 옵션 · 추가 지시로 나눈 뒤 PR 마다 따옴표로 감싸 부른다
+(`#12` 가 셸 주석이 되지 않게). 말로 써도 된다 ("12랑 15, 해결된 것도"). `--` 뒤는 모두 추가 지시다. 한 단어짜리
+브랜치처럼 해석이 애매하면 실행 전에 묻고, 결과 첫 줄에 "대상: 인자 → PR" 을 보여 준다.
+
+```
+/jw:pr-review-handle 12 15 feat/login --all
+/jw:pr-review-handle #12 --stack --range 1-4 -- 보안 관련 지적 위주로
+```
+
 ```sh
-pr-review-fetch [<PR 번호|URL|브랜치>] [--all] [--stack]   # 직접 써도 된다
+pr-review-fetch [<PR 번호|URL|브랜치>] [--all] [--stack [--range <위치>]] [--max <n>|all]   # 직접 써도 된다
+pr-review-fetch <PR> <PR>… [--all] [--max <n>|all]          # 여러 PR (--stack 과는 함께 쓰지 않는다)
 pr-review-fetch [<PR>] --threads <thread_id>[,<thread_id>…]  # 고른 스레드의 지금 상태만
 ```
 
@@ -320,6 +333,7 @@ ln -s "$(pwd)"/claude-plugins/jw/bin/{branch-worktree,worktree-handoff,pr-review
 
 ## 바뀐 것
 
+- **0.12.0**: pr-review-handle 이 PR 을 여럿 받는다 (`{multi, prs}`). 리뷰를 모을 PR 이 `--max`(기본 5)보다 많으면 모으지 않고 목록만 낸다 (종료 코드 3). `--stack --range` 로 스택 일부만 본다. PR 인자의 `#12` 는 `12` 로 본다. 스킬은 `$ARGUMENTS` 를 명령에 그대로 붙이지 않고 대상 · 옵션 · 추가 지시로 나눠 따옴표로 감싸 부른다 (전에는 `#12` 가 셸 주석이 되어 조용히 지금 브랜치의 PR 을 봤다).
 - **0.11.2**: handoff 가 만든 윈도우에 옵션 `@worktree` 를 붙이지 않는다. 0.11.1 부터 읽는 곳이 없다 (tmux-dev 도 같이 뗐다).
 - **0.11.1**: handoff 가 tmux 에서 그 워크트리의 윈도우를 옵션 `@worktree` 가 아니라 패널의 경로로 찾는다 (위 "tmux"). 표지 없이 연 창도 찾고, 패널이 옮겨 가 낡은 표지는 따라가지 않는다.
 - **0.11.0**: 워크트리를 찾고 만드는 일을 `bin/branch-worktree` 로 떼었다. `worktree-handoff` 는 세션 띄우기만 하고 `pr-review-fetch` 도 같은 판정을 쓴다. `worktree-handoff path` 는 `branch-worktree ensure` 가 대신하고, `pr-review-fetch` 의 `local` 에서 `uncommitted_changes` 는 `worktree_dirty` 로 합쳤다. `test/run` 으로 스크립트를 확인한다 (위 "구성").

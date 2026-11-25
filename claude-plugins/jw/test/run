@@ -401,11 +401,37 @@ t_fetch() {
   R=$T/pf; mkroot "$R" claude
   cat >"$R/bin/gh" <<'GH'
 #!/bin/sh
-# 가짜 gh: PR 하나(#7)와 빈 리뷰를 돌려준다. head 는 STUB_HEAD(브랜치)·STUB_OID(커밋)
+# 가짜 gh: PR #7 (head 는 STUB_HEAD 브랜치·STUB_OID 커밋) 과 스택 main ← #8 (s8) ← #9 (s9) ← #10 (s10), 리뷰는 모두 비었다.
+# 인자에 nope 가 든 PR 은 없다. pr view 를 부른 인자는 STUB_LOG_DIR/gh-view.log 에 남긴다
 empty() { printf '{"data":{"repository":{"pullRequest":{"%s":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}\n' "$1"; }
+pr() {   # pr <번호> : PR 하나의 JSON
+  case $1 in
+    8) h=s8 b=main ;; 9) h=s9 b=s8 ;; 10) h=s10 b=s9 ;; *) h=$STUB_HEAD b=main ;;
+  esac
+  printf '{"number":%s,"url":"https://github.com/o/r/pull/%s","title":"t%s","body":"","author":{"login":"me"},"state":"OPEN","baseRefName":"%s","headRefName":"%s","headRefOid":"%s","isCrossRepository":false}' \
+    "$1" "$1" "$1" "$b" "$h" "$STUB_OID"
+}
 case "$1 $2" in
   "pr view")
-    printf '{"number":7,"url":"https://github.com/o/r/pull/7","title":"t","body":"","author":{"login":"me"},"state":"OPEN","baseRefName":"main","headRefName":"%s","headRefOid":"%s","isCrossRepository":false}\n' "$STUB_HEAD" "$STUB_OID" ;;
+    a=$3; echo "$a" >>"${STUB_LOG_DIR:?}/gh-view.log"
+    case $a in *nope*) echo "no pull requests found for branch \"$a\"" >&2; exit 1 ;; esac
+    n=$(printf '%s' "$a" | sed -n 's#^.*/pull/##; s#^s\([0-9][0-9]*\)$#\1#; /^[0-9][0-9]*$/p')
+    pr "${n:-7}"; echo ;;
+  "pr list")
+    shift 2; want=""
+    while [ $# -gt 0 ]; do case $1 in --head) want="h $2"; shift ;; --base) want="b $2"; shift ;; esac; shift; done
+    sep=""; printf '['
+    for n in 8 9 10; do
+      j=$(pr "$n")
+      case "$want" in
+        "h s$n") ;;
+        "b main") [ "$n" = 8 ] || continue ;;
+        "b s"*) [ "s$((n - 1))" = "${want#b }" ] || continue ;;
+        *) continue ;;
+      esac
+      printf '%s%s' "$sep" "$j"; sep=,
+    done
+    echo ']' ;;
   "api graphql")
     case "$*" in
       *reviewThreads*) empty reviewThreads ;;
@@ -458,6 +484,61 @@ GH
   expect "none: 작업 트리 상태는 없다" '"worktree_dirty":null'
   fetch pr/nowhere "$(git -C "$R/repo" rev-parse main)"
   expect "로컬에 브랜치가 없으면 branch_head 가 없다" '"branch_head":null'
+
+  # --- 인자 해석, 여러 PR, 개수 제한, --range ---
+  local M; M=$(git -C "$R/repo" rev-parse main)
+  pf() { : >"$R/log/gh-view.log"; run "$R" PATH="$R/bin:$(dirname "$JQ"):/usr/bin:/bin" STUB_HEAD=pr/alone STUB_OID="$M" -- "$PF" "$@"; }
+  jqo() { printf '%s\n' "$out" | grep -v '^/bin/bash: warning: setlocale' | "$JQ" -c "$1" 2>&1; }   # jqo <필터> : 출력 JSON 에서 고른 것
+
+  pf '#9'
+  check "#12 꼴은 # 을 떼고 gh 에 넘긴다" test "$(cat "$R/log/gh-view.log")" = 9
+  out=$(jqo .pr.number); expect "#9 → PR #9" 9
+  pf 8 https://github.com/o/r/pull/10 '#8' s9
+  expect_rc "여러 PR: 성공" 0
+  out=$(jqo '[.prs[].pr.number]'); expect "여러 PR: 중복을 빼고 준 순서대로" '[8,10,9]'
+  pf 8 https://github.com/o/r/pull/10 '#8' s9
+  out=$(jqo '.multi.requested'); expect "여러 PR: 준 인자를 그대로 남긴다" '["8","https://github.com/o/r/pull/10","8","s9"]'
+  pf 8 https://github.com/o/r/pull/10 '#8' s9
+  out=$(jqo '.multi.warnings | join(" / ")')
+  expect "여러 PR: 중복 경고" '같은 PR #8 을 여러 번 줬다'
+  expect "여러 PR: 위아래로 쌓인 PR 이면 --stack 을 권한다" '#9 은 #8 위에 쌓인 PR 이다'
+  pf 8 nope-1 9 nope-2
+  expect_rc "여러 PR: 못 찾은 인자가 있으면 멈춘다" 1
+  expect "여러 PR: 못 찾은 인자를 모두 알려 준다" 'PR 을 찾지 못한 인자: nope-1 (no pull requests found for branch "nope-1") nope-2'
+  expect "여러 PR: 찾은 것도 알려 준다" '찾은 것: 8 → #8, 9 → #9'
+  check "여러 PR: 못 찾으면 리뷰를 모으지 않았다 (pr view 를 인자마다 한 번만)" test "$(wc -l <"$R/log/gh-view.log" | tr -d ' ')" = 4
+  pf 8 9 --stack
+  expect_rc "여러 PR 과 --stack 은 함께 쓰지 않는다" 1
+  pf 8 --range 1-2
+  expect_rc "--range 는 --stack 과만" 1
+
+  pf 7 8 9 --max 2
+  expect_rc "개수 초과: 종료 코드 3" 3
+  out=$(jqo '.over_limit | [.mode, .count, .max, (.targets | map(.number))]'); expect "개수 초과: 대상 목록만 낸다" '["multi",3,2,[7,8,9]]'
+  pf 7 8 9 --max 3
+  expect_rc "개수가 max 와 같으면 모은다" 0
+  pf 7 8 9 10 6 5 --max all
+  out=$(jqo '.prs | length'); expect "--max all 이면 개수를 따지지 않는다" 6
+
+  pf 9 --stack
+  expect_rc "스택: 3개면 기본 max(5) 안이다" 0
+  out=$(jqo '[.stack.order[] | [.position, .number, .parent, .selected]]'); expect "스택: 아래→위 위치·부모" '[[1,8,null,true],[2,9,8,true],[3,10,9,true]]'
+  pf 9 --stack
+  out=$(jqo '.stack.order[0].head_oid'); expect "스택: order 에 head_oid" "\"$M\""
+  pf 9 --stack --max 2
+  expect_rc "스택 개수 초과: 종료 코드 3" 3
+  out=$(jqo '.over_limit | [.mode, .count, .total, (.order | map(.number))]'); expect "스택 개수 초과: 스택 전체 목록을 낸다" '["stack",3,3,[8,9,10]]'
+  pf 9 --stack --range 2- --max 2
+  expect_rc "--range: 고른 수가 max 안이면 모은다" 0
+  out=$(jqo '[([.prs[].pr.number]), .stack.range, ([.stack.order[] | .selected])]')
+  expect "--range 2-: 위치 2 부터 끝까지만 모으고 order 는 전체" '[[9,10],{"from":2,"to":3,"total":3},[false,true,true]]'
+  pf 10 --stack --range 1
+  out=$(jqo '[.prs[].pr.number]'); expect "--range 1: 맨 아래 하나" '[8]'
+  pf 9 --stack --range 2-4
+  expect_rc "--range: 스택 밖이면 멈춘다" 1
+  expect "--range: 스택 크기를 알려 준다" '이 스택은 1-3'
+  pf 9 --stack --range 0-2
+  expect_rc "--range: 위치는 1 부터" 1
 }
 
 [ $# -gt 0 ] || set -- worktree handoff tmux fetch
