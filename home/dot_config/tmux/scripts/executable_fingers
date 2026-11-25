@@ -8,7 +8,7 @@
 #       fingers exit                            fingers 테이블의 q / Esc / C-c. 받을 프로세스가 없으면 rescue 로 넘어간다
 #       fingers rescue                          갇힌 상태를 손으로 푼다. tmux 밖(다른 터미널, ssh)에서도 돈다
 #
-# 실행 표시: 서버 사용자 옵션 @fingers-running. prefix F 를 누른 순간 tmux 가 "pending" 으로 세우고(키 바인딩
+# 실행 표시: 서버 사용자 옵션 @my-fingers-running. prefix F 를 누른 순간 tmux 가 "pending" 으로 세우고(키 바인딩
 #       안이라 프로세스가 뜨기 전에 동기로 선다), start 가 자기 PID 로 바꾸고, 끝날 때 지운다.
 # heal 과 rescue: 둘 다 아래 restore 를 돌린다. rescue 는 그 앞에 남은 start 프로세스를 끝내고, 고칠 것이 없어도
 #       알린다. heal 은 프로세스를 건드리지 않고(이미 끝났다) 고친 것이 있을 때만 알린다. start 가 죽거나
@@ -57,7 +57,7 @@ restore() {
     # 적어 둔 값이 없으면(F 를 누르지 않았는데 꺼짐) 기본값(C-b / 없음)으로 둔다. 그때 prefix2 는 prefix R 로 되살린다.
     for opt in prefix prefix2; do
         [ "$(tmux show-options -gqv "$opt")" = None ] || continue
-        saved=$(tmux show-options -gqv "@fingers-saved-$opt")
+        saved=$(tmux show-options -gqv "@my-fingers-saved-$opt")
         if [ -n "$saved" ] && [ "$saved" != None ]; then
             tmux set-option -g "$opt" "$saved"
         else
@@ -72,7 +72,7 @@ rescue() {
     # 이 서버의 것만 가려내지 않는다 (tmux 서버를 하나만 쓰는 것이 전제). 끝나면 감싸개가 표시를 지운다.
     pkill -f 'tmux-fingers start' 2>/dev/null
     fixed=$(restore)
-    tmux set-option -gu @fingers-running
+    tmux set-option -gu @my-fingers-running
     if [ -n "$fixed" ]; then
         tmux display-message "tmux-fingers: 갇힌 상태를 풀었다 ($(echo $fixed))"
     else
@@ -83,9 +83,9 @@ rescue() {
 case "$1" in
 start)
     shift
-    trap 'tmux set-option -gu @fingers-running' EXIT
+    trap 'tmux set-option -gu @my-fingers-running' EXIT
     trap 'exit 1' HUP INT TERM
-    tmux set-option -g @fingers-running "$$"
+    tmux set-option -g @my-fingers-running "$$"
     mkdir -p "$logdir"
     "$bin" start "$@" >>"$logdir/fingers.log" 2>&1
     fixed=$(restore)
@@ -93,14 +93,14 @@ start)
     ;;
 busy)
     # PID 가 적혀 있는데 그 프로세스가 없으면 표시가 낡은 것이다 (감싸개가 SIGKILL 로 죽은 경우 등).
-    running=$(tmux show-options -gqv @fingers-running)
+    running=$(tmux show-options -gqv @my-fingers-running)
     case "$running" in
     '' | *[!0-9]*) tmux display-message 'tmux-fingers: 이미 실행 중' ;;
     *)
         if kill -0 "$running" 2>/dev/null; then
             tmux display-message 'tmux-fingers: 이미 실행 중'
         else
-            tmux set-option -gu @fingers-running
+            tmux set-option -gu @my-fingers-running
             tmux display-message 'tmux-fingers: 낡은 실행 표시를 지웠다. 다시 누른다'
         fi
         ;;
