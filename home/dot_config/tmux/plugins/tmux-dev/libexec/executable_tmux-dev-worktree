@@ -1103,7 +1103,8 @@ on_after_create() {  # 메인 목록: 확인 목록에서 골랐으면 결정, e
 # worktree 모드에서 워크트리·로컬 브랜치를 정리한다. 피커 안에서 끝나고 피커는 열린 채로 남는다 (이어서 다른 것을 정리하거나 연다).
 #   ctrl-x → 검사 (메인 체크아웃·베이스 브랜치·원격 브랜치·locked 는 하지 않는다, dirty 면 실패) → 정리 목록
 #          (머지 안 됐으면 안전한 행이 먼저) → 실행 → 목록을 다시 읽고 푸터에 결과(백업 ref)
-#   실행 순서: 패널 닫기 → 워크트리 제거(git worktree remove, 강제 없이. missing 이면 prune) → 브랜치 백업 → 브랜치 삭제.
+#   실행 순서: 패널 닫기 → 워크트리 제거(git worktree remove, 강제 없이. missing 이면 prune. 서브모듈이 있으면 submodule_guard 를
+#   거쳐 --force) → 브랜치 백업 → 브랜치 삭제.
 #   창을 먼저 닫는 것은 그 안의 프로세스(셸, nvim, 에이전트)를 먼저 끝내기 위해서다.
 # 닫는 단위는 패널이다 (close_panes). 피커는 그 창 안의 modal 패널이라(prefix W) 주인을 가릴 때부터 빠져 있어 닫히지 않는다.
 # modal pane 은 move-pane·join-pane 으로 옮길 수 없다(tmux 3.8: "pane is modal"). 그래서 그 창의 다른 패널만 닫힌다.
@@ -1418,8 +1419,52 @@ close_panes() {  # $1 워크트리 경로 $2 피커가 속한 창(없으면 빈 
 dirty_guard() {  # $1 워크트리 경로 $2 덧붙일 안내. dirty 면 1 과 ONE_ERR
   local n; [ -d "$1" ] || return 0
   n=$(dirty_count "$1") || { ONE_ERR="cannot check $(home_disp "$1") (git status failed) · nothing removed$2"; return 1; }
-  [ "$n" -gt 0 ] || return 0
+  [ "$n" -gt 0 ] || { submodule_guard "$1" "$2"; return; }
   ONE_ERR="dirty: $n uncommitted change(s) in $(home_disp "$1") · nothing removed$2"
+  return 1
+}
+# 서브모듈이 든 워크트리는 git 이 --force 없이는 옮기지도 지우지도 않는다 ("working trees containing submodules cannot be moved
+# or removed"). 서브모듈의 저장소가 그 워크트리의 관리 디렉토리(<common>/worktrees/<id>/modules/…)에 있어 워크트리와 함께
+# 사라지기 때문이다. 그래서 trash_worktree 가 --force 로 넘어가기 전에, 거기에만 있어서 함께 사라질 것을 서브모듈마다 본다:
+#   - 커밋 안 된 변경: 상위의 git status 도 보통 잡지만 .gitmodules 의 ignore= 가 있으면 숨으므로 서브모듈에서 직접 센다
+#   - 원격에 없는 커밋: 로컬 브랜치·HEAD 에서 닿고 어느 원격 추적 브랜치에서도 안 닿는 커밋. 원격이 없으면 모두 여기 든다
+#   - stash
+# 대상은 git 의 판정(validate_no_submodules)과 같게 잡는다: 관리 디렉토리의 modules/ 아래 저장소 전부(중첩, deinit 해서
+# 체크아웃은 없는 것 포함) + 체크아웃된 서브모듈 전부(submodule foreach --recursive. 흡수 안 된 옛 방식의 .git 디렉토리 포함).
+# 판정을 못 하면(git 실패) 막는 쪽으로 다룬다. 서브모듈이 없으면 git 을 두 번(rev-parse, 없으면 끝) 더 띄울 뿐이다.
+submodule_guard() {  # $1 워크트리 경로 $2 덧붙일 안내. 잃을 것이 있거나 판정 못 하면 1 과 ONE_ERR
+  local wt=$1 admin d sub out n name i bad="" seen=$'\n'
+  local -a gitdirs=() names=() tips=()
+  admin=$(git -C "$wt" rev-parse --absolute-git-dir 2>/dev/null) || return 0   # 깨진 워크트리면 dirty_count 가 이미 막았다
+  if [ -d "$admin/modules" ]; then
+    while IFS= read -r d; do
+      d=${d%/HEAD}; [ -d "$d/objects" ] || continue   # logs/HEAD, refs/remotes/*/HEAD 는 저장소가 아니다
+      gitdirs+=("$d"); names+=("${d#"$admin/modules/"}")
+    done < <(find "$admin/modules" -type f -name HEAD 2>/dev/null)
+  fi
+  if [ -f "$wt/.gitmodules" ]; then
+    out=$(git -C "$wt" submodule foreach --quiet --recursive 'pwd' 2>/dev/null) || {
+      ONE_ERR="cannot check the submodules of $(home_disp "$wt") (git submodule foreach failed) · nothing removed$2"; return 1; }
+    while IFS= read -r sub; do
+      [ -n "$sub" ] || continue
+      name=${sub#"$wt/"}
+      n=$(dirty_count "$sub") || { bad+=", $name: git status failed"; continue; }
+      [ "$n" -gt 0 ] && bad+=", $name: $n uncommitted change(s)"
+      d=$(git -C "$sub" rev-parse --absolute-git-dir 2>/dev/null) || { bad+=", $name: no git dir"; continue; }
+      gitdirs+=("$d"); names+=("$name")   # modules/ 에서 이미 찾은 것이면 아래에서 한 번만 본다
+    done <<< "$out"
+  fi
+  for i in "${!gitdirs[@]}"; do
+    d=${gitdirs[$i]}; name=${names[$i]}
+    case $seen in *$'\n'"$d"$'\n'*) continue ;; esac; seen+="$d"$'\n'
+    tips=(--branches)
+    git --git-dir="$d" rev-parse -q --verify HEAD >/dev/null 2>&1 && tips+=(HEAD)
+    n=$(git --git-dir="$d" rev-list --count "${tips[@]}" --not --remotes 2>/dev/null) || { bad+=", $name: git rev-list failed"; continue; }
+    [ "$n" -gt 0 ] && bad+=", $name: $n unpushed commit(s)"
+    git --git-dir="$d" rev-parse -q --verify refs/stash >/dev/null 2>&1 && bad+=", $name: stash"
+  done
+  [ -z "$bad" ] && return 0
+  ONE_ERR="submodule ${bad#, } · would be lost with $(home_disp "$wt") · nothing removed$2"
   return 1
 }
 clean_one() {
@@ -1467,7 +1512,10 @@ trash_worktree() {  # $1 워크트리 경로. 실패면 1 과 ONE_ERR
     return 0
   fi
   rmdir "$tdir" 2>/dev/null || true
-  out=$(git worktree remove "$path" 2>&1) || { ONE_ERR="git worktree remove failed: ${out##*$'\n'}"; return 1; }
+  out=$(git worktree remove "$path" 2>&1) && return 0
+  # 서브모듈이 있으면 강제 없이는 못 지운다. 바로 앞의 dirty_guard 가 submodule_guard 로 서브모듈에만 있는 것을 봤으므로 --force
+  case $out in *"containing submodules"*) out=$(git worktree remove --force "$path" 2>&1) && return 0 ;; esac
+  ONE_ERR="git worktree remove failed: ${out##*$'\n'}"; return 1
 }
 trashed_worktrees() {  # 휴지통에 있는(아직 등록된) 워크트리 경로들
   local line
