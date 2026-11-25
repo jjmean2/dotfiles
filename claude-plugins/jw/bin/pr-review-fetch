@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 # pr-review-fetch — PR 에 달린 리뷰를 한 번에 모아 압축 JSON 으로 출력한다. 판단은 하지 않는다.
 #
-#   pr-review-fetch [<PR 번호|URL|브랜치>] [--all] [--stack]
+#   pr-review-fetch [<PR 번호|URL|브랜치>] [--all] [--stack [--range <위치>]] [--max <n>|all]
+#   pr-review-fetch <PR> <PR>… [--all] [--max <n>|all]
 #   pr-review-fetch [<PR 번호|URL|브랜치>] --threads <thread_id>[,<thread_id>…]
 #
+# PR 은 번호(12, #12), URL, 브랜치 이름. 앞의 # 은 떼고 본다 (셸에서는 '#12' 처럼 따옴표로 감싸야 주석이 되지 않는다).
+# PR 을 여럿 주면 PR 마다 아래 단일 PR 출력을 모은다 (아래 "여러 PR 출력"). 모으기 전에 모두 PR 로 해석해 보고, 하나라도
+# 찾지 못하면 아무것도 모으지 않고 멈춘다 (오타일 수 있다). 같은 PR 을 두 번 주면 한 번만 본다. --stack 과는 함께 쓰지 않는다.
+# --max: 리뷰를 모을 PR 이 이 개수보다 많으면 (기본 5) 모으지 않고 대상 목록만 over_limit 으로 내고 종료 코드 3 으로 끝난다.
+#   all 이면 개수를 따지지 않는다. 스택은 --range 로 고른 PR 수를 센다.
+# --range: --stack 에서 리뷰를 모을 PR 을 스택 안 위치(아래→위, 1 부터)로 고른다. 3 · 2-4 · 4- (끝까지). 스택 구성(order)은
+#   범위와 상관없이 전체를 낸다. 큰 스택을 아래부터 나눠 볼 때 쓴다.
 # PR 을 주지 않으면 지금 브랜치의 PR. 지금 브랜치에 PR 이 없으면 (스택 맨 위의 작업 중 브랜치) HEAD 아래에 쌓인 열린 PR 중
 # 가장 가까운 것을 찾는다: --stack 이면 그 PR 부터 스택을 모으고, 아니면 그 목록을 보여 주고 멈춘다. --all 이면 해결(resolved)된 스레드도 포함한다.
 # --stack 이면 그 PR 이 속한 스택 전체를 모은다: base 브랜치를 head 로 하는 열린 PR 을 따라 아래로, 그 PR 의 head 를
@@ -36,7 +44,16 @@
 # --stack 출력 (JSON 하나):
 #   stack     root_base (스택 맨 아래 PR 의 base, 보통 main), current (시작한 PR 번호),
 #             order (아래→위: position·number·url·title·head·base·parent(아래 PR 번호, 맨 아래는 null)), warnings
-#   prs       order 순서로, PR 마다 위의 단일 PR 출력 그대로. 받지 못한 PR 은 {pr:{number,url}, error}
+#             order 의 각 PR 에는 head_oid, selected (--range 안이라 리뷰를 모았는가) 가 있다. range: {from, to, total}
+#   prs       order 순서로, selected 인 PR 마다 위의 단일 PR 출력 그대로. 받지 못한 PR 은 {pr:{number,url}, error}
+#
+# 여러 PR 출력 (JSON 하나):
+#   multi     requested (준 인자 그대로), targets (중복을 뺀 대상: arg·number·url·title·head·base·from_fork), warnings
+#             (중복, 서로 위아래로 쌓인 PR — 같은 스택이면 --stack 이 더 맞다)
+#   prs       targets 순서로, PR 마다 위의 단일 PR 출력 그대로. 받지 못한 PR 은 {pr:{number,url}, error}
+#
+# 개수 초과 출력 (종료 코드 3, JSON 하나. 리뷰는 모으지 않았다):
+#   over_limit  mode (multi | stack), count (모을 PR 수), max, hint, 그리고 multi 면 targets, stack 이면 total·range·order
 #
 # --threads 출력 (JSON 하나):
 #   threads   준 순서대로 thread_id·found·resolved·resolved_by·outdated·path·line·viewer_can_*·comments_total·
@@ -48,7 +65,7 @@ set -euo pipefail
 
 die() { echo "pr-review-fetch: $*" >&2; exit 1; }
 
-all=false; stack=false; pr=""; thread_ids=()
+all=false; stack=false; prs=(); thread_ids=(); max=5; range=""
 while [ $# -gt 0 ]; do
   case $1 in
     --all) all=true; shift ;;
@@ -56,11 +73,21 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || die "--threads 에 값이 없습니다"
       IFS=', ' read -r -a _ids <<<"$2"; thread_ids+=(${_ids[@]+"${_ids[@]}"}); shift 2 ;;
     --stack) stack=true; shift ;;
+    --max)
+      [ $# -ge 2 ] || die "--max 에 값이 없습니다 (개수 또는 all)"
+      case $2 in all) max=0 ;; *) [[ $2 =~ ^[1-9][0-9]*$ ]] || die "--max 는 1 이상의 개수나 all: $2"; max=$2 ;; esac
+      shift 2 ;;
+    --range)
+      [ $# -ge 2 ] || die "--range 에 값이 없습니다 (예: 2-4)"
+      [[ $2 =~ ^[1-9][0-9]*(-([1-9][0-9]*)?)?$ ]] || die "--range 는 스택 안 위치: 3 · 2-4 · 4- 중 하나: $2"
+      range=$2; shift 2 ;;
     -h|--help) sed -n '2,/^set -euo/{/^set -euo/d;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option: $1" ;;
-    *) [ -z "$pr" ] || die "PR 은 하나만: $pr, $1"; pr=$1; shift ;;
+    *) p=$1; [[ ! $p =~ ^#[0-9]+$ ]] || p=${p#\#}; prs+=("$p"); shift ;;
   esac
 done
+pr=${prs[0]:-}
+[ -z "$range" ] || $stack || die "--range 는 --stack 과 함께 씁니다"
 command -v gh >/dev/null || die "gh 가 PATH 에 없습니다 (설치 후 gh auth login)"
 command -v jq >/dev/null || die "jq 가 PATH 에 없습니다"
 # 워크트리 판정을 맡길 branch-worktree: 이 스크립트 옆에 있다. 없으면 PATH 에서 찾는다
@@ -72,6 +99,7 @@ bw="$(cd "$(dirname "$0")" && pwd)/branch-worktree"
 # 답글·해결 처리 직전에 고른 스레드의 지금 상태만 받는다. 저장해 둔 thread_id 는 바뀌지 않지만 상태(해결 여부, 새 답글)는 바뀐다
 if [ ${#thread_ids[@]} -gt 0 ]; then
   ! $all && ! $stack || die "--threads 는 --all·--stack 과 함께 쓰지 않습니다"
+  [ ${#prs[@]} -le 1 ] || die "--threads 에는 PR 을 하나만 줍니다: ${prs[*]}"
   for t in "${thread_ids[@]}"; do [[ $t =~ ^[A-Za-z0-9_=-]+$ ]] || die "스레드 ID 형식이 아닙니다: $t"; done
   hostopt=()
   if [ -n "$pr" ]; then
@@ -101,6 +129,47 @@ if [ ${#thread_ids[@]} -gt 0 ]; then
                                                        at: .createdAt, url, body}]} end] as $th
     | {threads: $th, warnings: [$th[] | select(.found | not) | "스레드 \(.thread_id) 를 찾지 못했다 (지워졌거나 리뷰 스레드 ID 가 아님)"]}' \
     "${thread_ids[@]}" <<<"$res"
+  exit 0
+fi
+
+# --- 여러 PR ---------------------------------------------------------------------
+# 먼저 모두 PR 로 해석해 본다 (하나라도 못 찾으면 멈춘다). 개수를 확인한 뒤 PR 마다 이 스크립트를 다시 부르고 결과를 합친다
+if [ ${#prs[@]} -gt 1 ]; then
+  ! $stack || die "--stack 은 PR 하나와 함께 씁니다 (준 PR: ${prs[*]}). 스택의 일부만 보려면 --stack --range"
+  targets='[]'; bad=(); errf="${TMPDIR:-/tmp}/prf.$$"
+  for p in "${prs[@]}"; do
+    if v=$(gh pr view "$p" --json number,url,title,headRefName,baseRefName,isCrossRepository 2>"$errf"); then
+      targets=$(jq -c --arg a "$p" --argjson v "$v" '. + [{arg: $a, number: $v.number, url: $v.url, title: $v.title,
+        head: $v.headRefName, base: $v.baseRefName, from_fork: $v.isCrossRepository}]' <<<"$targets")
+    else bad+=("$p ($(head -1 "$errf"))"); fi
+  done
+  rm -f "$errf"
+  if [ ${#bad[@]} -gt 0 ]; then
+    found=$(jq -r 'map("\(.arg) → #\(.number)") | join(", ")' <<<"$targets")
+    die "PR 을 찾지 못한 인자: ${bad[*]}. 리뷰는 하나도 모으지 않았습니다${found:+ (찾은 것: $found)}"
+  fi
+  uniq=$(jq -c 'reduce .[] as $t ([]; if any(.[]; .url == $t.url) then . else . + [$t] end)' <<<"$targets")
+  mwarn=$(jq -c --argjson u "$uniq" '
+    def repo: .url | sub("/pull/[0-9]+$"; "");
+    [ (group_by(.url)[] | select(length > 1) | "같은 PR #\(.[0].number) 을 여러 번 줬다 (\(map(.arg) | join(", "))). 한 번만 본다"),
+      ($u[] as $a | $u[] as $b
+       | select(($a.from_fork | not) and ($b.from_fork | not) and ($a | repo) == ($b | repo) and $a.base == $b.head)
+       | "#\($a.number) 은 #\($b.number) 위에 쌓인 PR 이다. 같은 스택이면 --stack 으로 보는 편이 정확하다 (고칠 PR 정하기 등)") ]' <<<"$targets")
+  n=$(jq length <<<"$uniq")
+  if [ "$max" -gt 0 ] && [ "$n" -gt "$max" ]; then
+    jq -n --argjson t "$uniq" --argjson n "$n" --argjson max "$max" '{over_limit: {mode: "multi", count: $n, max: $max, targets: $t,
+      hint: "PR 이 \($n)개라 리뷰를 모으지 않았다. 일부만 골라 다시 부르거나, 전부 보려면 --max all"}}'
+    exit 3
+  fi
+  results=()
+  while IFS= read -r u; do
+    if r=$("$0" "$u" $($all && echo --all)); then results+=("$r")
+    else results+=("$(jq -n --arg u "$u" '{pr: {number: ($u | split("/") | last | tonumber), url: $u},
+      error: "리뷰를 가져오지 못했다 (stderr 확인)"}')")
+    fi
+  done < <(jq -r '.[].url' <<<"$uniq")
+  printf '%s\n' "${results[@]}" | jq -s --argjson t "$uniq" --argjson w "$mwarn" --args \
+    '{multi: {requested: $ARGS.positional, targets: $t, warnings: $w}, prs: .}' "${prs[@]}"
   exit 0
 fi
 
@@ -141,11 +210,11 @@ head_branch=$(jq -r .headRefName <<<"$view")
 if $stack; then
   R="$host/$owner/$repo"
   list() {   # 같은 저장소 브랜치의 열린 PR 만 (fork 의 같은 이름 브랜치는 스택이 아니다)
-    gh pr list -R "$R" --state open --limit 100 --json number,url,title,headRefName,baseRefName,isCrossRepository "$@" |
-      jq '[.[] | select(.isCrossRepository | not) | {number, url, title, head: .headRefName, base: .baseRefName}]'
+    gh pr list -R "$R" --state open --limit 100 --json number,url,title,headRefName,baseRefName,headRefOid,isCrossRepository "$@" |
+      jq '[.[] | select(.isCrossRepository | not) | {number, url, title, head: .headRefName, base: .baseRefName, head_oid: .headRefOid}]'
   }
   swarn=(); [ -z "$start_note" ] || swarn+=("$start_note")
-  me=$(jq '{number, url, title, head: .headRefName, base: .baseRefName}' <<<"$view")
+  me=$(jq '{number, url, title, head: .headRefName, base: .baseRefName, head_oid: .headRefOid}' <<<"$view")
   seen=" $head_branch "
 
   # 아래로: base 브랜치를 head 로 하는 열린 PR 이 없을 때까지 (그 base 가 root_base)
@@ -181,17 +250,35 @@ if $stack; then
     | $o | to_entries | map(.value as $p | $p + {position: (.key + 1),
         parent: ([$o[] | select(.head == $p.base) | .number] | first // null)})')
 
+  # 리뷰를 모을 범위 (--range). 스택 구성은 범위와 상관없이 전체를 낸다
+  total=$(jq length <<<"$order"); from=1; to=$total
+  if [ -n "$range" ]; then
+    from=${range%%-*}
+    case $range in *-) to=$total ;; *-*) to=${range#*-} ;; *) to=$from ;; esac
+    [ "$from" -le "$to" ] && [ "$to" -le "$total" ] || die "--range $range 이 스택 밖입니다 (이 스택은 1-$total, 아래→위)"
+  fi
+  order=$(jq --argjson a "$from" --argjson b "$to" 'map(. + {selected: (.position >= $a and .position <= $b)})' <<<"$order")
+  n=$((to - from + 1))
+  if [ "$max" -gt 0 ] && [ "$n" -gt "$max" ]; then
+    jq -n --argjson o "$order" --argjson n "$n" --argjson total "$total" --argjson max "$max" --arg root "$root_base" \
+      --argjson a "$from" --argjson b "$to" '{over_limit: {mode: "stack", count: $n, total: $total, max: $max, root_base: $root,
+      range: {from: $a, to: $b}, order: ($o | map(del(.selected))),
+      hint: "리뷰를 모을 PR 이 \($n)개라 모으지 않았다. --range 로 나눠 보거나 (아래부터 권장), 전부 보려면 --max all"}}'
+    exit 3
+  fi
+
   results=()
   while IFS= read -r u; do
     if r=$("$0" "$u" $($all && echo --all)); then results+=("$r")
     else results+=("$(jq -n --arg u "$u" '{pr: {number: ($u | split("/") | last | tonumber), url: $u},
       error: "리뷰를 가져오지 못했다 (stderr 확인)"}')")
     fi
-  done < <(jq -r '.[].url' <<<"$order")
+  done < <(jq -r '.[] | select(.selected) | .url' <<<"$order")
 
   printf '%s\n' "${results[@]}" | jq -s --argjson order "$order" --arg root "$root_base" --argjson current "$number" \
-    --args '{stack: {root_base: $root, current: $current, order: $order, warnings: $ARGS.positional}, prs: .}' \
-    ${swarn[@]+"${swarn[@]}"}
+    --argjson a "$from" --argjson b "$to" --argjson total "$total" \
+    --args '{stack: {root_base: $root, current: $current, range: {from: $a, to: $b, total: $total}, order: $order,
+      warnings: $ARGS.positional}, prs: .}' ${swarn[@]+"${swarn[@]}"}
   exit 0
 fi
 
