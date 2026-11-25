@@ -333,6 +333,7 @@ ln -s "$(pwd)"/claude-plugins/jw/bin/{branch-worktree,worktree-handoff,pr-review
 
 ## 바뀐 것
 
+- **0.12.1**: handoff 가 tmux 에서 그 워크트리의 윈도우가 이미 있어도 찾지 못하고 매번 새 윈도우를 열던 것을 고쳤다. tmux 는 `-F` 출력의 칸 구분자(US)를 `\037` 네 글자로 바꿔 내보낸다 (tmux-dev 에서 고친 것과 같은 문제). `test/run` 은 tmux 패널을 로그인 셸로 띄우지 않고 (셸 프로필이 PATH 를 바꿔 진짜 `claude` 가 뜨지 않게), en_US.UTF-8 이 없으면 C.UTF-8 로 돈다.
 - **0.12.0**: pr-review-handle 이 PR 을 여럿 받는다 (`{multi, prs}`). 리뷰를 모을 PR 이 `--max`(기본 5)보다 많으면 모으지 않고 목록만 낸다 (종료 코드 3). `--stack --range` 로 스택 일부만 본다. PR 인자의 `#12` 는 `12` 로 본다. 스킬은 `$ARGUMENTS` 를 명령에 그대로 붙이지 않고 대상 · 옵션 · 추가 지시로 나눠 따옴표로 감싸 부른다 (전에는 `#12` 가 셸 주석이 되어 조용히 지금 브랜치의 PR 을 봤다).
 - **0.11.2**: handoff 가 만든 윈도우에 옵션 `@worktree` 를 붙이지 않는다. 0.11.1 부터 읽는 곳이 없다 (tmux-dev 도 같이 뗐다).
 - **0.11.1**: handoff 가 tmux 에서 그 워크트리의 윈도우를 옵션 `@worktree` 가 아니라 패널의 경로로 찾는다 (위 "tmux"). 표지 없이 연 창도 찾고, 패널이 옮겨 가 낡은 표지는 따라가지 않는다.

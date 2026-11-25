@@ -251,7 +251,7 @@ open_bg() {
 # 배포되므로 그 파일을 읽지 않고 같은 규칙을 여기 둔다). 전에는 윈도우에 붙인 옵션(worktree)으로 찾았는데, 그러면 prefix c 로 연 창은
 # 못 찾고 break-pane·join-pane 으로 패널이 옮겨 가면 엉뚱한 창을 가리켰다.
 wt_window() {  # $1 세션 → 그 워크트리($wt)의 윈도우 id (없으면 빈 줄)
-  local us roots want win modal start cur owner
+  local us roots want win modal start cur owner line
   us=$(printf '\037')
   roots=$(git -C "$wt" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
   want=$(cd -P -- "$wt" 2>/dev/null && pwd) || want=$wt
@@ -272,7 +272,10 @@ wt_window() {  # $1 세션 → 그 워크트리($wt)의 윈도우 id (없으면 
     fi
     [ "$owner" = "$want" ] || continue
     printf '%s\n' "$win"; return 0
-  done < <(tmux list-panes -s -t "$1" -F "#{window_id}$us#{pane_modal_flag}$us#{pane_start_path}$us#{pane_current_path}" 2>/dev/null)
+  done < <(tmux list-panes -s -t "$1" -F "#{window_id}$us#{pane_modal_flag}$us#{pane_start_path}$us#{pane_current_path}" 2>/dev/null |
+    # tmux 는 -F 출력의 제어 문자를 글자로 바꿔 내보낸다 (US → "\037" 네 글자. tmux 3.4 에서 확인). 되살리지 않으면 한 줄이
+    # 한 칸으로 읽혀 그 워크트리의 윈도우를 못 찾고 handoff 마다 새 윈도우를 연다
+    while IFS= read -r line; do printf '%s\n' "${line//\\037/$us}"; done)
   return 0
 }
 open_tmux() {
