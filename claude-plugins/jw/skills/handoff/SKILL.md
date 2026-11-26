@@ -67,9 +67,16 @@ tmux 안에서는 어느 조합이든 새 윈도우에 띄운다. 안 되는 조
    - 둘 다: 작업 디렉토리가 브랜치 워크트리이고 메인 체크아웃은 고치지 않는다는 것, 사용자의 추가 지시.
    - `--in-stack` 이면: 거기 체크아웃된 위 브랜치는 바꾸지 않고, 대상 브랜치의 커밋을 겨냥한 fixup 커밋 +
      `git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base <대상 브랜치의 base>` 로 고친다는 것.
-2. 첫 메시지를 임시 파일로 쓴다 (scratchpad 가 있으면 거기, 없으면 `${TMPDIR:-/tmp}` 아래. 저장소 안에는 두지 않는다).
+2. 첫 메시지를 Write 도구로 임시 파일에 쓴다. 저장소 안에는 두지 않는다.
    heredoc 은 쓰지 않는다. 워크트리 세션에서는 heredoc 이 섞인 Bash 명령이 거절된다.
-3. 한 줄로 실행한다.
+   - 경로는 절대 경로로 정한다. scratchpad 가 있으면 그 아래. 없으면 먼저 Bash 로 `echo "${TMPDIR:-/tmp}"` 를 실행해
+     실제 디렉토리를 알아낸 뒤 그 아래에 쓴다. Write 도구는 `$TMPDIR` 같은 셸 변수를 풀지 않고, 샌드박스 Bash 의
+     `TMPDIR` 은 `/tmp` 가 아닐 수 있어서, 짐작한 경로에 쓰면 스크립트가 다른 곳을 읽는다.
+   - 파일 이름은 호출마다 새로 짓는다: `handoff-<브랜치의 / 를 - 로>-<MMDD-HHMMSS>.md`. 이름이 겹치면 Write 가
+     "읽지 않은 파일" 이라며 거절하는데, 그 뒤에 스크립트가 돌면 전에 쓴 지시서가 그대로 넘어간다.
+   - Write 가 성공했다는 결과를 본 **다음 응답에서** 3 을 실행한다. 같은 응답에 Write 와 함께 넣지 않는다
+     (Write 가 실패해도 같은 응답의 Bash 는 돈다).
+3. 한 줄로 실행한다. `--prompt-file` 에는 2 에서 Write 에 준 절대 경로를 글자 그대로 넘긴다 (변수로 다시 쓰지 않는다).
    ```
    ${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff <fork|fresh> --agent <claude|cursor> --prompt-file <파일> [--base <ref>] [--in-stack|--new-worktree] -- <브랜치>
    ```
