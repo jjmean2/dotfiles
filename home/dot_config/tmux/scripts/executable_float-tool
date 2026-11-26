@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# 도구 하나를 윈도우마다 floating pane 하나로만 띄운다. tmux.conf 의 prefix b / G / H 와 prefix y 메뉴가 run-shell 로 부른다.
+#
+# 사용: float-tool <이름표> <클라이언트> <패널> <디렉토리> [-e 변수=값 ...] [--] <명령> [인자 ...]
+#   예: run-shell -b "~/.config/tmux/scripts/float-tool btop '#{client_name}' '#{pane_id}' #{q:pane_current_path} btop"
+#
+# 같은 키를 다시 누르면 (VS Code 의 Ctrl+` 와 같은 3단계):
+#   이 윈도우에 그 도구가 없다            → 새로 띄운다 (90% 크기, 가운데)
+#   떠 있는데 다른 패널에 포커스가 있다      → 그 패널로 포커스를 옮긴다 (최소화돼 있으면 복원한다)
+#   그 도구에 포커스가 있다                → 최소화한다 (prefix _ 와 같은 float-minimize. 다시 누르면 위 줄로 복원)
+#
+# 도구는 패널 옵션 @float-tool 의 이름표로 알아본다 (명령 이름이 아니라: nvim 치트시트와 nvim 을 가르고, 셸 안에서
+# 띄운 btop 과 섞이지 않게). floating pane 만 센다. prefix @ 로 타일 패널로 내려놓은 것은 보통 패널로 보고,
+# 다시 누르면 새로 띄운다.
+# 범위가 윈도우인 이유: floating pane 은 윈도우에 속하고, tmux-dev 에서 윈도우 하나가 워크트리 하나라
+# lazygit 은 윈도우마다 따로여야 한다. 다른 도구도 같은 규칙으로 맞춘다.
+#
+# 스타일은 @float-* 사용자 옵션을 누를 때 읽는다 (tmux.conf 3번 섹션. tmux-dev 의 S·W 와 같다).
+# 실패는 그 클라이언트의 상태줄에 띄운다. run-shell 출력으로 두면 패널을 보기 모드로 덮는다 (tmux-dev open 과 같다).
+set -uo pipefail
+
+[ $# -ge 5 ] || { echo "usage: float-tool <tag> <client> <pane> <dir> [-e VAR=VAL ...] [--] <command> [arg ...]" >&2; exit 1; }
+tag=$1 client=$2 pane=$3 dir=$4
+shift 4
+env_args=()
+while [ $# -gt 0 ]; do
+  case $1 in
+    -e) env_args+=(-e "$2"); shift 2 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+[ $# -gt 0 ] || { echo "float-tool: no command" >&2; exit 1; }
+
+fail() { tmux display-message -c "$client" -d 0 "float-tool $tag: $1"; exit 1; }
+opt() { local v; v=$(tmux show-option -gqv "$1"); printf '%s' "${v:-$2}"; }
+minimize() { "$(dirname "$0")/float-minimize" "$1"; }
+
+# 칸 구분자는 | 다. 공백이나 탭은 IFS 에서 이어진 것이 하나로 합쳐져, 이름표가 빈 패널에서 칸이 밀린다.
+IFS='|' read -r win cur_tag cur_floating < <(tmux display-message -p -t "$pane" '#{window_id}|#{@float-tool}|#{pane_floating_flag}') ||
+  fail "no such pane $pane"
+
+# 1. 지금 패널이 그 도구다 → 최소화 (최소화된 막대를 골라 둔 채 눌렀다면 float-minimize 가 복원한다)
+if [ "$cur_tag" = "$tag" ] && [ "$cur_floating" = 1 ]; then
+  minimize "$pane"
+  exit
+fi
+
+# 2. 이 윈도우에 떠 있다 → 그리로. 최소화돼 있으면 복원 (복원이 그 패널을 고른다)
+read -r found minimized < <(tmux list-panes -t "$win" -F '#{pane_id}|#{@float-tool}|#{pane_floating_flag}|#{?#{@fm_w},1,0}' |
+  awk -F'|' -v t="$tag" '$2 == t && $3 == 1 { print $1, $4; exit }')
+if [ -n "${found:-}" ]; then
+  if [ "$minimized" = 1 ]; then minimize "$found"; else tmux select-pane -t "$found"; fi
+  exit
+fi
+
+# 3. 없다 → 새로 띄운다. -P -F 로 새 패널 id 를 받아 이름표를 달고 가운데로 옮긴다
+#   -A  zoom 상태면 풀지 않고 그 위에 띄운다 ("zoom 을 바꾸는 키는 z 뿐")
+style=$(opt @float-style 'bg=#24253a,fg=default')
+border=$(opt @float-border-style 'fg=#b4befe')
+lines=$(opt @float-border-lines single)
+if ! new=$(tmux new-pane -A -P -F '#{pane_id}' -t "$pane" -c "$dir" -x 90% -y 90% \
+  -s "$style" -S "$border" -R "$border" -B "$lines" "${env_args[@]}" "$@" 2>&1); then
+  fail "$new"
+fi
+tmux set-option -p -t "$new" @float-tool "$tag" \; move-pane -t "$new" -P centre
