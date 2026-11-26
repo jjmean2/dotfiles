@@ -1,6 +1,6 @@
 # 설계: 피커가 한 일의 결과 알리기 (prefix S, prefix W)
 
-> 상태: 제안 (2026-11-25). 아직 구현하지 않았다.
+> 상태: 구현 (2026-11-26). 제안(2026-11-25)을 사용자가 "제안대로" 정했다. 아래 "정한 것" 과 "구현" 절.
 
 ## 문제
 
@@ -127,24 +127,36 @@ prefix W 에서 서브모듈이 든 워크트리를 `clean up` 했는데 `git wo
 - **헤더에 배너**: 헤더는 모드 탭 자리이고, 한 줄을 더하면 목록 높이가 바뀐다. 거기에 놓아도 결국 곁눈으로 보는 자리다.
 - **OS 알림** (`osascript`, `notify-send`): 터미널 밖으로 나가고, 원격 접속에서는 닿지 않는다.
 
-## 구현 메모
+## 구현
 
-- 정리 작업은 지금 `JOB_MSG` 한 줄을 만든다. 이걸 **항목마다 기록 한 줄**로 바꾼다:
-  `상태(ok|warn|fail|skip) US 이름 US 한 줄 요약 US 열 대상(종류 US 경로 US 브랜치) US 상세 파일`.
-  푸터 요약 줄(`cleaned up 2 · 1 not done`)은 기록에서 만든다.
-- `clean_one` 은 지금도 `ONE_ERR` 와 `ONE_REF` 를 남긴다. 상세에는 여기에 무엇을 했는지(`step` 이 이미 단계를 안다)와 할 일을
-  더한다. 할 일 문구는 실패 종류마다 하나씩 둔다(dirty, submodule, processes, git 실패).
-- `cleanup_tick` 이 `finished` 를 보면, 주의가 있을 때 `execute($SELF --show-result)+reload(…)` 를 내보낸다. 시트는 정리 목록과
-  같이 `execute` 로 겹쳐 뜨는 fzf 이고, 고른 결과(열 대상)는 상태 `result_choice` 로 남겨 메인 목록의 `transform` 이
-  `decide` 로 이어받는다(만들기 목록 → `after-create` 와 같은 구조).
-- 알림함 쓰기는 작업 끝에 상태 디렉토리가 없으면(피커가 끝났으면) 한다. 피커는 `start` 이벤트에서 알림함을 보고, 있으면 먼저
-  시트를 띄운다. 시트 코드는 `lib/picker.sh` 에 두어 S 와 W 가 같이 쓴다.
-- 시험: `test/tmux-dev/windows` 에서 정리 작업이 남긴 기록을 본다(실패 종류마다 상태와 상세). 피커를 닫은 뒤의 경우는 상태 디렉토리를
-  지우고 작업을 돌려 알림함 파일을 본다.
+- 공용(`lib/picker.sh`): 알림함(`notice_new`, `notice_pending`), 결과 시트(`notice_sheet`, `notice_rows`, `notice_preview`),
+  시트의 enter(`notice_pick`), 메인 목록이 이어받기(`on_after_notice`), 피커가 끝난 뒤 열기(`notice_open_after`),
+  피커가 뜰 때 남은 알림(`notice_start_bind`), 실행 화면에서 실패로 끝날 때 붙잡기(`frame_exit`, EXIT 트랩).
+  두 피커가 `--notice-sheet`·`--notice-preview`·`--notice-pick`·`--after-notice` 를 이 함수로 넘긴다.
+- 알림 디렉토리: `title`, `items`(항목 한 줄씩: `상태 US 이름 US 요약 US 세션 US 열 경로`), `detail.<N>`(미리보기),
+  `ready`(다 썼다는 표시. 쓰는 중인 것은 읽지 않고, 지울 때도 이 표시가 있는 것만 지운다).
+  자리는 `$XDG_STATE_HOME/tmux-dev/notices` (`TMUX_DEV_NOTICES`). 정리 작업은 tmux 서버의 환경(`run-shell -b`)에서 돌아
+  `XDG_STATE_HOME` 이 피커와 다를 수 있어서, 피커가 작업을 띄울 때 이 자리를 넘긴다.
+- 정리(`clean_one`)는 한 일(`ONE_DID`), 실패 종류(`ONE_KIND`: dirty · submodule · processes · unchecked · git),
+  git 출력 전체(`ONE_OUT`), 서브모듈별 잃을 것(`SUB_LIST`)을 남긴다. `record_item` 이 이것으로 항목 한 줄과 미리보기
+  (`done` · `still there` · `why` · `to do` · `restore`)를 만들고, 실패가 하나라도 있으면 `cleanup_job` 이 알림함에 쓴다
+  (`write_notice`). 한꺼번에 정리에서 미리 빠진 것(`bulk_skip`)과 keep 에서 워크트리 없는 브랜치 행은 `skip` 한 행이다.
+- `cleanup_tick` 이 `finished` 와 함께 `notice` 를 보면 목록을 다시 읽고 푸터에 한 줄을 남긴 뒤 `execute(--notice-sheet)` 로
+  시트를 띄운다. 피커가 그새 끝났으면(작업이 끝날 때 상태 디렉토리가 없다) 작업이 상태줄에 `display-message -d 0` 으로
+  알린다(키를 누를 때까지). 알림은 남아 다음에 S·W 를 열 때 `start` 이벤트에서 시트가 먼저 뜬다.
+- 시트의 enter 는 그 워크트리가 아직 있으면 상태 `notice_open` 에 남기고 시트와 메인 목록을 끝낸다. 피커가 끝난 뒤
+  `notice_open_after` 가 prefix W 의 셸 호출(`tmux-dev worktree -t <세션> <경로>`)로 창을 열고 그 세션으로 옮긴다. S 에서 봐도
+  같다("피커는 결정만" 그대로). 없으면 enter 는 닫기와 같다.
+- `die` 는 실행 화면(테두리를 켠 뒤)이면 상태줄에 띄우지 않고 끝낸다. EXIT 트랩의 `frame_exit` 가 제목을 `failed · <할 일>`
+  로 바꾸고 키 하나를 기다린다. `set -e` 로 끊긴 명령도 같다. 런처 실패는 상태줄에 `-d 0`.
+- 시험(`test/tmux-dev/windows`의 "결과 시트" 절): 실패한 정리가 남긴 알림(항목·제목·미리보기), 한꺼번에 정리의 기록,
+  성공만 한 정리는 알림이 없음, 시트의 행 순서(실패 먼저)와 다 본 뒤 지우기, enter 의 두 경우.
+- 시험하지 못한 것: 실제 fzf 화면(시험은 가짜 fzf 를 쓴다. 이 저장소의 시험 방식), `start` 이벤트의 `execute`,
+  실행 화면의 붙잡기(tmux 패널이 필요하다), 피커가 끝난 뒤 작업이 상태줄로 알리는 경우.
 
-## 정할 것
+## 정한 것 (2026-11-26, 사용자: "제안대로")
 
-1. 시트의 enter: **그 항목의 창 열기** (제안) / 닫기만.
-2. 피커가 없을 때: **상태줄 + 다음에 열 때 시트** (제안) / 상태줄만 / 다음에 열 때 시트만.
-3. 상태줄에 남은 알림 수를 늘 보이기(`@tmux-dev-notices` 사용자 옵션을 `status-right` 에서 쓰는 방식): 넣을까, 말까 (제안: 나중에).
-4. 순서: ① 기록 구조 + 결과 시트(W 정리) → ② 알림함 → ③ 실행 화면에 붙잡기 일반화(S·W).
+1. 시트의 enter: 그 항목의 창 열기.
+2. 피커가 없을 때: 상태줄 + 다음에 열 때 시트.
+3. 상태줄에 남은 알림 수를 늘 보이기: 나중에.
+4. 순서: ① 기록 구조 + 결과 시트(W 정리) → ② 알림함 → ③ 실행 화면에 붙잡기 일반화(S·W). 셋 다 이번에 넣었다.

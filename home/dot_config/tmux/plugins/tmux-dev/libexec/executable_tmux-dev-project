@@ -308,7 +308,7 @@ pick() {
       "${STYLE[@]}" --border-label ' open session ' --header "$(tabs repo)" --header-first --prompt '> ' \
       --footer "$(hint)" --footer-border line \
       --preview "sleep 0.12; $SELF --preview {3}" --preview-window 'right,45%,border-left' \
-      --bind 'start:unbind(result)' \
+      --bind "start:unbind(result)$(notice_start_bind)" \
       --bind "change:transform($SELF --on change)" \
       --bind "result:bg-transform($SELF --on result)" \
       --bind "enter:transform($SELF --on enter {3})" \
@@ -322,6 +322,7 @@ pick() {
       --bind 'alt-p:change-preview-window(down,40%,border-top|hidden|right,45%,border-left)' \
       --bind "alt-h:transform($SELF --on help)" \
       < <(rows repo) > /dev/null || true
+  notice_open_after && exit 0                     # 결과 시트에서 고른 워크트리 (prefix W 의 정리 결과)
   [ -f "$TMUX_DEV_STATE/decision" ] || exit 0     # 결정 없이 끝남 = 취소 (ctrl-c 는 130)
   local path create layout save parent
   IFS=$US read -r path create layout save parent < "$TMUX_DEV_STATE/decision"
@@ -345,6 +346,10 @@ while [ $# -gt 0 ]; do
         tab-click) on_tab_click || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
       esac; exit 0 ;;
     --choose-layout)   choose_layout_step; exit 0 ;;
+    --notice-sheet)    notice_sheet; exit 0 ;;   # 결과 시트 (lib/picker.sh)
+    --notice-preview)  notice_preview "${2:-}"; exit 0 ;;
+    --notice-pick)     notice_pick "${2:-}" "${3:-}"; exit 0 ;;
+    --after-notice)    on_after_notice; exit 0 ;;
     --choose-location) choose_location_step; exit 0 ;;
     --loc-preview)     loc_preview "${2:-}"; exit 0 ;;
     --preview)    dir_preview "${2:-}"; exit 0 ;;

@@ -7,13 +7,17 @@
 #   - 액션 문자열을 안전하게 만드는 도구 (act, nope, search_action)
 #   - 경로 판정 (classify, name_ok)과 기록 파일 (hist_*)
 #   - 화면 모양 (picker_tabs, style_opts: tmux 의 떠 있는 창 테두리와 같은 fzf 테두리)
-#   - 실행 화면 (frame_on, frame_title, frame_hold: 피커가 끝난 뒤 같은 패널에 tmux 테두리)
+#   - 실행 화면 (frame_on, frame_title, frame_hold: 피커가 끝난 뒤 같은 패널에 tmux 테두리. 실패하면 붙잡는다)
+#   - 알림함과 결과 시트 (notice_*: 요청과 다르게 끝난 일을 겹쳐 뜨는 목록으로. docs/tmux-dev/design/feedback.md)
 #   - 겹쳐 뜨는 두 목록: 위치 피커(choose_location_step, alt-enter 로 새로 만들 때)와 레이아웃 목록(choose_layout_step)
 # 을 둔다. 겹쳐 뜨는 목록의 콜백은 부른 쪽 스크립트($SELF)의 인자 처리로 돌아온다. 그래서 그 스크립트는 다음을 이 lib 의
 # 함수로 넘겨야 한다:
 #   --on loc-enter <경로> → on_loc_enter   --on loc-layout <경로> → on_loc_layout   --on loc-after-layout → on_loc_after_layout
 #   --choose-layout → choose_layout_step   --choose-location → choose_location_step   --loc-preview <경로> → loc_preview
 #   --layout-art <이름> → layout_art (lib/layout.sh)
+#   --notice-sheet → notice_sheet   --notice-preview <파일> → notice_preview   --notice-pick <세션> <경로> → notice_pick
+#   --after-notice → on_after_notice
+# 그리고 pick() 이 fzf 를 띄우기 전에 notice_start_bind 를 start 이벤트에 붙이고, fzf 가 끝나면 결정보다 먼저 notice_open_after 를 본다.
 # 상태 키 (부른 쪽과 공유): mode, name, near, loc, pending, near_pick, layout. 모드가 repo 면 새로 만드는 것이 저장소다.
 # 설계와 판단 근거: 저장소의 docs/tmux-dev/design/session-picker.md (구현 구조 절)
 
@@ -74,8 +78,9 @@ st_set() { printf '%s\n' "$2" > "$TMUX_DEV_STATE/$1"; }
 st_del() { local k; for k in "$@"; do [ -e "$TMUX_DEV_STATE/$k" ] && rm -f "$TMUX_DEV_STATE/$k"; done; return 0; }   # 없으면 rm 을 띄우지 않는다 (enter 가 키마다 부르는 길에 있다)
 picker_state_init() {  # $1 이름 → TMUX_DEV_STATE 를 만들고 내보내며, 끝날 때 지운다. 비정상 종료 흔적은 1시간 뒤 치운다
   TMUX_DEV_STATE=$(mktemp -d "${TMPDIR:-/tmp}/$1.XXXXXX"); export TMUX_DEV_STATE
+  # 실행 화면에서 실패로 끝나면(die, set -e) 패널이 닫히기 전에 붙잡는다 (frame_exit)
   # shellcheck disable=SC2064  # 지금 값의 디렉토리를 지운다
-  trap "rm -rf '$TMUX_DEV_STATE'" EXIT
+  trap "frame_exit \$?; rm -rf '$TMUX_DEV_STATE'" EXIT
   find "${TMPDIR:-/tmp}" -maxdepth 1 -name "$1.*" -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 }
 
@@ -188,13 +193,14 @@ style_opts() {  # STYLE 배열: 피커와 겹쳐 뜨는 목록(위치, 레이아
 #     fzf 테두리가 있던 칸에 겹친다 (안쪽이 한 칸씩 줄고 SIGWINCH 한 번. zoom 은 풀리지 않는다. tmux 3.8 에서 확인).
 #   - 런처가 띄운 피커 패널(TMUX_DEV_PICKER_PANE, libexec/tmux-dev-open)에서만 동작한다. 셸 CLI·Claude 훅에서는 아무것도
 #     안 한다. 실패해도 열기를 막지 않는다 (모든 tmux 호출을 || 로 삼킨다).
-FRAMED=""
+FRAMED="" FRAME_WHAT="" FRAME_HELD=""
 frame_fmt() { local t=${1//#/##}; printf ' %s ' "$t"; }   # 제목 → pane-border-format (# 는 tmux 포맷 문자라 겹친다)
 frame_on() {  # $1 제목
   [ -n "${TMUX_DEV_PICKER_PANE:-}" ] && [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] || return 0
   local p=$TMUX_PANE x y w h lines style fmt
   read -r x y w h < <(tmux display-message -p -t "$p" '#{pane_left} #{pane_top} #{pane_width} #{pane_height}' 2>/dev/null) || return 0
   [ -n "$h" ] || return 0
+  FRAME_WHAT=$1
   lines=$(float_opt border-lines); style=$(float_opt border-style); fmt=$(frame_fmt "$1")
   # 한 번의 tmux 호출로 이어서 한 번에 다시 그리게 한다 (테두리만 먼저 켜지면 한 칸 바깥에 잠깐 보인다).
   # 첫 명령(선 모양)이 tmux 가 모르는 값이면(3.8 의 rounded) 뒤 명령도 실행되지 않으므로 single 로 한 번 더.
@@ -211,10 +217,91 @@ frame_title() {  # $1 제목. 테두리를 켠 뒤에만
 }
 frame_hold() {  # $1 제목. 테두리를 켰으면 키 하나를 누를 때까지 붙잡는다 (안 그러면 패널이 바로 닫혀 출력을 못 읽는다)
   [ -n "$FRAMED" ] || return 0
+  FRAME_HELD=1
   frame_title "$1"
   printf '\n%spress any key to close%s' "$D" "$R"
   IFS= read -rsn1 _ < /dev/tty 2>/dev/null || true
   printf '\n'
+}
+# 실행 화면에서 실패로 끝날 때 (EXIT 트랩. die 도, set -e 로 끊긴 명령도). 에러는 이미 이 패널에 찍혀 있다(stderr).
+# 전에는 die 가 상태줄에 5초 띄우고 패널이 바로 닫혔다. setup 실패처럼 제목을 바꾸고 키 하나를 기다린다
+frame_exit() {  # $1 종료 코드
+  [ "$1" != 0 ] && [ -n "$FRAMED" ] && [ -z "$FRAME_HELD" ] || return 0
+  frame_hold "failed · $FRAME_WHAT"
+}
+
+# --- 알림함과 결과 시트 (docs/tmux-dev/design/feedback.md) ----------------------------------------
+# 시작한 일이 요청과 다르게 끝나면(실패, 일부만 됨) 푸터 한 줄로 끝내지 않고 겹쳐 뜨는 목록(결과 시트)으로 보여 준다.
+# 결과는 알림함에 디렉토리 하나로 남긴다. 피커가 살아 있으면 바로 시트를 띄우고 지운다. 피커가 그새 끝났으면 남아서
+# 다음에 prefix S·W 를 열 때 시트가 먼저 뜬다 (본 것은 지운다). 성공만 한 일은 알림함에 넣지 않는다 (푸터로 충분하다).
+# 알림 디렉토리: title(한 줄) · items(항목 한 줄씩: 상태 US 이름 US 요약 US 세션 US 열 경로) · detail.<N>(N 번째 항목의
+# 미리보기) · ready(다 썼다는 표시. 쓰는 중인 것은 읽지 않는다). 상태는 fail | warn | skip | ok.
+# 열 경로는 시트에서 enter 로 열 워크트리다(아직 있을 때만. 없으면 빈 칸이고 enter 는 닫기와 같다).
+TMUX_DEV_NOTICES="${TMUX_DEV_NOTICES:-${TMUX_DEV_HISTORY%/*}/notices}"
+notice_new() {  # 새 알림 디렉토리를 만들고 경로를 출력한다
+  mkdir -p "$TMUX_DEV_NOTICES" && mktemp -d "$TMUX_DEV_NOTICES/$(date +%Y%m%d-%H%M%S).XXXXXX"
+}
+notice_pending() {  # 다 쓴 알림들 (오래된 것부터)
+  local d
+  for d in "$TMUX_DEV_NOTICES"/*/; do [ -f "${d}ready" ] && printf '%s\n' "${d%/}"; done
+  return 0
+}
+notice_start_bind() {  # 남은 알림이 있으면 start 이벤트에 붙일 액션 (+ 로 시작). 상태 notices 에 목록을 남긴다
+  local list; list=$(notice_pending)
+  [ -n "$list" ] || return 0
+  printf '%s\n' "$list" > "$TMUX_DEV_STATE/notices"
+  printf '+execute(%s --notice-sheet)+transform(%s --after-notice)' "$SELF" "$SELF"
+}
+notice_rows() {  # 상태 notices 의 알림들 → 시트의 행 "<표시>\t<detail 파일>\t<세션>\t<경로>". 문제 있는 것이 위로
+  local d n st name sum ses path icon want
+  for want in fail warn skip ok; do
+    while IFS= read -r d; do
+      [ -f "$d/items" ] || continue
+      n=0
+      while IFS=$US read -r st name sum ses path; do
+        n=$((n + 1)); [ "$st" = "$want" ] || continue
+        case $st in fail) icon="${Y}✗${R}" ;; warn) icon="${Y}!${R}" ;; skip) icon="${D}–${R}" ;; *) icon="${G}✓${R}" ;; esac
+        printf '%s %-24s %s\t%s\t%s\t%s\n' "$icon" "$name" "$sum" "$d/detail.$n" "$ses" "$path"
+      done < "$d/items"
+    done < "$TMUX_DEV_STATE/notices"
+  done
+}
+notice_title() {  # 시트 제목: 알림 하나면 그 제목, 여럿이면 몇 개인지
+  local n=0 d title=""
+  while IFS= read -r d; do n=$((n + 1)); [ -f "$d/title" ] && IFS= read -r title < "$d/title"; done < "$TMUX_DEV_STATE/notices"
+  if [ "$n" -gt 1 ]; then printf '%s earlier results' "$n"; else printf '%s' "${title:-result}"; fi
+}
+notice_sheet() {  # execute 안에서 돈다. 다 보면(enter·esc) 그 알림들을 지운다. enter 로 고른 것은 상태 notice_open
+  [ -s "${TMUX_DEV_STATE:-/nonexistent}/notices" ] || return 0
+  st_del notice_open
+  style_opts
+  fzf --ansi --delimiter '\t' --with-nth 1 --no-sort "${STYLE[@]}" --border-label " $(notice_title) " \
+      --prompt 'result> ' --footer "${D}enter open its worktree (if it is still there) · esc back${R}" --footer-border line \
+      --preview "$SELF --notice-preview {2}" --preview-window 'right,60%,border-left,wrap' \
+      --bind 'esc:abort' \
+      --bind "enter:transform($SELF --notice-pick {3} {4})" \
+      --bind "double-click:transform($SELF --notice-pick {3} {4})" \
+      --bind 'alt-p:change-preview-window(down,50%,border-top,wrap|hidden|right,60%,border-left,wrap)' \
+      < <(notice_rows) > /dev/null || true
+  local d
+  while IFS= read -r d; do [ -f "$d/ready" ] && rm -rf "$d"; done < "$TMUX_DEV_STATE/notices"   # 알림 디렉토리만 (ready 가 표지)
+  st_del notices
+}
+notice_preview() { [ -f "${1:-}" ] && cat "$1"; return 0; }
+notice_pick() {  # 시트의 enter: $1 세션 $2 경로. 그 워크트리가 아직 있으면 열기로 고르고, 없으면 닫기만
+  if [ -n "${2:-}" ] && [ -d "$2" ]; then st_set notice_open "${1:-}$US$2"; fi
+  printf 'accept'
+}
+on_after_notice() { st_get notice_open; [ -n "$ST" ] && printf 'accept'; return 0; }   # 시트에서 열기를 골랐으면 피커도 끝낸다
+# 피커가 끝난 뒤: 시트에서 고른 워크트리의 창을 연다 (prefix W 의 셸 호출과 같은 길. 그 세션이 없으면 지금 세션에). 열었으면 0
+notice_open_after() {
+  st_get notice_open; [ -n "$ST" ] || return 1
+  local session path; IFS=$US read -r session path <<< "$ST"
+  frame_on "open · $(home_disp "$path")"
+  [ -n "$session" ] && ! tmux has-session -t "=$session" 2>/dev/null && session=""
+  env -u TMUX_DEV_STATE "$LIB/../libexec/tmux-dev-worktree" ${session:+-t "$session"} "$path"
+  [ -n "$session" ] && tmux switch-client ${TMUX_DEV_CLIENT:+-c "$TMUX_DEV_CLIENT"} -t "=$session" 2>/dev/null
+  return 0
 }
 
 # --- 콜백 도구 -------------------------------------------------------------------

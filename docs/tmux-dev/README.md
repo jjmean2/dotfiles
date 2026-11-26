@@ -37,7 +37,7 @@ tmux 의 기본 개념(prefix 키, 세션·윈도우·패널)과 git 브랜치�
 - [`design/session-picker.md`](design/session-picker.md) — `prefix S` 설계
 - [`design/worktree-picker.md`](design/worktree-picker.md) — `prefix W` 설계
 - [`design/claude-code.md`](design/claude-code.md) — Claude Code 연동 설계
-- [`design/feedback.md`](design/feedback.md) — 피커가 한 일의 결과 알리기 (제안)
+- [`design/feedback.md`](design/feedback.md) — 피커가 한 일의 결과 알리기 (결과 시트, 알림함)
 
 ## 한눈에 보기
 
