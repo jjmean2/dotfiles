@@ -30,6 +30,10 @@ packages:
       - gitmux
       # 구문 단위 diff (dot_config/git/config.darwin 의 diff.external)
       - difftastic
+      # 프로세스·자원 모니터. htop 은 프로세스를 다룰 때(정렬·kill·트리), btop 은 시스템 전체를 그래프로 볼 때
+      # (tmux prefix b 가 floating pane 으로 띄운다)
+      - htop
+      - btop
     # brew install --cask 로 설치하는 GUI 앱과 폰트
     casks:
       - ghostty
@@ -59,6 +63,9 @@ packages:
       - bin: nvim
         mise: aqua:neovim/neovim
         pkg: neovim
+      # 자원 모니터 (tmux prefix b). 릴리스의 정적 musl 바이너리라 배포판과 상관없이 실행된다.
+      # 이 빌드는 GPU 지원 없이 컴파일돼 GPU 패널은 없다 (1.4.8 의 btop --version 으로 확인, 2026-11-26)
+      - bin: btop
     # 받을 바이너리가 없어 패키지 매니저로만 깔 수 있는 것. root 이거나 sudo 를 쓸 수 있을 때만 깐다.
     # 이름은 apt 기준이다. 다른 배포판에서 이름이 다르면 그 패키지는 건너뛴다.
     pkgs:
@@ -67,6 +74,8 @@ packages:
       - bash-completion
       # envsubst (dot_jongwan/bin/doco 가 쓴다)
       - gettext
+      # 프로세스 모니터. 미리 빌드된 바이너리를 내지 않아 패키지 매니저로 깐다
+      - htop
 
   # 기능: 머신마다 켜고 끄는 묶음. 기능 하나 = 패키지 + 그 전용 설정 파일 + 후처리.
   # 새 기능은 여기에 블록 하나를 더하면 된다 (설치 스크립트와 .chezmoiignore 는 이 목록을 돈다).
