@@ -309,7 +309,7 @@ smwt sm2
 : > "$WC/sm2/subb/subc/new"; G -C "$WC/sm2/subb/subc" add new; G -C "$WC/sm2/subb/subc" commit -q -m nested
 G -C "$WC/sm2/subb" commit -q -am 'bump subc'; G -C "$WC/sm2" commit -q -am 'bump subb'
 res=$(smjob sm2)
-yes_has "submodules: unpushed commits in a nested submodule are refused" "$res" "subb/modules/subc: 1 unpushed"
+yes_has "submodules: unpushed commits in a nested submodule are refused" "$res" "subb/subc: 1 unpushed"
 yes_has "submodules: and in its parent submodule too" "$res" "subb: 1 unpushed"
 if [ -d "$WC/sm2" ] && G -C "$CL" show-ref -q --verify refs/heads/sm2; then ok "submodules: and nothing is removed"; else no "submodules: and nothing is removed" "$res"; fi
 
@@ -329,6 +329,52 @@ smwt sm4
 G -C "$WC/sm4" commit -q -am 'bump suba'; G -C "$WC/sm4" submodule deinit -q -f suba
 res=$(smjob sm4)
 yes_has "submodules: a deinit'ed submodule's unpushed commit is refused" "$res" "suba: 1 unpushed"
+
+# ================================================================================================
+echo "# 결과 시트: 요청과 다르게 끝난 정리는 알림함에 남고, 시트가 보여 준 뒤 지운다 (docs/tmux-dev/design/feedback.md)"
+NOTES=$H/.local/state/tmux-dev/notices; rm -rf "$NOTES"
+US1=$'\037'
+ws() { (cd "$CL" && RUN env TMUX_DEV_STATE="$1" tmux-dev worktree "${@:2}") 2>> "$T/stderr"; }   # ws <상태> <인자…>
+st=$(mkstate cl); printf 'worktree\037%s\037sm2\n' "$WC/sm2" > "$st/target"; printf 'one\037\037\n' > "$st/job"
+job "$st"
+n1=$(cat "$st/notice" 2>/dev/null)
+if [ -n "$n1" ] && [ -f "$n1/ready" ] && case $n1 in "$NOTES"/*) true ;; *) false ;; esac; then ok "sheet: a failed clean-up leaves a notice in the inbox"
+else no "sheet: a failed clean-up leaves a notice in the inbox" "notice: $n1"; fi
+eq "sheet: the item says what failed and what to open" "fail${US1}sm2${US1}not removed · unpushed work in submodules${US1}cl${US1}$WC/sm2" "$(cat "$n1/items" 2>/dev/null)"
+eq "sheet: the title names it" "clean-up failed: sm2" "$(cat "$n1/title" 2>/dev/null)"
+det=$(strip < "$n1/detail.1" 2>/dev/null)
+yes_has "sheet: the detail lists each submodule's unpushed commits" "$det" "submodule subb: 1 unpushed commit(s)"
+yes_has "sheet: and what is still there" "$det" "worktree ~/.local/share/tmux-dev/worktrees/cl/sm2"
+yes_has "sheet: and what to do" "$det" "push the commits"
+yes_has "sheet: the footer still has the one-line result" "$(strip < "$st/result")" "clean-up failed: sm2"
+
+# 한꺼번에: 실패 하나 + 성공 하나
+addwt "$CL" okk "$WC/okk"
+st=$(mkstate cl); printf 'worktree\037%s\037sm3\nworktree\037%s\037okk\n' "$WC/sm3" "$WC/okk" > "$st/bulk"; printf 'many\037\037\n' > "$st/job"
+job "$st"
+n2=$(cat "$st/notice" 2>/dev/null)
+eq "sheet: bulk title counts what was not done" "clean-up: 1 of 2 not done" "$(cat "$n2/title" 2>/dev/null)"
+eq "sheet: bulk records every item" "fail ok" "$(cut -d "$US1" -f1 "$n2/items" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')"
+yes_has "sheet: the successful one keeps its restore command" "$(strip < "$n2/detail.2" 2>/dev/null)" "git branch okk refs/archive/"
+
+# 성공만 한 정리는 알림함에 넣지 않는다
+addwt "$CL" ok2 "$WC/ok2"
+st=$(mkstate cl); printf 'worktree\037%s\037ok2\n' "$WC/ok2" > "$st/target"; printf 'one\037\037\n' > "$st/job"
+job "$st"
+if [ ! -e "$st/notice" ]; then ok "sheet: a clean-up that went as asked leaves no notice"; else no "sheet: a clean-up that went as asked leaves no notice"; fi
+
+# 시트: 문제 있는 것이 위로, 다 보면 지운다
+st=$(mkstate cl); printf '%s\n%s\n' "$n1" "$n2" > "$st/notices"; rm -f "$FZ/decide" "$FZ/stdin"
+ws "$st" --notice-sheet
+rows=$(strip < "$FZ/stdin" 2>/dev/null | cut -f1)
+eq "sheet: failures first, then what went fine" "✗ ✗ ✓" "$(cut -c1-3 <<< "$rows" | sed 's/ *$//' | tr '\n' ' ' | sed 's/ $//')"
+yes_has "sheet: rows carry the detail to preview" "$(strip < "$FZ/stdin" | head -1)" "$n1/detail.1"
+if [ ! -e "$n1" ] && [ ! -e "$n2" ]; then ok "sheet: seen notices are removed"; else no "sheet: seen notices are removed"; fi
+eq "sheet: enter on a worktree that is still there opens it" "accept|cl${US1}$WC/sm2" "$(ws "$st" --notice-pick cl "$WC/sm2")|$(cat "$st/notice_open" 2>/dev/null)"
+eq "sheet: and the main list ends too" "accept" "$(ws "$st" --after-notice)"
+rm -f "$st/notice_open"
+eq "sheet: enter on one that is gone only closes" "accept|" "$(ws "$st" --notice-pick cl "$WC/okk")|$(cat "$st/notice_open" 2>/dev/null)"
+eq "sheet: and the main list stays" "" "$(ws "$st" --after-notice)"
 
 # 피커가 떠 있는 창을 정리: 피커(modal 패널)는 남고 그 창의 다른 패널만 닫힌다
 if TM list-commands new-pane > /dev/null 2>&1; then

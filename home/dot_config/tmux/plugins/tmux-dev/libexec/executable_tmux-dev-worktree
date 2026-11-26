@@ -873,6 +873,7 @@ pick() {
   st_set session "$SESSION"
   [ -n "$IN_REPO" ] && st_set base "$(base)"
   local start_tab=""; [ "$MODE" = worktree ] || start_tab="unbind(tab,shift-tab)+"   # 다중 선택은 worktree 모드에서만
+  local notices; notices=$(notice_start_bind)   # 피커가 없을 때 끝난 일의 결과가 남아 있으면 먼저 결과 시트
   style_opts
   # 정렬은 행 순서 그대로(--tiebreak index 가 마지막). 바인딩은 fzf 기본 키와 겹치지 않는 것만 (prefix S 와 같다).
   # 미리보기 앞의 sleep 은 debounce 다: fzf 는 커서가 옮겨지면 돌던 미리보기를 끊으므로, 타이핑으로 커서가 계속 바뀌는 동안에는
@@ -882,7 +883,7 @@ pick() {
       "${STYLE[@]}" --border-label " open window · ${SESSION} " --header "$(tabs "$MODE")" --header-first --prompt '> ' \
       --footer "$(hint "$MODE")" --footer-border line \
       --preview "sleep 0.12; $SELF --preview {3} {4} {5}" --preview-window 'right,45%,border-left' \
-      --multi --bind "start:unbind(result)+unbind($EVERY)+${start_tab}bg-transform($SELF --on fetch)" \
+      --multi --bind "start:unbind(result)+unbind($EVERY)+${start_tab}bg-transform($SELF --on fetch)$notices" \
       --bind "$EVERY:transform($SELF --cleanup-tick)" \
       --bind "load:unbind(load)+transform($SELF --on marks)" \
       --bind "change:transform($SELF --on change)" \
@@ -900,6 +901,7 @@ pick() {
       --bind 'alt-p:change-preview-window(down,40%,border-top|hidden|right,45%,border-left)' \
       --bind "alt-h:transform($SELF --on help)" \
       < <(list_mode "$MODE") > /dev/null || true
+  notice_open_after && exit 0                     # 결과 시트에서 고른 워크트리
   [ -f "$TMUX_DEV_STATE/decision" ] || exit 0     # 결정 없이 끝남 = 취소
   local kind path branch layout save create parent
   IFS=$US read -r kind path branch layout save create parent < "$TMUX_DEV_STATE/decision"
@@ -1284,17 +1286,23 @@ start_job() {  # $1 one(상태 target) | many(상태 bulk) [$2 keep]
   st_set job "$1$US${2:-}$US$(picker_window)"
   # 세션 이름(사용자가 정한 글자)은 셸 명령줄에 싣지 않는다: 작업이 상태 session 에서 읽는다 (pick 이 써 둔다)
   # run-shell 의 출력은 패널에 뜨므로 버린다. TMUX_PANE 은 피커가 속한 창을 아는 데 쓴다 (picker_window)
-  tmux run-shell -b "$(printf 'TMUX_DEV_STATE=%q TMUX_PANE=%q %q --cleanup-job >/dev/null 2>&1' \
-    "$TMUX_DEV_STATE" "${TMUX_PANE:-}" "$SELF")" 2>/dev/null || { st_del job; nope "${Y}could not start the clean-up${R}"; return; }
+  # 알림함 자리도 넘긴다: run-shell 은 tmux 서버의 환경이라 XDG_STATE_HOME 이 피커와 다를 수 있다 (다음 피커가 못 찾는다)
+  tmux run-shell -b "$(printf 'TMUX_DEV_STATE=%q TMUX_PANE=%q TMUX_DEV_CLIENT=%q TMUX_DEV_NOTICES=%q %q --cleanup-job >/dev/null 2>&1' \
+    "$TMUX_DEV_STATE" "${TMUX_PANE:-}" "${TMUX_DEV_CLIENT:-}" "$TMUX_DEV_NOTICES" "$SELF")" 2>/dev/null || { st_del job; nope "${Y}could not start the clean-up${R}"; return; }
   st_set busy 1; st_set tick 0
   printf '%s+rebind(%s)' "$(act change-footer "${SPIN[0]} ${B}cleaning up${R}")" "$EVERY"
 }
 cleanup_tick() {  # every 이벤트: 끝났으면 결과, 아니면 스피너와 진행
   local n msg f
   if [ -f "$TMUX_DEV_STATE/finished" ]; then
-    st_get result; msg=$ST; st_get fail; f=$ST
-    st_del busy finished result fail progress tick job
+    st_get result; msg=$ST; st_get fail; f=$ST; st_get notice; n=$ST
+    st_del busy finished result fail progress tick job notice
     printf 'unbind(%s)+%sdeselect-all+rebind(load)+reload(%s --list worktree)+%s' "$EVERY" "${f:+bell+}" "$SELF" "$(act change-footer "$msg")"
+    # 요청과 다르게 끝났으면 결과 시트 (lib/picker.sh). 거기서 enter 로 워크트리를 고르면 피커도 끝나고 그 창이 열린다
+    if [ -n "$n" ] && [ -d "$n" ]; then
+      st_set notices "$n"
+      printf '+execute(%s --notice-sheet)+transform(%s --after-notice)' "$SELF" "$SELF"
+    fi
     return 0
   fi
   st_get busy; [ "$ST" = 1 ] || { printf 'unbind(%s)' "$EVERY"; return 0; }
@@ -1310,7 +1318,7 @@ job_finish() {  # 결과를 알린다 (한 번만). 중간에 죽어도 EXIT 트
 cleanup_job() {
   local scope keep selfwin kind path branch
   local -a items=()
-  JOB_MSG="" JOB_FAIL="" JOB_DONE=""
+  JOB_MSG="" JOB_FAIL="" JOB_DONE="" JOB_TITLE=""
   trap job_finish EXIT
   st_get job; IFS=$US read -r scope keep selfwin <<< "$ST"
   [ -n "$scope" ] || exit 0
@@ -1321,6 +1329,16 @@ cleanup_job() {
   cd "$MAIN"   # 세션 디렉토리가 지우려는 워크트리일 수 있다
   if [ "$scope" = many ]; then bulk_run "$keep" "$selfwin" "${items[@]}"
   else IFS=$US read -r kind path branch <<< "${items[0]}"; clean_run "$kind" "$path" "$branch" "$keep" "$selfwin"; fi
+  # 요청과 다르게 끝났으면 알림함에 남긴다. 피커가 살아 있으면 틱이 결과 시트를 띄우고 지운다. 피커가 그새 끝났으면
+  # (상태 디렉토리가 없다) 상태줄에 키를 누를 때까지 알리고, 다음에 prefix S·W 를 열 때 시트가 먼저 뜬다
+  if [ -n "$JOB_FAIL" ] && [ "${#REC[@]}" -gt 0 ]; then
+    local notice; notice=$(write_notice "$JOB_TITLE") || notice=""
+    if [ -n "$notice" ]; then
+      job_put notice "$notice"
+      [ -d "${TMUX_DEV_STATE:-/nonexistent}" ] || tmux display-message ${TMUX_DEV_CLIENT:+-c "$TMUX_DEV_CLIENT"} -d 0 \
+        "tmux-dev: $JOB_TITLE · open prefix W or S to see why" 2>/dev/null || true
+    fi
+  fi
   job_finish
   empty_trash   # 느린 디스크 삭제는 결과를 알린 뒤에
 }
@@ -1333,14 +1351,18 @@ bulk_run() {  # $1 keep|"" $2 피커 창 $3.. "종류 US 경로 US 브랜치". �
     JOB_ITEM="$i/$total ${branch:-$(basename "$path")}"
     if clean_one "$kind" "$path" "$branch" "$selfwin" "$keep"; then
       done_n=$((done_n + 1)); [ -n "$ONE_REF" ] && refs=$((refs + 1)); [ -n "$SELF_CLOSING" ] && any_self=1
-    else failed=$((failed + 1)); err=${err:-$ONE_ERR}; fi
+      record_item ok "$kind" "$path" "$branch" "$keep"
+    else failed=$((failed + 1)); err=${err:-$ONE_ERR}; record_item fail "$kind" "$path" "$branch" "$keep"; fi
   done
+  [ "$noworktree" -gt 0 ] && record_skip "$noworktree branch row(s)" "keep branches only removes worktrees; these rows had none"
+  [ -n "${JOB_SKIP:-}" ] && record_skip "$JOB_SKIP" "these were left out before the clean-up started (the clean-up list showed them)"
+  JOB_TITLE="clean-up: $failed of $((done_n + failed)) not done"
   if [ "$keep" = keep ]; then msg="${G}removed $done_n worktree(s)${R} ${D}· branches kept${R}"
   else msg="${G}cleaned up $done_n${R}"; fi
   [ "$noworktree" -gt 0 ] && msg+=" ${D}· skipped $noworktree branch row(s) with no worktree${R}"
   [ "$refs" -gt 0 ] && msg+=" ${D}· archived $refs branch(es) under refs/archive/$(date +%Y-%m-%d)/ (tmux-dev worktree --archived)${R}"
   [ -n "${JOB_SKIP:-}" ] && msg+=" ${D}· $JOB_SKIP${R}"
-  [ "$failed" -gt 0 ] && { msg+=" · ${Y}$failed failed${R}: $err"; JOB_FAIL=1; }
+  [ "$failed" -gt 0 ] && { msg+=" · ${Y}$failed failed${R}: $err ${D}(see the list)${R}"; JOB_FAIL=1; }
   [ -n "$any_self" ] && msg+=" ${D}· this window closes when you leave the picker${R}"
   JOB_MSG=$msg
 }
@@ -1395,6 +1417,7 @@ close_panes() {  # $1 워크트리 경로 $2 피커가 속한 창(없으면 빈 
     fi
   done
   [ "${#kill[@]}" -gt 0 ] || return 0
+  CLOSED_N=${#kill[@]}
   # 닫고 나면 남는 창이 없을 때 (피커만 남는 창은 피커와 함께 닫히므로 세지 않는다) 세션이 끝나지 않게 창을 하나 먼저 연다
   if [ "$keepwins" -eq 0 ]; then keep_session_window; fi
   for id in "${kill[@]}"; do
@@ -1412,15 +1435,17 @@ close_panes() {  # $1 워크트리 경로 $2 피커가 속한 창(없으면 빈 
   return 0
 }
 # 하나를 정리한다: 패널 → 워크트리 → 백업 → 브랜치. 결과는 ONE_REF(백업 ref, 없으면 빈 값), 실패면 1 과 ONE_ERR.
+# 결과 시트(record_item)를 위해 한 일(ONE_DID, 한 줄씩), 실패 종류(ONE_KIND: dirty | submodule | processes | unchecked | git),
+# git 의 출력 전체(ONE_OUT), 서브모듈별 잃을 것(SUB_LIST)도 남긴다.
 # $4 피커가 속한 창 (picker_window. 한꺼번에 정리할 때 한 번만 구한다) $5 keep 이면 브랜치는 그대로 (백업·삭제 없음)
 # 커밋 안 된 변경은 실행할 때 다시 본다. ctrl-x 의 검사(cleanable) 뒤에도 창 안의 에이전트·에디터가 파일을 쓸 수 있고,
 # 빠른 제거의 git worktree move 와 뒤의 remove --force --force 는 dirty 를 막지 않는다 (git worktree remove 만 막는다).
 # 패널을 닫기 전에 한 번(괜히 닫지 않게), 닫은 뒤(그 안의 프로세스가 끝난 뒤) 옮기기 직전에 한 번.
 dirty_guard() {  # $1 워크트리 경로 $2 덧붙일 안내. dirty 면 1 과 ONE_ERR
   local n; [ -d "$1" ] || return 0
-  n=$(dirty_count "$1") || { ONE_ERR="cannot check $(home_disp "$1") (git status failed) · nothing removed$2"; return 1; }
+  n=$(dirty_count "$1") || { ONE_KIND=unchecked; ONE_ERR="cannot check $(home_disp "$1") (git status failed) · nothing removed$2"; return 1; }
   [ "$n" -gt 0 ] || { submodule_guard "$1" "$2"; return; }
-  ONE_ERR="dirty: $n uncommitted change(s) in $(home_disp "$1") · nothing removed$2"
+  ONE_KIND=dirty; ONE_ERR="dirty: $n uncommitted change(s) in $(home_disp "$1") · nothing removed$2"
   return 1
 }
 # 서브모듈이 든 워크트리는 git 이 --force 없이는 옮기지도 지우지도 않는다 ("working trees containing submodules cannot be moved
@@ -1439,12 +1464,12 @@ submodule_guard() {  # $1 워크트리 경로 $2 덧붙일 안내. 잃을 것이
   if [ -d "$admin/modules" ]; then
     while IFS= read -r d; do
       d=${d%/HEAD}; [ -d "$d/objects" ] || continue   # logs/HEAD, refs/remotes/*/HEAD 는 저장소가 아니다
-      gitdirs+=("$d"); names+=("${d#"$admin/modules/"}")
+      name=${d#"$admin/modules/"}; gitdirs+=("$d"); names+=("${name//\/modules\//\/}")   # 중첩: a/modules/b → a/b
     done < <(find "$admin/modules" -type f -name HEAD 2>/dev/null)
   fi
   if [ -f "$wt/.gitmodules" ]; then
     out=$(git -C "$wt" submodule foreach --quiet --recursive 'pwd' 2>/dev/null) || {
-      ONE_ERR="cannot check the submodules of $(home_disp "$wt") (git submodule foreach failed) · nothing removed$2"; return 1; }
+      ONE_KIND=unchecked; ONE_ERR="cannot check the submodules of $(home_disp "$wt") (git submodule foreach failed) · nothing removed$2"; return 1; }
     while IFS= read -r sub; do
       [ -n "$sub" ] || continue
       name=${sub#"$wt/"}
@@ -1464,34 +1489,99 @@ submodule_guard() {  # $1 워크트리 경로 $2 덧붙일 안내. 잃을 것이
     git --git-dir="$d" rev-parse -q --verify refs/stash >/dev/null 2>&1 && bad+=", $name: stash"
   done
   [ -z "$bad" ] && return 0
+  ONE_KIND=submodule; SUB_LIST=${bad#, }
   ONE_ERR="submodule ${bad#, } · would be lost with $(home_disp "$wt") · nothing removed$2"
   return 1
 }
 clean_one() {
   local kind=$1 path=$2 branch=$3 out
-  ONE_REF="" ONE_ERR=""
+  ONE_REF="" ONE_ERR="" ONE_KIND="" ONE_OUT="" ONE_DID="" SUB_LIST="" CLOSED_N=0
   if [ "$kind" = worktree ]; then dirty_guard "$path" "" || return 1; fi
   step "closing panes"; close_panes "$path" "${4:-}"
+  [ "$CLOSED_N" -gt 0 ] && ONE_DID+="closed $CLOSED_N pane(s)"$'\n'
   case $kind in
     worktree)
-      [ -n "$CLOSE_PENDING" ] && { ONE_ERR="processes in its panes are still running · nothing removed (its panes were closed)"; return 1; }
+      [ -n "$CLOSE_PENDING" ] && { ONE_KIND=processes; ONE_ERR="processes in its panes are still running · nothing removed (its panes were closed)"; return 1; }
       dirty_guard "$path" " (its panes were closed)" || return 1
-      step "removing worktree"; trash_worktree "$path" || return 1 ;;
-    prunable) git worktree prune ;;
+      step "removing worktree"; trash_worktree "$path" || { ONE_KIND=git; return 1; }
+      ONE_DID+="removed worktree $(home_disp "$path")"$'\n' ;;
+    prunable) git worktree prune; ONE_DID+="pruned the missing worktree"$'\n' ;;
   esac
   if [ "${5:-}" != keep ] && real_branch "$branch"; then
     step "archiving branch"
-    ONE_REF=$(archive_branch "$branch") || { ONE_ERR="could not archive $branch"; return 1; }
-    out=$(git branch -D "$branch" 2>&1) || { ONE_ERR="git branch -D failed: ${out##*$'\n'}"; return 1; }
+    ONE_REF=$(archive_branch "$branch") || { ONE_KIND=git; ONE_ERR="could not archive $branch"; return 1; }
+    ONE_DID+="archived $branch → $ONE_REF"$'\n'
+    out=$(git branch -D "$branch" 2>&1) || { ONE_KIND=git; ONE_OUT=$out; ONE_ERR="git branch -D failed: ${out##*$'\n'}"; return 1; }
+    ONE_DID+="deleted branch $branch"$'\n'
   fi
   return 0
 }
 step() { job_put progress "${JOB_ITEM:+$JOB_ITEM · }$1"; }
+# --- 결과 기록 (결과 시트. lib/picker.sh 의 알림함, docs/tmux-dev/design/feedback.md) ------------------------------
+# 항목마다 한 줄(REC)과 미리보기(REC_DETAIL)를 모은다. 실패가 있으면 cleanup_job 이 알림함에 쓴다(write_notice).
+REC=() REC_DETAIL=()
+fix_hint() {  # $1 실패 종류 → 할 일
+  case $1 in
+    dirty)     echo "commit or discard the changes (enter opens the worktree), then ctrl-x on its row again" ;;
+    submodule) echo "push the commits, or drop the stash and changes, in the submodules above (enter opens the worktree),"
+               echo "then ctrl-x on its row again" ;;
+    processes) echo "quit the programs that were still running there (enter opens the worktree), then ctrl-x on its row again" ;;
+    unchecked) echo "run git status in the worktree to see what is wrong" ;;
+    *)         echo "the git output is above. fix what it says, then ctrl-x on the row again" ;;
+  esac
+}
+record_item() {  # $1 ok|fail $2 종류 $3 경로 $4 브랜치 $5 keep|"". clean_one 바로 뒤에 (ONE_* 를 읽는다)
+  local st=$1 kind=$2 path=$3 branch=$4 keep=${5:-} name sum="" open="" wt_left="" br_left="" d why
+  name=$branch; real_branch "$branch" || [ -n "$ONE_REF" ] || name=$(basename "$path")
+  [ "$kind" = worktree ] && [ -d "$path" ] && wt_left=1
+  real_branch "$branch" && br_left=1
+  if [ "$st" = ok ]; then
+    if [ "$keep" = keep ]; then sum="worktree removed · branch kept"; elif [ -n "$ONE_REF" ]; then sum="cleaned up · branch archived"; else sum="cleaned up"; fi
+  else
+    case $ONE_KIND in
+      dirty) why="uncommitted changes" ;; submodule) why="unpushed work in submodules" ;;
+      processes) why="programs still running in its panes" ;; unchecked) why="could not check it" ;; *) why="git failed" ;;
+    esac
+    if [ -n "$wt_left" ]; then sum="not removed · $why"; else sum="branch not deleted · $why"; fi
+    [ -n "$wt_left" ] && open=$path
+  fi
+  d="${B}$name${R}  "
+  if [ "$st" = ok ]; then d+="${G}$sum${R}"$'\n'; else d+="${Y}$sum${R}"$'\n'; fi
+  [ -n "$ONE_DID" ] && d+=$'\n'"${B}done${R}"$'\n'"$(sed 's/^/  /' <<< "${ONE_DID%$'\n'}")"$'\n'
+  if [ "$st" = fail ]; then
+    if [ -n "$wt_left" ] || { [ -n "$br_left" ] && [ "$keep" != keep ]; }; then
+      d+=$'\n'"${B}still there${R}"$'\n'
+      [ -n "$wt_left" ] && d+="  worktree $(home_disp "$path")"$'\n'
+      [ -n "$br_left" ] && [ "$keep" != keep ] && d+="  branch $branch"$'\n'
+    fi
+    d+=$'\n'"${B}why${R}"$'\n'
+    if [ -n "$SUB_LIST" ]; then d+="$(tr ',' '\n' <<< "$SUB_LIST" | sed 's/^ *//; s/^/  submodule /')"$'\n'"  ${D}these live only in this worktree and would be lost with it${R}"$'\n'
+    elif [ -n "$ONE_OUT" ]; then d+="  $ONE_ERR"$'\n'"$(sed 's/^/  /' <<< "$ONE_OUT")"$'\n'
+    else d+="  $ONE_ERR"$'\n'; fi
+    d+=$'\n'"${B}to do${R}"$'\n'"$(fix_hint "$ONE_KIND" | sed 's/^/  /')"$'\n'
+  fi
+  [ -n "$ONE_REF" ] && d+=$'\n'"${B}restore${R}"$'\n'"  git branch $branch $ONE_REF"$'\n'
+  REC+=("$st$US$name$US$sum$US$SESSION$US$open"); REC_DETAIL+=("$d")
+}
+record_skip() {  # $1 요약 $2 설명
+  REC+=("skip${US}skipped$US$1$US$SESSION$US"); REC_DETAIL+=("${B}skipped${R}  ${D}$1${R}"$'\n\n'"$2")
+}
+write_notice() {  # $1 제목. REC·REC_DETAIL 을 알림함에 쓰고 경로를 출력한다
+  local dir i; dir=$(notice_new) || return 1
+  printf '%s\n' "$1" > "$dir/title"
+  for i in "${!REC[@]}"; do
+    printf '%s\n' "${REC[$i]}" >> "$dir/items"; printf '%s' "${REC_DETAIL[$i]}" > "$dir/detail.$((i + 1))"
+  done
+  : > "$dir/ready"; printf '%s' "$dir"
+}
 clean_run() {  # $1 종류 $2 경로 $3 브랜치 $4 keep|"" $5 피커 창. 하나를 정리한다. 결과는 JOB_MSG (실패면 JOB_FAIL)
   local label=$3 msg
   real_branch "$3" || label=$(basename "$2")
   JOB_ITEM=$label
-  clean_one "$1" "$2" "$3" "${5:-}" "${4:-}" || { JOB_MSG="${Y}$ONE_ERR${R}"; JOB_FAIL=1; return 0; }
+  if ! clean_one "$1" "$2" "$3" "${5:-}" "${4:-}"; then
+    record_item fail "$1" "$2" "$3" "${4:-}"; JOB_TITLE="clean-up failed: $label"
+    JOB_MSG="${Y}clean-up failed: $label${R} ${D}· $ONE_ERR${R}"; JOB_FAIL=1; return 0
+  fi
   if [ "${4:-}" = keep ]; then msg="${G}removed worktree${R} ${B}$label${R} ${D}· kept branch $3 (enter on its row to recreate)${R}"
   else msg="${G}cleaned up${R} ${B}$label${R}"; fi
   [ -n "$ONE_REF" ] && msg+=" ${D}· archived →${R} $ONE_REF ${D}· restore: git branch $3 $ONE_REF${R}"
@@ -1515,7 +1605,7 @@ trash_worktree() {  # $1 워크트리 경로. 실패면 1 과 ONE_ERR
   out=$(git worktree remove "$path" 2>&1) && return 0
   # 서브모듈이 있으면 강제 없이는 못 지운다. 바로 앞의 dirty_guard 가 submodule_guard 로 서브모듈에만 있는 것을 봤으므로 --force
   case $out in *"containing submodules"*) out=$(git worktree remove --force "$path" 2>&1) && return 0 ;; esac
-  ONE_ERR="git worktree remove failed: ${out##*$'\n'}"; return 1
+  ONE_OUT=$out; ONE_ERR="git worktree remove failed: ${out##*$'\n'}"; return 1
 }
 trashed_worktrees() {  # 휴지통에 있는(아직 등록된) 워크트리 경로들
   local line
@@ -1625,6 +1715,10 @@ while [ $# -gt 0 ]; do
         toggle-merged) on_toggle_merged || true ;; after-cleanup) on_after_cleanup || true ;; deselect) on_deselect || true ;; fetch) on_fetch || true ;; fill) on_fill "${3:-}" || true ;; help) on_help || true ;;
       esac; exit 0 ;;
     --cleanup-tick)    cleanup_tick; exit 0 ;;   # 저장소를 찾지 않는다 (틱마다 불린다)
+    --notice-sheet)    notice_sheet; exit 0 ;;   # 결과 시트 (lib/picker.sh). 저장소를 찾지 않는다
+    --notice-preview)  notice_preview "${2:-}"; exit 0 ;;
+    --notice-pick)     notice_pick "${2:-}" "${3:-}"; exit 0 ;;
+    --after-notice)    on_after_notice; exit 0 ;;
     --cleanup-job)     in_session_dir; cleanup_job; exit 0 ;;
     --empty-trash)     repo_init; empty_trash; exit 0 ;;
     --fetch-job)       repo_init; fetch_job; exit 0 ;;
