@@ -228,6 +228,18 @@ return {
       -- 이미 사라진 알림은 <leader>n(Notification History)에서 다시 볼 수 있다.
       notifier = { timeout = 5000 },
       picker = {
+        -- 입력창에서 이전/다음 검색어(기록)로 이동. 기록은 피커 종류(source)마다 따로 남는다.
+        -- 기본 <C-Up>/<C-Down> 은 macOS Mission Control 과 겹쳐서 nvim 까지 오지 않을 때가 있다.
+        -- <C-p>/<C-n> 은 목록 위/아래(blink 메뉴와 같은 습관)라 남겨 두고, 비어 있는 Alt+k/j 를 쓴다.
+        -- 왼쪽 Option 만 Alt 로 동작한다 (ghostty config 의 macos-option-as-alt = left).
+        win = {
+          input = {
+            keys = {
+              ["<M-k>"] = { "history_back", mode = { "i", "n" }, desc = "Previous search" },
+              ["<M-j>"] = { "history_forward", mode = { "i", "n" }, desc = "Next search" },
+            },
+          },
+        },
         sources = {
           -- 처음 열 때 목록에 포커스 (snacks 기본은 입력창, explorer 만 목록).
           -- 결과가 적거나 미리 정해져 있어서 검색보다 위아래로 훑어보는 일이 많은 피커들이다.
