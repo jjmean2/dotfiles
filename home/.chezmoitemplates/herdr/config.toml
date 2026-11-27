@@ -1,0 +1,122 @@
+# Herdr 설정의 관리 기본값. 모든 머신에 같다.
+#
+# 배포 경로: ~/.config/herdr/config.toml 은 이 파일로 바로 만들지 않고 dot_config/herdr/config.toml.tmpl 이
+#   이 파일과 머신 로컬 파일 ~/.config/herdr/config.local.toml 을 합쳐 만든다 (로컬이 이긴다). 그래서 배포된
+#   파일에는 이 주석이 없다. 키를 바꾸려면 여기를, 이 머신만 다르게 하려면 config.local.toml 을 고친다.
+# Herdr 는 include 가 없어 한 파일만 읽는다 (0.9.5 소스 src/config/io.rs 의 config_path).
+# 키 목록과 기본값: herdr --default-config, https://herdr.dev/docs/config-reference/
+# 설계와 쓰는 법: docs/herdr.md
+#
+# 방침: tmux 설정에 맞추지 않는다. Herdr 의 방식(사이드바가 대시보드, 마우스, 내장 워크트리·이동 화면)을 따르고,
+# 기본값과 다르게 둘 것만 적는다.
+
+# 첫 실행 안내를 띄우지 않는다. 안내를 끝내면 Herdr 가 이 줄을 배포된 파일에 직접 써넣어 chezmoi 와 어긋나므로
+# 처음부터 적어 둔다. Claude 통합은 안내 대신 docs/herdr.md 의 "처음 한 번" 으로 설치한다.
+onboarding = false
+
+# ---- 테마 ----
+# terminal: Herdr UI 가 바깥 터미널(Ghostty)의 ANSI 팔레트를 따른다. Ghostty 테마는 머신 로컬
+# (~/.config/ghostty/auto/theme.ghostty)이라 여기서 테마 이름을 고르면 머신마다 어긋난다.
+# 강조색만 tmux 상태바 세션 뱃지와 같은 lavender 로 둔다.
+[theme]
+name = "terminal"
+
+[theme.custom]
+accent = "#b4befe"
+
+# ---- 키 ----
+# prefix 는 기본값 ctrl+b 그대로다. Karabiner 규칙(docs/karabiner.md)이 한글 상태의 ctrl+b 를 이미 영문 전환으로
+# 바꿔 주므로 prefix 뒤의 글자 키가 Herdr 에 닿는다.
+# 기본 키맵은 그대로 두고, 자주 쓰는 것만 prefix 없는 ctrl+alt 조합을 덧붙인다. ctrl+alt 는 Herdr 문서가 터미널·OS
+# 기본 단축키와 거의 겹치지 않는다고 정리한 조합이다 (https://herdr.dev/docs/keyboard/#going-prefix-free).
+# ctrl+alt+방향키는 Ghostty 기본값과 겹쳐 쓰지 않는다. ctrl+alt+l 은 KDE 잠금이지만 이 dotfiles 는 macOS 가 주력이다.
+[keys]
+focus_pane_left = ["prefix+h", "ctrl+alt+h"]
+focus_pane_down = ["prefix+j", "ctrl+alt+j"]
+focus_pane_up = ["prefix+k", "ctrl+alt+k"]
+focus_pane_right = ["prefix+l", "ctrl+alt+l"]
+previous_tab = ["prefix+p", "ctrl+alt+["]
+next_tab = ["prefix+n", "ctrl+alt+]"]
+zoom = ["prefix+z", "ctrl+alt+z"]
+# 이동 화면: 에이전트·터미널을 workspace 별로 한 줄씩. 안에서 b/w/i/d 로 blocked/working/idle/done 만 거른다
+goto = ["prefix+g", "ctrl+alt+g"]
+# 에이전트 중심 이동. 기본값은 비어 있다.
+#   open_notification_target  지금 떠 있는 알림의 패널로 (tmux 설정의 prefix M-a 에 해당)
+#   next/previous_agent       사이드바 Agent 목록 순서로. 아래 agent_panel_sort = priority 라 급한 것부터
+open_notification_target = ["prefix+o", "ctrl+alt+o"]
+next_agent = "ctrl+alt+n"
+previous_agent = "ctrl+alt+p"
+focus_agent = "prefix+alt+1..9"
+switch_workspace = "prefix+shift+1..9"
+# 직전 패널 (workspace·탭을 넘어서). 기본값은 비어 있다
+last_pane = "prefix+backtick"
+# 워크트리 열기. 만들기는 기본값 prefix+shift+g. 지우기(remove_worktree)는 일부러 묶지 않고 사이드바 메뉴에서
+# 확인을 거쳐 지운다
+open_worktree = "prefix+shift+o"
+
+# 도구 띄우기. popup 은 탭 배치를 바꾸지 않는 모달 창이고, 명령이 끝나면 닫힌다.
+# LG_CONFIG_FILE 은 셸 프로필(shell/rc.d/lazygit.sh)과 같은 값이다. Herdr 서버는 자기가 시작될 때의 환경을 쓰므로 적어 둔다
+[[keys.command]]
+key = "prefix+alt+g"
+type = "popup"
+command = "LG_CONFIG_FILE=\"$HOME/.config/lazygit/config.yml\" lazygit"
+description = "lazygit"
+width = "90%"
+height = "90%"
+
+[[keys.command]]
+key = "prefix+t"
+type = "popup"
+command = "exec \"${SHELL:-sh}\""
+description = "임시 셸"
+width = "80%"
+height = "80%"
+
+# pane: 임시로 zoom 된 패널을 띄우고 명령이 끝나면(:q) 닫는다. 스크롤백을 편집기로 여는 것은 내장 prefix+e
+[[keys.command]]
+key = "prefix+alt+e"
+type = "pane"
+command = "nvim"
+description = "nvim (현재 디렉토리)"
+
+# ---- 화면 ----
+[ui]
+# Agent 목록을 workspace 순서가 아니라 급한 순서로 (blocked 가 맨 위)
+agent_panel_sort = "priority"
+# 상태를 색만이 아니라 모양으로도 구분한다
+status_indicators = "symbols"
+show_agent_labels_on_pane_borders = true
+# Ghostty 탭 제목
+window_title = "{workspace} · {tab}"
+tab_bar_right = [{ type = "zoom" }, { type = "datetime", format = "%H:%M" }]
+
+# Agent 사이드바 행.
+#   $reason  대기 이유(permission/question/plan). agent-state 가 보고하면 나온다 (docs/herdr.md "agent-state 연결").
+#            보고가 없으면 칸과 구분자가 저절로 사라진다
+#   terminal_title_stripped  Claude Code 가 터미널 제목에 쓰는 작업 요약 (앞의 스피너 글자는 뺀다)
+[ui.sidebar.agents]
+rows = [
+  ["state_icon", "agent", "state_text", "$reason"],
+  ["workspace", "tab"],
+]
+
+[ui.sidebar.agents.rows_by_agent]
+claude = [
+  ["state_icon", "agent", "state_text", "$reason"],
+  ["terminal_title_stripped"],
+  ["workspace", "tab"],
+]
+
+# 알림: 바깥 터미널(Ghostty)의 데스크톱 알림. herdr --remote 로 붙었을 때도 동작한다.
+# Herdr 안의 셸에서는 agent-state 플러그인 알림을 끈다 (shell/rc.d/herdr.sh). 둘 다 내면 두 번 온다
+[ui.toast]
+delivery = "terminal"
+
+# ---- 한글 입력 (macOS) ----
+# Claude Code 처럼 하드웨어 커서를 숨기는 TUI 에서는 한글 입력기 후보 창이 엉뚱한 곳에 뜬다. 그 에이전트 패널에서만
+# 커서 위치를 바깥 터미널에 알린다.
+# switch_ascii_input_source_in_prefix(prefix 동안 영문, 끝나면 복귀)는 켜지 않는다. Karabiner 가 ctrl+b 를 누르는
+# 순간 먼저 영문으로 바꿔서 Herdr 가 "원래 입력기" 를 영문으로 읽고 아무것도 하지 않는다 (docs/herdr.md).
+[experimental]
+reveal_hidden_cursor_for_cjk_ime = true
+cjk_ime_agents = ["claude", "codex", "cursor"]

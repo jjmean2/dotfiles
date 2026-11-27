@@ -33,6 +33,7 @@
 | `dev` | full | 언어 런타임: mise 로 `shared.toml` 의 node·python·go 등 설치 | 켬 | 끔 |
 | `credentials` | full | 로그인이 필요한 도구 (gh). 회사 머신에서도 회사 계정으로 쓴다 | 켬 | 끔 |
 | `karabiner` | opt-in | Karabiner-Elements (macOS). 보안 소프트웨어가 관리하는 머신에서는 깔면 안 되므로 init 때 묻는다 | 물은 답 | 끔 (묻지 않음) |
+| `herdr` | opt-in | 코딩 에이전트용 멀티플렉서 Herdr 와 그 설정 (`~/.config/herdr`). 써 보는 단계라 켠다고 적은 머신에서만 ([herdr.md](herdr.md)) | 끔 | 끔 |
 
 - **지금 켜진 것 확인**: `chezmoi execute-template '{{ includeTemplate "enabled-features" . }}'`
 - **켜고 끄기**: `chezmoi edit-config` 로 `[data.features]` 에 한 줄을 적고 `chezmoi apply`. minimal 머신에서 `ide` 만 켜려면

@@ -13,7 +13,7 @@
 
 머신마다 설치 여부가 다른 것은 `packages.yaml` 의 `packages.features.<이름>` 에 블록 하나
 (기본값 `tier`, 패키지 묶음, 꺼진 머신에서 뺄 설정 경로)로 선언한다. 머신의 `chezmoi.toml` 에는 등급(`minimal`)과
-기본값과 다르게 둘 스위치만 적는다. 지금 있는 기능: `ide`, `dev`, `credentials`, `karabiner`. 켜지는 규칙과 기능을
+기본값과 다르게 둘 스위치만 적는다. 지금 있는 기능: `ide`, `dev`, `credentials`, `karabiner`, `herdr`. 켜지는 규칙과 기능을
 더하는 방법은 [`machines.md`](machines.md) 한 곳에 있다. 공용 설정 파일 안에서 선택 도구를 부르는 부분은
 템플릿이 아니라 실행 시점의 `command -v` 확인으로 처리한다. 기능을 꺼도 설치된 앱과 이미 배포된 설정 파일은 지우지 않는다
 (관리만 멈춘다). 필요하면 `brew uninstall --cask <이름>` 과 설정 디렉터리 삭제를 손으로 한다.

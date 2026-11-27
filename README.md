@@ -181,6 +181,7 @@ tmux new -s test      # 상태바와 prefix G 팝업 확인
 | [`docs/nvim.md`](docs/nvim.md) | nvim (LazyVim) 설정의 구조, 상태 파일 `lazyvim.json` 과 `lazy-lock.json`, 업데이트와 되돌리기 |
 | [`docs/karabiner.md`](docs/karabiner.md) | 한글 입력 상태에서 tmux prefix 와 Esc 가 듣게 하는 Karabiner 규칙 (macOS) |
 | [`docs/agent-state.md`](docs/agent-state.md) | 코딩 에이전트의 진행 상태(작업 중·대기·끝남)를 기록하고 tmux 탭·터미널 알림으로 보이게 하는 구조와 계약 |
+| [`docs/herdr.md`](docs/herdr.md) | Herdr(코딩 에이전트용 멀티플렉서) 설정: tmux 와 병렬로 쓰는 방식, 관리 기본값 + 머신 로컬 파일 병합, 키·사이드바·알림 |
 | [`docs/tmux-dev/`](docs/tmux-dev/README.md) | tmux-dev 사용 가이드 (세션 = 프로젝트, 윈도우 = 워크트리, 패널 = 역할. `prefix S`, `prefix W`). 설계 결정의 기록은 [`docs/tmux-dev/design/`](docs/tmux-dev/design/) |
 
 ## 자주 쓰는 명령

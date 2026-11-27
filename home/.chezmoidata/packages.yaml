@@ -94,6 +94,20 @@ packages:
       darwin:
         casks:
           - karabiner-elements
+    # 코딩 에이전트용 터미널 멀티플렉서. tmux 와 별개로, 다른 터미널 탭에서 병렬로 쓴다 (중첩하지 않는다).
+    # 설정은 dot_config/herdr/config.toml.tmpl 이 관리 기본값과 머신 로컬 파일을 합쳐 만든다. 설계: docs/herdr.md
+    # 아직 써 보는 단계라 opt-in 이다. 켜려면 chezmoi edit-config 의 [data.features] 에 herdr = true
+    herdr:
+      tier: opt-in
+      ignore:
+        - .config/herdr
+      darwin:
+        brews:
+          - herdr
+      linux:
+        tools:
+          # mise registry 의 herdr (GitHub 릴리스 바이너리)
+          - bin: herdr
     # nvim IDE 모드(LazyVim)와 그 빌드·변환 도구. 꺼진 머신은 플러그인 없는 ~/.config/nvim-lite 만 쓴다
     ide:
       tier: full
