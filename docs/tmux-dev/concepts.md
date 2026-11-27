@@ -95,9 +95,9 @@ tmux 세션 "dotfiles"   = 프로젝트   ~/dev/jwlee/dotfiles          ← pref
 |---|---|
 | fast-forward, merge commit | 브랜치 끝이 베이스의 조상인가 (`for-each-ref --merged`) |
 | rebase (커밋 해시가 바뀜) | 브랜치 고유 커밋의 patch-id 가 베이스 쪽에 모두 있는가 |
-| squash | merge-base 와 브랜치 끝의 diff 전체를 한 커밋으로 본 patch-id 가 베이스 쪽에 있는가 |
+| squash | merge-base 와 브랜치 끝의 diff 전체를 한 커밋으로 본 patch-id 가 베이스 쪽에 있는가 (patch-id 가 비면 판정하지 않고 다음으로 넘긴다) |
 | squash (위로 못 잡은 것) | 베이스에 브랜치를 머지해 보면(`git merge-tree`) 베이스 트리가 그대로인가 |
-| GitHub PR (위로 다 못 잡은 것) | 머지된 PR 의 head 커밋이 브랜치 커밋과 같거나 그것을 담는가 (`gh` 필요) |
+| GitHub PR (위로 다 못 잡은 것) | 베이스 브랜치로 머지된 PR 의 head 커밋이 브랜치 커밋과 같거나 그것을 담는가 (`gh` 필요). 다른 브랜치로 머지된 PR(스택 PR 의 부모, release 브랜치)은 세지 않는다 |
 
 위에서부터 처음 맞은 방법이 행의 `merged` 뒤에 글자로 붙는다: 없음 = 조상, `·r` = rebase, `·s` = squash, `·t` = merge-tree,
 `·p` = GitHub PR.
