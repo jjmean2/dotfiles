@@ -356,7 +356,7 @@ how_text() {  # 미리보기용 설명
     rebase)   printf 'rebase: every commit has a same-patch commit' ;;
     squash)   printf 'squash: the whole diff matches one commit' ;;
     tree)     printf 'tree: merging it would change nothing' ;;
-    pr)       printf 'pr: GitHub PR%s was merged' "${PR_NUM:+ #$PR_NUM}" ;;
+    pr)       printf 'pr: GitHub PR%s was merged into %s' "${PR_NUM:+ #$PR_NUM}" "${PR_BASE:-the base}" ;;
   esac
 }
 age_of() {  # $1 커밋 시각(unix) → AGE (5m 3h 2d 3w 4mo 2y)
@@ -415,22 +415,30 @@ list_mode() {  # $1 모드 $2 --marks
 #   브랜치별    아래 순서로, 처음 맞는 방법이 판정 방법(MERGED_HOW)이 된다. 행에는 merged 뒤에 글자로 붙는다
 #     ancestor  고유 커밋이 없다 (ff·merge commit). 글자 없음
 #     rebase ·r 고유 커밋의 patch-id 가 모두 집합에 있다 (커밋마다 새 SHA 로 들어갔다)
-#     squash ·s merge-base 와 브랜치 끝의 diff 하나의 patch-id 가 집합에 있다 (한 커밋으로 들어갔다)
+#     squash ·s merge-base 와 브랜치 끝의 diff 하나의 patch-id 가 집합에 있다 (한 커밋으로 들어갔다).
+#               patch-id 가 비면(diff 가 없거나 실패했거나 모드만 바뀌었다) 여기서는 판정하지 않고 tree 로 넘긴다
 #     tree   ·t 베이스에 브랜치를 머지해 보면(merge-tree) 결과 트리가 베이스 트리와 같다. squash 뒤 베이스가 근처 줄을 고쳐
 #               diff 문맥이 달라졌거나, 스택 PR 이 차례로 squash 됐거나, 여러 PR 에 나뉘어 들어간 것을 잡는다.
 #               못 잡는 것: 머지된 뒤 베이스가 같은 줄을 다시 고쳤다 (그때는 대개 squash 가 잡는다)
-#     pr     ·p GitHub 에서 머지된 PR 의 head 커밋이 브랜치 커밋과 같거나, 같은 이름 PR 의 head 가 브랜치 커밋을 담는다
-#               (리뷰 제안처럼 GitHub 에서만 생긴 커밋까지 squash 된 것). 아래 PR 목록 캐시를 읽기만 한다 (네트워크 없음)
-#   PR 목록     ~/.cache/tmux-dev/prs/<origin URL 의 해시> 에 "<head 커밋> <PR 번호> <head 브랜치>" 줄. 피커의 백그라운드
+#     pr     ·p GitHub 에서 베이스 브랜치로 머지된 PR 의 head 커밋이 브랜치 커밋과 같거나, 같은 이름 PR 의 head 가 브랜치
+#               커밋을 담는다 (리뷰 제안처럼 GitHub 에서만 생긴 커밋까지 squash 된 것). 다른 브랜치로 머지된 PR(스택 PR 의
+#               부모 브랜치, release 브랜치)은 세지 않는다. 아래 PR 목록 캐시를 읽기만 한다 (네트워크 없음)
+#   PR 목록     ~/.cache/tmux-dev/prs/<origin URL 의 해시> 에 "<head 커밋> <PR 번호> <머지된 곳(base 브랜치)> <head 브랜치>" 줄
+#               (head 브랜치가 마지막 칸. 칸이 셋인 예전 형식의 줄은 base 를 몰라 세지 않는다). 피커의 백그라운드
 #               fetch 때 gh 로 통째로 다시 쓴다(저장소당 파일 하나). gh 가 없거나 실패하면 예전 파일을 그대로 두고, 파일이
 #               없으면 이 단계를 건너뛴다. 60일 동안 안 쓴 저장소의 파일은 cache_prune 이 치운다
 #   캐시        ~/.cache/tmux-dev/merged/<브랜치 커밋> 에 "<베이스 커밋> <0|방법>". 0 이어도 PR 목록은 다시 본다(값싸다). 지워도 다시 계산된다. 60일 지나면 치운다
 #   기준은 judge_ref (로컬 베이스, 뒤처졌으면 그 업스트림)
-MERGE_READY=""; MERGED_SET=""; PATCHIDS=""; MERGED_HOW=""; MT_OBJECTS=""; PR_FILE=""; PR_NUM=""
-# origin 의 PR 목록 캐시 파일 경로 → PR_FILE (origin 이 없으면 빈 값). URL 을 해시해 저장소마다 하나
+MERGE_READY=""; MERGED_SET=""; PATCHIDS=""; MERGED_HOW=""; MT_OBJECTS=""; PR_FILE=""; PR_BASE=""; PR_NUM=""
+# origin 의 PR 목록 캐시 파일 경로 → PR_FILE (origin 이 없으면 빈 값). URL 을 해시해 저장소마다 하나.
+# PR_BASE 는 베이스 브랜치의 GitHub 쪽 이름: 업스트림이 있으면 그 이름(로컬 main 이 origin/trunk 를 따르면 trunk), 없으면 베이스 이름
 pr_file() {
-  local url; url=$(git remote get-url origin 2>/dev/null) || { PR_FILE=""; return 1; }
+  local url up; PR_BASE=""
+  url=$(git remote get-url origin 2>/dev/null) || { PR_FILE=""; return 1; }
   PR_FILE="$TMUX_DEV_CACHE/prs/$(printf '%s' "$url" | git hash-object --stdin)"
+  PR_BASE=$(base)
+  up=$(git rev-parse -q --abbrev-ref --symbolic-full-name "$PR_BASE@{u}" 2>/dev/null) && [ -n "$up" ] && PR_BASE=$up
+  PR_BASE=${PR_BASE#origin/}
 }
 # origin URL → gh 의 --repo 형식 HOST/OWNER/REPO (git@h:o/r.git · ssh://git@h/o/r · https://h/o/r.git). 모르는 모양이면 실패
 gh_repo() {
@@ -451,16 +459,18 @@ pr_refresh() {
   pr_file || return 0
   mkdir -p "${PR_FILE%/*}"
   GH_PROMPT_DISABLED=1 gh pr list --repo "$repo" --state merged --limit "${TMUX_DEV_PR_LIMIT:-300}" \
-    --json number,headRefOid,headRefName --jq '.[] | "\(.headRefOid) \(.number) \(.headRefName)"' \
+    --json number,headRefOid,headRefName,baseRefName --jq '.[] | "\(.headRefOid) \(.number) \(.baseRefName) \(.headRefName)"' \
     > "$PR_FILE.$$" 2>/dev/null && mv -f "$PR_FILE.$$" "$PR_FILE" || /bin/rm -f "$PR_FILE.$$"
 }
-# 브랜치 $1(이름) 커밋 $2 가 머지된 PR 에 들어갔나 → PR_NUM. 커밋이 PR head 와 같거나, 같은 이름 PR 의 head 가
-# 로컬에 있고 브랜치 커밋을 조상으로 담는다 (로컬이 PR 보다 뒤처진 것). 로컬이 앞서 있으면(머지 뒤 더 커밋했으면) 아니다.
+# 브랜치 $1(이름) 커밋 $2 가 베이스 브랜치(PR_BASE)로 머지된 PR 에 들어갔나 → PR_NUM. 커밋이 PR head 와 같거나, 같은 이름
+# PR 의 head 가 로컬에 있고 브랜치 커밋을 조상으로 담는다 (로컬이 PR 보다 뒤처진 것). 로컬이 앞서 있으면(머지 뒤 더 커밋했으면) 아니다.
 # 이름이 아니라 커밋으로 비교하므로 같은 브랜치 이름을 다시 써도 틀리지 않는다.
+# 다른 브랜치로 머지된 PR 은 건너뛴다: 스택 PR 이 부모 브랜치로 머지된 것은 베이스에 들어간 것이 아니다.
 pr_merged() {
-  local oid num name; PR_NUM=""
-  [ -n "$PR_FILE" ] && [ -s "$PR_FILE" ] || return 1
-  while read -r oid num name; do
+  local oid num to name; PR_NUM=""
+  [ -n "$PR_FILE" ] && [ -s "$PR_FILE" ] && [ -n "$PR_BASE" ] || return 1
+  while read -r oid num to name; do
+    [ "$to" = "$PR_BASE" ] && [ -n "$name" ] || continue   # 예전 형식(칸 셋)은 name 이 비어 여기서 빠진다
     if [ "$oid" = "$2" ]; then PR_NUM=$num; return 0; fi
     if [ "$name" = "${1#origin/}" ] && git merge-base --is-ancestor "$2" "$oid" 2>/dev/null; then PR_NUM=$num; return 0; fi
   done < "$PR_FILE"
@@ -531,7 +541,8 @@ is_merged() {
     if [ -z "$how" ] && mb=$(git merge-base "$bsha" "$rsha" 2>/dev/null); then
       # --no-ext-diff: diff.external(difft) 출력은 patch 가 아니라 patch-id 가 비고, 빈 id 는 "머지됨"이 된다
       id=$(git diff --no-ext-diff "$mb" "$rsha" 2>/dev/null | git patch-id --stable | cut -d' ' -f1)
-      if [ -z "$id" ] || grep -qxF "$id" "$PATCHIDS"; then how=squash; fi
+      # 빈 id 는 squash 의 증거가 아니다 (diff 실패·모드만 바뀜·변경 없음). 변경이 정말 없으면 아래 tree 가 잡는다
+      if [ -n "$id" ] && grep -qxF "$id" "$PATCHIDS"; then how=squash; fi
     fi
   fi
   [ -z "$how" ] && merged_by_tree "$bsha" "$rsha" && how=tree
