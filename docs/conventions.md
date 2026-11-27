@@ -64,5 +64,9 @@ PATH 는 나중에 읽힌 것이 이기므로 같은 이름의 명령을 내놓�
 
 `home/dot_jongwan/bin/` → `~/.jongwan/bin/`. 저장소 밖에서 넣은 도구와 섞여 있어도 chezmoi 는 관리하는 파일만 건드린다.
 
+man 페이지는 `home/dot_jongwan/share/man/man1/` → `~/.jongwan/share/man/man1/`. `man` 이 PATH 의 `X/bin` 마다 `X/share/man` 을
+찾으므로 MANPATH 설정이 없어도 된다. `git-<이름>` 도구는 man 페이지가 있어야 `git <이름> --help` 가 된다 (git 이 `--help` 를
+명령에 넘기지 않고 man 페이지를 연다. `-h` 는 넘긴다).
+
 `git-merged` 는 명령이면서 라이브러리다: tmux-dev 의 워크트리 피커가 source 해서 함수로 쓴다 (파일 머리말).
 그래서 자리(`~/.jongwan/bin/git-merged`)를 옮기면 `tmux-dev-worktree` 의 source 줄도 같이 고친다. 테스트는 `test/git-merged/run`.

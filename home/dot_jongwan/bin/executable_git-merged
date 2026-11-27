@@ -8,6 +8,7 @@
 #     --no-cache       캐시를 읽지도 쓰지도 않는다
 #     --fetch          판정 전에 git fetch --prune origin 과 머지된 PR 목록 갱신(gh)
 #     -q, --quiet      출력 없이 종료 코드만
+#     -h               이 도움말. git merged --help 는 man 페이지를 연다
 #   종료 코드: 0 모두 머지됨 · 1 머지 안 된 것이 있다 · 2 오류
 #   출력: 브랜치마다 한 줄 "<브랜치> merged <방법> <기준>" 또는 "<브랜치> unmerged +<N> <기준>" (N = 기준에 없는 커밋 수).
 #         터미널이 아니면 색 없이 탭으로 나눈다 (스크립트용)
@@ -36,6 +37,9 @@
 #   prs/<origin URL 의 해시> "<head 커밋> <PR 번호> <머지된 곳(base 브랜치)> <head 브랜치>" 줄. pr_refresh 가 gh 로 통째로
 #                            다시 쓴다(저장소당 파일 하나). gh 가 없거나 실패하면 예전 파일을 그대로 둔다.
 #                            GIT_MERGED_PR_LIMIT(기본 300)개까지. 60일 동안 안 쓴 저장소의 파일은 치운다
+#
+# man 페이지: ~/.jongwan/share/man/man1/git-merged.1. git 은 `git merged --help` 를 명령에 넘기지 않고 man 페이지를 연다.
+# 옵션을 바꾸면 위 사용법과 man 페이지를 같이 고친다 (test/git-merged/run 이 둘 다에 옵션이 모두 있는지 본다).
 #
 # 라이브러리로도 쓴다: source 하면 함수만 정의하고 아무것도 실행하지 않는다 (맨 아래). tmux-dev 의 워크트리 피커
 # (prefix W)가 그렇게 쓴다: 브랜치 수백 개를 프로세스를 새로 띄우지 않고 판정하고, merge_prepare 의 결과를 fork 한
@@ -305,7 +309,7 @@ gm_main() {
       -q|--quiet) quiet=1 ;;
       -h|--help) gm_usage; exit 0 ;;
       --) shift; while [ $# -gt 0 ]; do refs+=("$1"); shift; done; break ;;
-      -*) gm_die "unknown option '$1' (see git-merged --help)" ;;
+      -*) gm_die "unknown option '$1' (see git merged -h)" ;;
       *) refs+=("$1") ;;
     esac
     shift
