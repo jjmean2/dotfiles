@@ -63,3 +63,6 @@ PATH 는 나중에 읽힌 것이 이기므로 같은 이름의 명령을 내놓�
 ## 개인 도구
 
 `home/dot_jongwan/bin/` → `~/.jongwan/bin/`. 저장소 밖에서 넣은 도구와 섞여 있어도 chezmoi 는 관리하는 파일만 건드린다.
+
+`git-merged` 는 명령이면서 라이브러리다: tmux-dev 의 워크트리 피커가 source 해서 함수로 쓴다 (파일 머리말).
+그래서 자리(`~/.jongwan/bin/git-merged`)를 옮기면 `tmux-dev-worktree` 의 source 줄도 같이 고친다. 테스트는 `test/git-merged/run`.

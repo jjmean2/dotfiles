@@ -1,0 +1,365 @@
+#!/usr/bin/env bash
+# git-merged — 브랜치의 변경이 베이스 브랜치에 모두 들어 있는지를, 머지 방식에 상관없이 판정한다.
+#
+#   git merged [<브랜치>...]      기본: 현재 브랜치. origin/<이름> 같은 원격 브랜치도 된다
+#     --base <ref>     베이스 브랜치 (기본: origin/HEAD 가 가리키는 이름의 로컬 브랜치 → main → master)
+#     --all            로컬 브랜치 전부 (베이스 자신은 뺀다)
+#     --explain        다섯 방법을 모두 돌려 각각의 결과와 이유를 보여 준다 (캐시를 쓰지 않는다)
+#     --no-cache       캐시를 읽지도 쓰지도 않는다
+#     --fetch          판정 전에 git fetch --prune origin 과 머지된 PR 목록 갱신(gh)
+#     -q, --quiet      출력 없이 종료 코드만
+#   종료 코드: 0 모두 머지됨 · 1 머지 안 된 것이 있다 · 2 오류
+#   출력: 브랜치마다 한 줄 "<브랜치> merged <방법> <기준>" 또는 "<브랜치> unmerged +<N> <기준>" (N = 기준에 없는 커밋 수).
+#         터미널이 아니면 색 없이 탭으로 나눈다 (스크립트용)
+#
+# 판정 방법 (위에서부터, 처음 맞는 것이 답이다)
+#   ancestor  고유 커밋이 없다 (fast-forward, merge commit)
+#   rebase    고유 커밋의 patch-id 가 모두 베이스 쪽 커밋에 있다 (커밋마다 새 SHA 로 들어갔다)
+#   squash    merge-base 와 브랜치 끝의 diff 하나의 patch-id 가 베이스 쪽 커밋에 있다 (한 커밋으로 들어갔다).
+#             patch-id 가 비면(diff 가 없거나 실패했거나 모드만 바뀌었다) 여기서는 판정하지 않고 tree 로 넘긴다
+#   tree      베이스에 브랜치를 머지해 보면(merge-tree) 결과 트리가 베이스 트리와 같다. squash 뒤 베이스가 근처 줄을 고쳐
+#             diff 문맥이 달라졌거나, 스택 PR 이 차례로 squash 됐거나, 여러 PR 에 나뉘어 들어간 것을 잡는다.
+#             못 잡는 것: 머지된 뒤 베이스가 같은 줄을 다시 고쳤다 (그때는 대개 squash 가 잡는다). git 2.38 이상
+#   pr        GitHub 에서 베이스 브랜치로 머지된 PR 의 head 커밋이 브랜치 커밋과 같거나, 같은 이름 PR 의 head 가 브랜치
+#             커밋을 담는다 (리뷰 제안처럼 GitHub 에서만 생긴 커밋까지 squash 된 것). 다른 브랜치로 머지된 PR(스택 PR 의
+#             부모 브랜치, release 브랜치)은 세지 않는다. 받아 둔 PR 목록을 읽기만 한다 (네트워크는 --fetch 때만)
+#   기준은 로컬 베이스이고, 로컬 베이스가 업스트림보다 뒤처져 있으면 업스트림(origin/main 등)이다 (judge_ref)
+#
+# 비용을 "베이스 쪽은 한 번, 브랜치 쪽은 작게" 로 나눈다. git cherry 는 호출마다 베이스 쪽 커밋 전부의 patch-id 를
+# 다시 계산해서 브랜치 수만큼 비쌌다. 같은 일을 한 번만 한다 (merge_prepare).
+#   MERGED_SET  `for-each-ref --merged <베이스>`: 조상 관계로 들어간 로컬 브랜치 전부를 프로세스 하나로
+#   PATCHIDS    베이스 커밋들의 patch-id 집합 (모든 로컬 브랜치와의 공통 조상 이후). 베이스 커밋당 한 번 계산해 캐시 파일로
+#
+# 캐시 ($GIT_MERGED_CACHE, 기본 $XDG_CACHE_HOME/git-merged. 지워도 다시 계산된다)
+#   merged/<브랜치 커밋>     "<베이스 커밋> <0|방법>". 0 이어도 PR 목록은 다시 본다(값싸다). 60일 지나면 치운다
+#   patchids/<베이스 커밋>   patch-id 집합. 다른 베이스 커밋의 것은 바로 치운다
+#   prs/<origin URL 의 해시> "<head 커밋> <PR 번호> <머지된 곳(base 브랜치)> <head 브랜치>" 줄. pr_refresh 가 gh 로 통째로
+#                            다시 쓴다(저장소당 파일 하나). gh 가 없거나 실패하면 예전 파일을 그대로 둔다.
+#                            GIT_MERGED_PR_LIMIT(기본 300)개까지. 60일 동안 안 쓴 저장소의 파일은 치운다
+#
+# 라이브러리로도 쓴다: source 하면 함수만 정의하고 아무것도 실행하지 않는다 (맨 아래). tmux-dev 의 워크트리 피커
+# (prefix W)가 그렇게 쓴다: 브랜치 수백 개를 프로세스를 새로 띄우지 않고 판정하고, merge_prepare 의 결과를 fork 한
+# 자식들이 상속받는다. source 하는 쪽이 base() 를 먼저 정의해 두면 그것을 쓴다 (없으면 여기 것).
+#   is_merged <브랜치> [<기준 ref> <브랜치 커밋> <기준 커밋>]   → 0/1, MERGED_HOW
+#   judge_ref · merge_prepare <기준 커밋> · in_merged_set <브랜치> · pr_file · pr_refresh · pr_merged <브랜치> <커밋>
+#   merged_how_text <방법> · merged_cache_prune
+# set -u · set -e · pipefail 아래에서도, 없이도 돈다. bash 3.2 에서 돈다.
+
+GIT_MERGED_CACHE="${GIT_MERGED_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/git-merged}"
+GIT_MERGED_NO_CACHE="${GIT_MERGED_NO_CACHE:-}"   # 1 이면 판정 캐시를 읽지도 쓰지도 않고, patch-id 집합도 임시 파일에 새로 만든다
+MERGE_READY=""; MERGED_SET=""; PATCHIDS=""; MERGED_HOW=""; MT_OBJECTS=""; PR_FILE=""; PR_BASE=""; PR_NUM=""
+MERGED_BASE=""   # --base (CLI). source 하는 쪽은 자기 base() 를 쓴다
+
+# 베이스 브랜치. source 하는 쪽이 이미 정의했으면 그것을 쓴다
+if ! declare -F base >/dev/null; then
+  default_base() {  # origin/HEAD 가 가리키는 브랜치의 로컬 사본 → main → master → HEAD
+    local b
+    if b=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null); then
+      b=${b#origin/}; git show-ref -q --verify "refs/heads/$b" && { echo "$b"; return; }
+    fi
+    for b in main master; do git show-ref -q --verify "refs/heads/$b" && { echo "$b"; return; }; done
+    echo HEAD
+  }
+  base() { echo "${MERGED_BASE:-$(default_base)}"; }
+fi
+
+# 판정의 기준 ref. 로컬 베이스가 업스트림(origin/main 등)의 조상이면(= 뒤처졌거나 같으면) 업스트림이 둘 다를 담으므로
+# 업스트림으로 판정한다. 그래서 "로컬 main 또는 origin/main 에 들어 있으면 머지됨" 을 계산 한 번으로 얻는다.
+# 로컬이 앞서 있거나 갈라졌으면 로컬로 판정한다.
+judge_ref() {
+  local b up; b=$(base)
+  up=$(git rev-parse -q --abbrev-ref --symbolic-full-name "$b@{u}" 2>/dev/null) || { echo "$b"; return; }
+  if git merge-base --is-ancestor "$b" "$up" 2>/dev/null; then echo "$up"; else echo "$b"; fi
+}
+
+# --- GitHub PR ----------------------------------------------------------------------
+# origin 의 PR 목록 캐시 파일 경로 → PR_FILE (origin 이 없으면 빈 값). URL 을 해시해 저장소마다 하나.
+# PR_BASE 는 베이스 브랜치의 GitHub 쪽 이름: 업스트림이 있으면 그 이름(로컬 main 이 origin/trunk 를 따르면 trunk), 없으면 베이스 이름
+pr_file() {
+  local url up; PR_BASE=""
+  url=$(git remote get-url origin 2>/dev/null) || { PR_FILE=""; return 1; }
+  PR_FILE="$GIT_MERGED_CACHE/prs/$(printf '%s' "$url" | git hash-object --stdin)"
+  PR_BASE=$(base)
+  up=$(git rev-parse -q --abbrev-ref --symbolic-full-name "$PR_BASE@{u}" 2>/dev/null) && [ -n "$up" ] && PR_BASE=$up
+  PR_BASE=${PR_BASE#origin/}
+}
+# origin URL → gh 의 --repo 형식 HOST/OWNER/REPO (git@h:o/r.git · ssh://git@h/o/r · https://h/o/r.git). 모르는 모양이면 실패
+gh_repo() {
+  local u; u=$(git remote get-url origin 2>/dev/null) || return 1
+  u=${u%.git}; u=${u%/}
+  case $u in
+    *://*) u=${u#*://}; u=${u#*@} ;;
+    *@*:*) u=${u#*@}; u=${u/://} ;;
+    *) return 1 ;;
+  esac
+  case $u in *:[0-9]*/*) u="${u%%:*}/${u#*/}" ;; esac   # ssh://h:22/o/r 의 포트는 뺀다
+  case $u in */*/*) printf '%s\n' "$u" ;; *) return 1 ;; esac
+}
+# 머지된 PR 목록을 gh 로 받아 PR_FILE 을 통째로 바꾼다. 실패하면 예전 파일을 둔다. 받았으면 0
+pr_refresh() {
+  command -v gh >/dev/null 2>&1 || return 1
+  local repo; repo=$(gh_repo) || return 1
+  pr_file || return 1
+  mkdir -p "${PR_FILE%/*}"
+  if GH_PROMPT_DISABLED=1 gh pr list --repo "$repo" --state merged --limit "${GIT_MERGED_PR_LIMIT:-300}" \
+       --json number,headRefOid,headRefName,baseRefName --jq '.[] | "\(.headRefOid) \(.number) \(.baseRefName) \(.headRefName)"' \
+       > "$PR_FILE.$$" 2>/dev/null; then mv -f "$PR_FILE.$$" "$PR_FILE"
+  else /bin/rm -f "$PR_FILE.$$"; return 1; fi
+}
+# 브랜치 $1(이름) 커밋 $2 가 베이스 브랜치(PR_BASE)로 머지된 PR 에 들어갔나 → PR_NUM. 커밋이 PR head 와 같거나, 같은 이름
+# PR 의 head 가 로컬에 있고 브랜치 커밋을 조상으로 담는다 (로컬이 PR 보다 뒤처진 것). 로컬이 앞서 있으면(머지 뒤 더 커밋했으면) 아니다.
+# 이름이 아니라 커밋으로 비교하므로 같은 브랜치 이름을 다시 써도 틀리지 않는다.
+# 다른 브랜치로 머지된 PR 은 건너뛴다: 스택 PR 이 부모 브랜치로 머지된 것은 베이스에 들어간 것이 아니다.
+pr_merged() {
+  local oid num to name; PR_NUM=""
+  [ -n "$PR_FILE" ] && [ -s "$PR_FILE" ] && [ -n "$PR_BASE" ] || return 1
+  while read -r oid num to name; do
+    [ "$to" = "$PR_BASE" ] && [ -n "$name" ] || continue   # 예전 형식(칸 셋)은 name 이 비어 여기서 빠진다
+    if [ "$oid" = "$2" ]; then PR_NUM=$num; return 0; fi
+    if [ "$name" = "${1#origin/}" ] && git merge-base --is-ancestor "$2" "$oid" 2>/dev/null; then PR_NUM=$num; return 0; fi
+  done < "$PR_FILE"
+  return 1
+}
+
+# --- 베이스 쪽 준비 -------------------------------------------------------------------
+# 커밋 범위 → "<patch-id> <커밋>" 줄 (git log 인자를 그대로 받는다). 머지 커밋은 diff 가 없어 빠진다
+patch_ids() { git log -p --format=%H "$@" 2>/dev/null | git patch-id --stable; }
+merge_prepare() {  # $1 베이스 커밋, $2… 판정할 커밋(집합의 범위에 넣는다. 로컬 브랜치는 늘 들어간다). 한 번만.
+  # 행 작업을 fork 하기 전에 불러 자식이 결과를 상속받게 한다
+  [ "$MERGE_READY" = "$1" ] && return 0
+  local bsha=$1 mb; shift
+  MERGE_READY=$bsha
+  MERGED_SET=$(git for-each-ref --merged "$bsha" refs/heads --format='%(refname:short)' 2>/dev/null || true)
+  MT_OBJECTS=$(git rev-parse --path-format=absolute --git-path objects 2>/dev/null || true)   # merged_by_tree 가 읽기만 할 곳
+  pr_file || true
+  if [ -n "$GIT_MERGED_NO_CACHE" ]; then PATCHIDS=$(mktemp "${TMPDIR:-/tmp}/git-merged.ids.XXXXXX") || { PATCHIDS=""; return 0; }
+  else
+    PATCHIDS="$GIT_MERGED_CACHE/patchids/$bsha"
+    [ -s "$PATCHIDS" ] && return 0
+    mkdir -p "${PATCHIDS%/*}"
+  fi
+  mb=$({ git for-each-ref refs/heads --format='%(objectname)'; [ $# -eq 0 ] || printf '%s\n' "$@"; } | xargs git merge-base --octopus "$bsha" 2>/dev/null) || mb=""
+  { if [ -n "$mb" ]; then patch_ids "$bsha" --not "$mb"; else patch_ids --max-count=2000 "$bsha"; fi; } \
+    | cut -d' ' -f1 > "$PATCHIDS.$$" && { mv -f "$PATCHIDS.$$" "$PATCHIDS" 2>/dev/null || rm -f "$PATCHIDS.$$"; }
+  [ -n "$GIT_MERGED_NO_CACHE" ] && return 0
+  # 다른 베이스 커밋의 집합은 더 안 쓴다. 단 임시 파일(<커밋>.<pid>)은 건드리지 않는다: 목록의 마커와 미리보기가 같은 집합을
+  # 동시에 계산하는데, 먼저 끝난 쪽이 아직 쓰는 중인 쪽의 임시 파일을 지우면 그쪽 mv 가 실패했다 (그래서 mv 실패도 죽지 않게).
+  # 집합 파일이 없으면 is_merged 는 patch-id 비교 없이 조상 관계·tree·pr 로만 판정한다. 남은 임시 파일은 1시간 뒤 치운다.
+  find "${PATCHIDS%/*}" -type f ! -name "$bsha" ! -name '*.*' -delete 2>/dev/null || true
+  find "${PATCHIDS%/*}" -type f -name '*.*' -mmin +60 -delete 2>/dev/null || true
+}
+in_merged_set() { local x; while IFS= read -r x; do [ "$x" = "$1" ] && return 0; done <<< "$MERGED_SET"; return 1; }
+cache_file()  { printf '%s/merged/%s' "$GIT_MERGED_CACHE" "$1"; }
+cache_get()   { local f; CACHED=""; [ -z "$GIT_MERGED_NO_CACHE" ] || return 1; f=$(cache_file "$1"); [ -f "$f" ] && IFS= read -r CACHED < "$f"; }
+cache_put()   { local f; [ -z "$GIT_MERGED_NO_CACHE" ] || return 0; f=$(cache_file "$1"); mkdir -p "${f%/*}"; printf '%s\n' "$2" > "$f.$$" && mv -f "$f.$$" "$f"; }
+# 60일 지난 판정·PR 목록과, 중간에 죽어 남은 임시 파일(1시간 지난 것)을 치운다
+merged_cache_prune() {
+  local d; for d in merged prs; do
+    [ -d "$GIT_MERGED_CACHE/$d" ] && find "$GIT_MERGED_CACHE/$d" -type f -mtime +60 -delete 2>/dev/null || true
+  done
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'git-merged.*' -mmin +60 -exec /bin/rm -rf {} + 2>/dev/null || true
+}
+
+# --- 방법별 판정 ($1 브랜치 커밋 $2 베이스 커밋. merge_prepare 뒤에 부른다) ------------------------
+by_ancestor() { [ -z "$(git rev-list -1 "$1" --not "$2" 2>/dev/null)" ]; }
+# 고유 커밋의 patch-id 가 모두 집합에 있나. 집합에 없는 id 가 하나라도 있거나 id 가 하나도 없으면 아니다
+by_rebase() {
+  local ids
+  [ -n "$PATCHIDS" ] && [ -s "$PATCHIDS" ] || return 1
+  ids=$(patch_ids "$1" --not "$2" | cut -d' ' -f1)
+  [ -n "$ids" ] && [ -z "$(grep -vxF -f "$PATCHIDS" <<< "$ids")" ]
+}
+# merge-base 와 브랜치 끝의 diff 하나의 patch-id → SQUASH_ID (빈 값일 수 있다)
+# --no-ext-diff: diff.external(difft) 출력은 patch 가 아니라 patch-id 가 빈다
+squash_id() {
+  local mb; SQUASH_ID=""
+  mb=$(git merge-base "$2" "$1" 2>/dev/null) || return 1
+  SQUASH_ID=$(git diff --no-ext-diff "$mb" "$1" 2>/dev/null | git patch-id --stable | cut -d' ' -f1)
+}
+# 빈 id 는 squash 의 증거가 아니다 (diff 실패·모드만 바뀜·변경 없음). 변경이 정말 없으면 tree 가 잡는다
+by_squash() {
+  [ -n "$PATCHIDS" ] && [ -s "$PATCHIDS" ] || return 1
+  squash_id "$1" "$2" && [ -n "$SQUASH_ID" ] && grep -qxF "$SQUASH_ID" "$PATCHIDS"
+}
+# 베이스 커밋에 브랜치 커밋을 머지해 본 결과가 베이스 트리 그대로인가 (= 브랜치의 변경이 이미 다 들어 있다).
+# merge-tree --write-tree 는 작업 트리·인덱스를 건드리지 않지만 결과 오브젝트(블롭·트리)를 저장소에 쓴다. 머지 안 된 브랜치마다
+# 참조 없는 루즈 오브젝트가 남아 gc 전까지 쌓이므로, 새 오브젝트는 임시 오브젝트 디렉토리에 쓰고(기존 것은 저장소에서 읽는다)
+# 바로 지운다. 저장소에는 아무것도 남지 않는다. 중간에 죽어 남은 임시 디렉토리(git-merged.mt.*)는 merged_cache_prune 이 치운다.
+# 충돌(종료 코드 1)은 머지 안 된 것이다. git 2.38 미만이면 --write-tree 가 없어 늘 아니다로 끝난다.
+by_tree() {
+  local tmp t bt
+  [ -n "$MT_OBJECTS" ] && [ -d "$MT_OBJECTS" ] || return 1
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/git-merged.mt.XXXXXX") || return 1
+  t=$(GIT_OBJECT_DIRECTORY=$tmp GIT_ALTERNATE_OBJECT_DIRECTORIES=$MT_OBJECTS${GIT_ALTERNATE_OBJECT_DIRECTORIES:+:$GIT_ALTERNATE_OBJECT_DIRECTORIES} \
+      git merge-tree --write-tree "$2" "$1" 2>/dev/null) || t=""   # 출력 전체를 받는다 (head 로 자르면 SIGPIPE 가 pipefail 에 걸린다)
+  /bin/rm -rf "$tmp"
+  bt=$(git rev-parse -q --verify "$2^{tree}" 2>/dev/null) || return 1
+  [ -n "$t" ] && [ "${t%%$'\n'*}" = "$bt" ]
+}
+
+# 브랜치 $1 이 기준($2, 생략하면 judge_ref)에 모두 들어 있나. $3 $4 는 두 커밋 (생략하면 구한다).
+# 들어 있으면 MERGED_HOW 에 판정 방법(ancestor | rebase | squash | tree | pr)을 둔다.
+is_merged() {
+  local ref=$1 b=${2:-} rsha=${3:-} bsha=${4:-} how=""
+  MERGED_HOW=""
+  [ -n "$b" ] || b=$(judge_ref)
+  [ -n "$bsha" ] || bsha=$(git rev-parse -q --verify "$b^{commit}" 2>/dev/null) || return 1
+  merge_prepare "$bsha"
+  in_merged_set "$ref" && { MERGED_HOW=ancestor; return 0; }
+  [ -n "$rsha" ] || rsha=$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null) || return 1
+  if cache_get "$rsha" && [ "${CACHED%% *}" = "$bsha" ]; then
+    case ${CACHED##* } in
+      0) pr_merged "$ref" "$rsha" || return 1; MERGED_HOW=pr; cache_put "$rsha" "$bsha pr"; return 0 ;;
+      ancestor|rebase|squash|tree|pr) MERGED_HOW=${CACHED##* }; return 0 ;;
+    esac   # 그 밖(방법을 적지 않던 예전 형식의 1)은 다시 계산한다
+  fi
+  if by_ancestor "$rsha" "$bsha"; then how=ancestor   # 원격 ref 처럼 MERGED_SET 밖의 조상
+  elif by_rebase "$rsha" "$bsha"; then how=rebase
+  elif by_squash "$rsha" "$bsha"; then how=squash
+  elif by_tree "$rsha" "$bsha"; then how=tree
+  elif pr_merged "$ref" "$rsha"; then how=pr
+  fi
+  cache_put "$rsha" "$bsha ${how:-0}"
+  MERGED_HOW=$how
+  [ -n "$how" ]
+}
+merged_how_text() {  # 방법 → 한 줄 설명 (pr 은 pr_merged 가 둔 PR_NUM 을 쓴다)
+  case $1 in
+    ancestor) printf 'ancestor: fast-forward or merge commit' ;;
+    rebase)   printf 'rebase: every commit has a same-patch commit' ;;
+    squash)   printf 'squash: the whole diff matches one commit' ;;
+    tree)     printf 'tree: merging it would change nothing' ;;
+    pr)       printf 'pr: GitHub PR%s was merged into %s' "${PR_NUM:+ #$PR_NUM}" "${PR_BASE:-the base}" ;;
+  esac
+}
+
+# source 됐으면 여기까지 (함수만 정의한다)
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0; fi
+
+# === CLI ============================================================================
+set -euo pipefail
+gm_die() { echo "git-merged: $*" >&2; exit 2; }
+gm_usage() { sed -n '2,/^# 판정 방법/{/^# 판정 방법/d;p;}' "$0" | sed 's/^# \{0,1\}//'; }
+gm_short() { git rev-parse --short "$1" 2>/dev/null || printf '%s' "$1"; }
+gm_subject() { git log -1 --format=%s "$1" 2>/dev/null || true; }
+
+# --explain: 다섯 방법을 모두 돌린다. $1 브랜치 $2 기준 ref $3 브랜치 커밋 $4 기준 커밋. 머지됐으면 0, MERGED_HOW 에 첫 방법
+gm_line() { printf '  %-9s %s%-8s%s %s\n' "$1" "$2" "$3" "$R" "$4"; }   # 방법 · 색 · 결과 · 이유
+gm_explain() {
+  local ref=$1 b=$2 rsha=$3 bsha=$4 first="" n pairs miss mn c mb hit note lb
+  note=""; lb=$(base); [ "$b" = "$lb" ] || note="   ${D}(local $lb is behind)${R}"
+  printf '%s%s%s @ %s  vs  %s%s%s @ %s%s\n' "$B" "$ref" "$R" "$(gm_short "$rsha")" "$B" "$b" "$R" "$(gm_short "$bsha")" "$note"
+
+  n=$(git rev-list --count "$rsha" --not "$bsha" 2>/dev/null || echo '?')
+  if by_ancestor "$rsha" "$bsha"; then gm_line ancestor "$G" yes "no commits of its own"; first=ancestor
+  else gm_line ancestor "$Y" no "$n commit(s) not in the base"; fi
+
+  if [ -z "$PATCHIDS" ] || [ ! -s "$PATCHIDS" ]; then
+    gm_line rebase "$D" skipped "no patch-ids for the base"; gm_line squash "$D" skipped "no patch-ids for the base"
+  else
+    pairs=$(patch_ids "$rsha" --not "$bsha")
+    if [ -z "$pairs" ]; then gm_line rebase "$Y" no "no commits with a patch to compare"
+    else
+      miss=$(grep -vF -f "$PATCHIDS" <<< "$pairs" || true)   # 집합에 없는 "<id> <커밋>" 줄
+      if [ -z "$miss" ]; then gm_line rebase "$G" yes "every commit has a same-patch commit in the base"; first=${first:-rebase}
+      else
+        mn=$(grep -c . <<< "$miss"); c=${miss%%$'\n'*}; c=${c#* }
+        gm_line rebase "$Y" no "$mn of $(grep -c . <<< "$pairs") commit(s) have no same-patch commit, e.g. $(gm_short "$c") \"$(gm_subject "$c")\""
+      fi
+    fi
+    if ! squash_id "$rsha" "$bsha"; then gm_line squash "$Y" no "no merge base"
+    elif [ -z "$SQUASH_ID" ]; then gm_line squash "$Y" no "the diff has no patch-id (no change, or only file modes)"
+    elif grep -qxF "$SQUASH_ID" "$PATCHIDS"; then
+      # 맞은 베이스 커밋은 집합 파일에 없어(id 만 둔다) 여기서만 다시 찾는다
+      mb=$(git merge-base "$bsha" "$rsha"); hit=$(patch_ids "$bsha" --not "$mb" | grep -m1 "^$SQUASH_ID " || true); hit=${hit#* }
+      gm_line squash "$G" yes "the whole diff matches ${hit:+$(gm_short "$hit") \"$(gm_subject "$hit")\"}"; first=${first:-squash}
+    else gm_line squash "$Y" no "no base commit has the same patch as the whole diff"; fi
+  fi
+
+  hit=$(git merge-tree -h 2>&1 || true)   # -h 는 129 로 끝난다 (pipefail)
+  if [ "${hit#*--write-tree}" = "$hit" ]; then gm_line tree "$D" skipped "needs git 2.38 or later"
+  elif by_tree "$rsha" "$bsha"; then gm_line tree "$G" yes "merging it into the base would change nothing"; first=${first:-tree}
+  else gm_line tree "$Y" no "merging it into the base would change files (or conflict)"; fi
+
+  if [ -z "$PR_FILE" ]; then gm_line pr "$D" skipped "no origin remote"
+  elif [ ! -s "$PR_FILE" ]; then gm_line pr "$D" skipped "no PR list (run with --fetch; needs gh)"
+  elif pr_merged "$ref" "$rsha"; then gm_line pr "$M" yes "#$PR_NUM was merged into $PR_BASE"; first=${first:-pr}
+  else gm_line pr "$Y" no "no PR merged into $PR_BASE has this commit"; fi
+
+  MERGED_HOW=$first
+  if [ -n "$first" ]; then printf '→ %smerged%s (%s)\n' "$G" "$R" "$first"; else printf '→ %snot merged%s: +%s not in %s\n' "$Y" "$R" "$n" "$b"; fi
+  [ -n "$first" ]
+}
+
+gm_main() {
+  local all="" explain="" fetch="" quiet="" b bsha ref rsha n rc=0 first=1
+  local -a refs=() shas=()
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --base) [ $# -ge 2 ] || gm_die "--base needs a ref"; MERGED_BASE=$2; shift ;;
+      --base=*) MERGED_BASE=${1#--base=} ;;
+      --all) all=1 ;;
+      --explain) explain=1; GIT_MERGED_NO_CACHE=1 ;;
+      --no-cache) GIT_MERGED_NO_CACHE=1 ;;
+      --fetch) fetch=1 ;;
+      -q|--quiet) quiet=1 ;;
+      -h|--help) gm_usage; exit 0 ;;
+      --) shift; while [ $# -gt 0 ]; do refs+=("$1"); shift; done; break ;;
+      -*) gm_die "unknown option '$1' (see git-merged --help)" ;;
+      *) refs+=("$1") ;;
+    esac
+    shift
+  done
+  git rev-parse --git-dir >/dev/null 2>&1 || gm_die "not a git repository"
+  if [ -t 1 ]; then B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; M=$'\033[35m'; R=$'\033[0m'
+  else B=""; D=""; G=""; Y=""; M=""; R=""; fi
+
+  if [ -n "$fetch" ]; then
+    git fetch --quiet --prune origin 2>/dev/null || echo "git-merged: fetch failed (using what is here)" >&2
+    pr_refresh || echo "git-merged: could not refresh the PR list (needs gh, logged in)" >&2
+  fi
+  b=$(judge_ref)
+  bsha=$(git rev-parse -q --verify "$b^{commit}" 2>/dev/null) || gm_die "no base branch '$b' (use --base <ref>)"
+  if [ -n "$all" ]; then
+    [ ${#refs[@]} -eq 0 ] || gm_die "--all takes no branch names"
+    local lb; lb=$(base)
+    while IFS= read -r ref; do case $ref in "$b"|"$lb") ;; *) refs+=("$ref") ;; esac; done \
+      < <(git for-each-ref refs/heads --sort=-committerdate --format='%(refname:short)')
+    [ ${#refs[@]} -gt 0 ] || exit 0
+  elif [ ${#refs[@]} -eq 0 ]; then
+    ref=$(git symbolic-ref -q --short HEAD 2>/dev/null) || gm_die "HEAD is detached: name a branch"
+    refs+=("$ref")
+  fi
+  for ref in "${refs[@]}"; do
+    rsha=$(git rev-parse -q --verify "$ref^{commit}" 2>/dev/null) || gm_die "no such branch: $ref"
+    shas+=("$rsha")
+  done
+  merge_prepare "$bsha" "${shas[@]}"
+  # shellcheck disable=SC2064  # 지금 값의 PATCHIDS 를 지우는 것이 맞다
+  [ -z "$GIT_MERGED_NO_CACHE" ] || trap "/bin/rm -f '$PATCHIDS' '$PATCHIDS'.*" EXIT
+
+  local i=0
+  for ref in "${refs[@]}"; do
+    rsha=${shas[$i]}; i=$((i + 1))
+    if [ -n "$explain" ]; then
+      if [ -n "$quiet" ]; then gm_explain "$ref" "$b" "$rsha" "$bsha" >/dev/null || rc=1
+      else [ -n "$first" ] || echo; first=""; gm_explain "$ref" "$b" "$rsha" "$bsha" || rc=1; fi
+      continue
+    fi
+    if is_merged "$ref" "$b" "$rsha" "$bsha"; then
+      [ -n "$quiet" ] && continue
+      if [ -t 1 ]; then
+        [ "$MERGED_HOW" != pr ] || pr_merged "$ref" "$rsha" || true   # 캐시에서 온 pr 이면 PR 번호를 다시 찾는다
+        printf '%s  %smerged%s into %s  %s(%s)%s\n' "$ref" "$G" "$R" "$b" "$D" "$(merged_how_text "$MERGED_HOW")" "$R"
+      else printf '%s\tmerged\t%s\t%s\n' "$ref" "$MERGED_HOW" "$b"; fi
+    else
+      rc=1; [ -n "$quiet" ] && continue
+      n=$(git rev-list --count "$rsha" --not "$bsha" 2>/dev/null || echo '?')
+      if [ -t 1 ]; then printf '%s  %s+%s%s commit(s) not in %s\n' "$ref" "$Y" "$n" "$R" "$b"
+      else printf '%s\tunmerged\t+%s\t%s\n' "$ref" "$n" "$b"; fi
+    fi
+  done
+  [ -n "$GIT_MERGED_NO_CACHE" ] || merged_cache_prune
+  exit "$rc"
+}
+gm_main "$@"

@@ -104,14 +104,25 @@ tmux 세션 "dotfiles"   = 프로젝트   ~/dev/jwlee/dotfiles          ← pref
 마지막 방법은 squash 뒤 베이스가 근처 줄을 고쳐 diff 문맥이 달라진 경우, 스택 PR 이 차례로 squash 된 경우를 잡는다.
 머지 시뮬레이션이 만드는 오브젝트는 임시 디렉토리에 쓰고 지우므로 저장소에 남지 않는다. PR 판정은 GitHub 에서만 생긴
 커밋(리뷰 제안 반영 등)까지 squash 된 경우를 잡는다. 머지된 PR 목록은 피커의 백그라운드 fetch 때 `gh pr list` 로 받아
-`~/.cache/tmux-dev/prs/` 에 저장소당 파일 하나로 둔다(매번 통째로 바뀐다). `gh` 가 없거나 로그인하지 않았으면 이 단계만 빠진다.
+`~/.cache/git-merged/prs/` 에 저장소당 파일 하나로 둔다(매번 통째로 바뀐다). `gh` 가 없거나 로그인하지 않았으면 이 단계만 빠진다.
 
 **기준 ref.** 로컬 베이스가 업스트림(`origin/main`)과 같거나 뒤처져 있으면 업스트림으로, 아니면 로컬로 판정한다. 업스트림이
 둘 다를 담으므로 "로컬 main 또는 origin/main 에 들어 있으면 머지됨" 을 한 번의 계산으로 얻는다. 피커가 뜰 때 백그라운드에서
 `git fetch --prune origin` 을 하고, 원격 ref 가 바뀌었으면 목록을 다시 읽는다. 그래서 GitHub 에서 PR 을 머지한 직후에도 pull 없이 `merged` 가 보인다.
 
 판정은 행마다 git 을 여러 번 돌려 비싸다. 그래서 마커 없는 목록을 먼저 띄우고 마커는 뒤에서 얹으며, 결과는
-`~/.cache/tmux-dev/` 에 커밋 해시 기준으로 캐시한다.
+`~/.cache/git-merged/` 에 커밋 해시 기준으로 캐시한다.
+
+**터미널에서 직접.** 판정은 독립 명령 `git-merged` (`~/.jongwan/bin`)가 하고 피커는 그것을 쓴다. 그래서 같은 답을 셸에서 볼 수 있다.
+
+```sh
+git merged feat              # 한 줄: merged(방법) 또는 +N. 종료 코드 0 = 머지됨, 1 = 아님
+git merged --explain feat    # 다섯 방법을 모두 돌려 각각의 결과와 이유
+git merged --all             # 로컬 브랜치 전부
+git merged -q feat && git branch -D feat
+```
+
+`--base <ref>`, `--no-cache`, `--fetch`(판정 전에 fetch 와 PR 목록 갱신)가 더 있다. `git merged --help`.
 
 ## 정리는 되돌릴 수 있게
 

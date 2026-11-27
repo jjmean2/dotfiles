@@ -245,7 +245,7 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
   patch-id 가 베이스 쪽 집합에 있는지로, squash 는 merge-base 와 브랜치 트리의 diff 하나의 patch-id 로 본다. 그래도 아니면
   `git merge-tree --write-tree <베이스> <브랜치>` 의 결과 트리가 베이스 트리와 같은지 본다 (3-way 머지는 양쪽에 똑같이 들어간
   변경을 그대로 합치므로 diff 문맥이 달라져도, 스택 PR 이 차례로 squash 돼도 잡는다). 캐시
-  `~/.cache/tmux-dev/merged/<브랜치 커밋>` 에 `<베이스 커밋> <0|방법>`, 베이스 쪽 집합 `patchids/<베이스 커밋>`.
+  `~/.cache/git-merged/merged/<브랜치 커밋>` 에 `<베이스 커밋> <0|방법>`, 베이스 쪽 집합 `patchids/<베이스 커밋>`.
 - **판정 방법 표시 (2026-11-13).** 처음 맞은 방법을 `merged` 뒤에 흐린 글자로: 없음 = 조상(ff·merge commit), `·r` rebase,
   `·s` squash(diff patch-id), `·t` tree(merge-tree), `·p` GitHub PR. 미리보기에는 말로.
 - **판정 방법 글자 색 (2026-11-17).** `·r ·s ·t` 는 흐린 초록, `·p` 는 마젠타. 색은 증명의 근거를 나눈다: 로컬 git 내용
@@ -254,15 +254,21 @@ ctrl-x ─▶ 검사 ─┬─ 메인 / 베이스 브랜치 / 원격 / locked �
 - **GitHub PR (2026-11-13).** 로컬 판정이 모두 아니면 머지된 PR 목록을 본다. 브랜치 커밋이 PR head 와 같거나, 같은 이름 PR 의
   head 가 로컬에 있고 브랜치 커밋을 담으면(로컬이 뒤처짐) merged. 이름이 아니라 커밋으로 비교해 이름을 다시 써도 안전하다.
   리뷰 제안처럼 GitHub 에서만 생긴 커밋까지 squash 돼 로컬 판정이 다 실패하는 경우를 잡는다. 목록은 백그라운드 fetch 때
-  `gh pr list --state merged --limit 300` 으로 받아 `~/.cache/tmux-dev/prs/<origin URL 해시>` 를 통째로 바꾼다(저장소당 파일
+  `gh pr list --state merged --limit 300` 으로 받아 `~/.cache/git-merged/prs/<origin URL 해시>` 를 통째로 바꾼다(저장소당 파일
   하나, `<head 커밋> <번호> <base 브랜치> <head 브랜치>`). fetch 와 동시에 돌고, 목록이 바뀌어도 다시 읽는다. gh 가 없거나 실패하면 예전
-  파일을 두고, 파일이 없으면 건너뛴다. 60일 동안 안 갱신된 파일은 `cache_prune` 이 치운다. `TMUX_DEV_PR_LIMIT` 로 개수 조절.
+  파일을 두고, 파일이 없으면 건너뛴다. 60일 동안 안 갱신된 파일은 `merged_cache_prune` 이 치운다. `GIT_MERGED_PR_LIMIT` 로 개수 조절.
 - **PR 은 베이스로 머지된 것만 (2026-11-27).** 목록에 PR 이 머지된 곳(`baseRefName`)을 같이 받아, 베이스 브랜치(업스트림이
   있으면 그 이름)로 머지된 PR 만 센다. 전에는 스택 PR 이 부모 브랜치로 머지된 것도 merged 였다: main 에는 없는데 정리 화면의
   "not merged" 경고가 빠졌다. 칸이 셋인 예전 형식의 줄은 base 를 몰라 세지 않는다(다음 fetch 가 파일을 새로 쓴다).
 - **빈 patch-id 는 squash 가 아니다 (2026-11-27).** squash 판정은 diff 의 patch-id 가 비어도 merged 로 봤다. 비는 경우는
   변경이 없을 때만이 아니라 `git diff` 실패, 모드만 바뀐 변경도 있어서(뒤의 둘은 머지된 것이 아니다) 판정하지 않고 넘긴다.
   변경이 정말 없는 브랜치(커밋 뒤 되돌림)는 tree 가 잡는다.
+- **판정은 git-merged 로 옮겼다 (2026-11-27).** 머지 판정은 tmux 와 상관없는 git 의 일이라 독립 명령
+  `~/.jongwan/bin/git-merged` (`git merged <브랜치>`, `--explain` 은 방법마다 결과와 이유)로 뺐다. 피커는 그 파일을 source 해서
+  같은 함수를 쓴다: 브랜치 수백 개를 프로세스를 새로 띄우지 않고 판정하고, `merge_prepare` 의 결과를 fork 한 자식이 상속받는
+  구조가 그대로다(명령을 브랜치마다 부르면 느리다). 의존은 tmux-dev → git-merged 한쪽이다. 캐시도 따라갔다:
+  `~/.cache/git-merged/{merged,patchids,prs}`. 피커에는 피커만의 것이 남는다: `new` 상태, 행 상태 캐시(`marks`), dirty 수.
+  판정 테스트는 `test/git-merged/run` (피커의 목록이 같은 답을 내는지도 본다).
 - **merge-tree 는 임시 오브젝트 디렉토리에 쓴다.** `--write-tree` 는 결과 블롭·트리를 저장소에 써서, 머지 안 된 브랜치마다 참조
   없는 루즈 오브젝트가 gc 전까지 쌓인다. `GIT_OBJECT_DIRECTORY=<임시>` + `GIT_ALTERNATE_OBJECT_DIRECTORIES=<저장소 objects>`
   로 새 것은 임시 디렉토리에만 쓰고 바로 지운다. 죽어서 남은 `$TMPDIR/tmux-dev.mt.*` 는 기존 `tmux-dev.*` 1시간 정리가 치운다.

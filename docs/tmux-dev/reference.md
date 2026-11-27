@@ -248,7 +248,8 @@ XDG 기본 디렉토리를 종류별로 쓴다.
 | 상태 | `~/.local/state/tmux-dev/windows` | `prefix W` 로 연 디렉토리 | 안 함 |
 | 상태 | `~/.local/state/tmux-dev/parents` | 위치 목록으로 무언가를 만든 곳 | 안 함 |
 | 데이터 | `~/.local/share/tmux-dev/worktrees/<저장소>/<브랜치>` | 워크트리 (`central`) | 안 함 |
-| 캐시 | `~/.cache/tmux-dev/{merged,patchids,prs}/` | 머지 판정 결과, main 쪽 patch-id 집합, 머지된 GitHub PR 목록(저장소당 파일 하나). 지워도 다시 계산한다 | 안 함 |
+| 캐시 | `~/.cache/git-merged/{merged,patchids,prs}/` | 머지 판정 결과, main 쪽 patch-id 집합, 머지된 GitHub PR 목록(저장소당 파일 하나). `git-merged` 의 것이다. 지워도 다시 계산한다 | 안 함 |
+| 캐시 | `~/.cache/tmux-dev/marks/` | 워크트리 피커 행의 브랜치 상태. 지워도 다시 계산한다 | 안 함 |
 
 저장소 안 소스 위치:
 

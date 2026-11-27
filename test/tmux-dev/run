@@ -63,6 +63,7 @@ run() {
   local st=$1 q=$2 n=$3; shift 3
   : > "$LOG"
   OUT=$(env -i PATH="$T/bin:$PATH" HOME="$T/home" TMPDIR="$T/tmp" TMUX_DEV_STATE="$st" FZF_QUERY="$q" FZF_MATCH_COUNT="$n" \
+        TMUX_DEV_GIT_MERGED="$ROOT/home/dot_jongwan/bin/executable_git-merged" \
         "$BASH_BIN" "${BIN:-$W}" "$@" 2> "$T/stderr"); RC=$?
   ERR=$(cat "$T/stderr"); SPAWNS=$(cat "$LOG")
 }
