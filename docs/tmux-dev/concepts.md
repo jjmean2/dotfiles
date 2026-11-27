@@ -122,7 +122,7 @@ git merged --all             # 로컬 브랜치 전부
 git merged -q feat && git branch -D feat
 ```
 
-`--base <ref>`, `--no-cache`, `--fetch`(판정 전에 fetch 와 PR 목록 갱신)가 더 있다. `git merged --help`.
+`--base <ref>`, `--no-cache`, `--fetch`(판정 전에 fetch 와 PR 목록 갱신)가 더 있다. `git merged -h` (짧게), `git merged --help` (man 페이지).
 
 ## 정리는 되돌릴 수 있게
 

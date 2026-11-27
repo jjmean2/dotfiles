@@ -96,6 +96,14 @@ if [ "$rc" = 0 ] && grep -q '^  rebase  *no ' <<< "$out" && grep -q '^  squash  
 out=$(bash "$GM" --explain prstack 2>&1); rc=$?
 if [ "$rc" = 1 ] && grep -q '^  pr  *no ' <<< "$out" && grep -q '^→ not merged' <<< "$out"; then ok "--explain: prstack"; else no "--explain: prstack (rc=$rc)" "$out"; fi
 
+# man 페이지(git merged --help 가 연다)에 옵션이 모두 적혀 있다. 옵션은 인자를 읽는 case 문에서 뽑는다
+MAN=$ROOT/home/dot_jongwan/share/man/man1/git-merged.1
+opts=$(sed -n '/^gm_main()/,/^}/p' "$GM" | grep -oE '^ +(-[a-z-]+(=\*)?\|?)+\)' | tr -d ' )' | tr '|' '\n' | sed 's/=\*$//' | grep -v -e '^--$' -e '^--help$' -e '^-$' | sort -u)
+miss=""; for o in $opts; do grep -qF -- "$(sed 's/-/\\-/g' <<< "$o")" "$MAN" || miss+="$o "; done
+[ -n "$opts" ] && [ -z "$miss" ] && ok "man page: every option is there ($(wc -w <<< "$opts" | tr -d ' '))" || no "man page: every option is there" "missing: $miss / found: $opts"
+out=$(bash "$GM" -h); for o in $opts; do grep -qF -- "$o" <<< "$out" || miss+="$o "; done
+[ -z "$miss" ] && ok "-h: every option is there" || no "-h: every option is there" "$miss"
+
 # 저장소에 아무것도 남기지 않는다 (merge-tree 의 오브젝트, 임시 파일)
 left=$(git count-objects -v | sed -n 's/^count: //p'); bash "$GM" --no-cache --all > /dev/null; now=$(git count-objects -v | sed -n 's/^count: //p')
 [ "$left" = "$now" ] && ok "no objects left in the repository" || no "no objects left in the repository" "$left → $now"
