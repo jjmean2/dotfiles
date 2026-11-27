@@ -2,7 +2,11 @@
 # 패널의 포그라운드 프로그램이 listen 중인 TCP 포트를 " :3000 :9229" 처럼 출력한다. 없으면 아무것도 출력하지 않는다.
 # tmux.conf 의 pane-border-format(@pane_ports) 이 #() 로 부른다 (패널 테두리의 포트 표시). 설계 설명은 그 절에 있다.
 #
-# 사용: pane-ports <패널 tty> [패널 셸 PID]     예: pane-ports /dev/ttys003 12345   (tmux 에서는 #{pane_tty} #{pane_pid})
+# 사용: pane-ports <패널 tty> [패널 셸 PID] [on]     예: pane-ports /dev/ttys003 12345 on
+#       tmux 에서는 #{pane_tty} #{pane_pid} #{@pane_ports_link}.
+#       세 번째 인자가 on 이면 포트마다 http://localhost:포트 로 가는 링크 스타일을 씌운다:
+#         " #[link=http://localhost:3000]:3000#[nolink]"
+#       link= 스타일은 tmux 3.8 에서 생겼으므로 tmux.conf 가 3.8 이상에서만 on 을 넘긴다 (그 절의 "링크" 설명).
 #
 # 방법: 1) ps -t 로 그 tty 의 프로세스를 읽고 STAT 에 + 가 있는 것(포그라운드 프로세스 그룹)만 고른다. 셸은 빠진다.
 #       2) ps -A 한 번으로 PID·부모 PID 를 읽어 1) 의 자손을 모두 더한다. 자식이 다른 프로세스 그룹·세션·tty 에
@@ -23,6 +27,7 @@
 
 tty=${1#/dev/}
 shell_pid=$2
+link=$3
 [ -n "$tty" ] || exit 0
 
 pids=$(ps -t "$tty" -o pid=,stat= 2>/dev/null | awk '$2 ~ /\+/ { printf "%s%s", sep, $1; sep = "," }')
@@ -43,4 +48,7 @@ pids=$(ps -A -o pid=,ppid= 2>/dev/null | awk -v roots="$pids" '
 
 lsof -nPb -a -p "$pids" -iTCP -sTCP:LISTEN -Fn 2>/dev/null \
   | sed -n 's/^n.*:\([0-9][0-9]*\)$/\1/p' | sort -un \
-  | awk '{ printf " :%s", $1 }'
+  | awk -v link="$link" '{
+      if (link == "on") printf " #[link=http://localhost:%s]:%s#[nolink]", $1, $1
+      else              printf " :%s", $1
+    }'
