@@ -1,0 +1,31 @@
+#!/bin/sh
+# 패널의 포그라운드 프로그램이 listen 중인 TCP 포트를 " :3000 :9229" 처럼 출력한다. 없으면 아무것도 출력하지 않는다.
+# tmux.conf 의 pane-border-format(@pane_ports) 이 #() 로 부른다 (패널 테두리의 포트 표시). 설계 설명은 그 절에 있다.
+#
+# 사용: pane-ports <패널 tty> [패널 셸 PID]     예: pane-ports /dev/ttys003 12345   (tmux 에서는 #{pane_tty} #{pane_pid})
+#
+# 방법: 1) ps -t 로 그 tty 의 프로세스를 읽고 STAT 에 + 가 있는 것(포그라운드 프로세스 그룹)만 고른다.
+#          셸은 빠지고, npm run dev 가 띄운 node 처럼 같은 그룹의 자식은 함께 잡힌다.
+#       2) 그 PID 들만 lsof 에 넘겨 LISTEN 상태의 TCP 소켓을 본다. 나가는 연결(ESTABLISHED)은 나오지 않는다.
+#          -a 가 없으면 lsof 가 조건을 OR 로 묶어 시스템 전체의 LISTEN 포트가 나온다.
+#          -nP 는 주소·포트를 이름으로 바꾸지 않는다(DNS 조회 없음). -b 는 응답 없는 네트워크 마운트 등에서
+#          커널 호출에 붙잡히지 않게 한다 (그때 내는 경고는 버린다).
+#       포그라운드가 패널의 셸 자신뿐이면(프롬프트에서 기다리는 중) lsof 를 부르지 않고 끝낸다. 대부분의 패널이 이 상태다.
+#       이 판별을 tmux 쪽(pane_current_command 가 셸 이름인지)에서 하지 않는 이유: ./dev.sh 처럼 셸 스크립트로 띄운 서버도
+#       pane_current_command 가 bash 로 보여(Linux 실측) 포트가 숨는다.
+#       IPv4·IPv6 로 같은 포트를 열면 하나로 합친다.
+# 안 잡히는 것: UDP, setsid·데몬화로 프로세스 그룹을 벗어난 자식, 다른 사용자(sudo)로 도는 프로세스의 소켓.
+# 비용: Linux 에서 lsof 까지 한 번에 15ms 남짓(실측). -p 로 대상을 좁혀 시스템 전체를 훑지 않는다.
+#       셸만 떠 있는 패널은 ps 한 번으로 끝난다.
+
+tty=${1#/dev/}
+shell_pid=$2
+[ -n "$tty" ] || exit 0
+
+pids=$(ps -t "$tty" -o pid=,stat= 2>/dev/null | awk '$2 ~ /\+/ { printf "%s%s", sep, $1; sep = "," }')
+[ -n "$pids" ] || exit 0
+[ "$pids" = "$shell_pid" ] && exit 0
+
+lsof -nPb -a -p "$pids" -iTCP -sTCP:LISTEN -Fn 2>/dev/null \
+  | sed -n 's/^n.*:\([0-9][0-9]*\)$/\1/p' | sort -un \
+  | awk '{ printf " :%s", $1 }'
