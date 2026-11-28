@@ -250,7 +250,7 @@ worktree-handoff move                                    [--base <ref>]         
 worktree-handoff fork  [--session <id>] [--note <파일|->]  [--base <ref>] [--open <방식>] [<스택>] <브랜치>
 worktree-handoff fresh --brief <파일|-> [--start <시작>]   [--base <ref>] [--open <방식>] [<스택>] <브랜치>
 worktree-handoff here  --brief <파일|-> [--start <시작>]   [--name <이전 대화 이름>]
-# 모두: --from <도구> --agent <도구>.  <스택> = --in-stack | --new-worktree,  <시작> = plan | build,  <도구> = claude | cursor
+# 모두: --from <도구> --agent <도구>.  fork·fresh: --name <세션 이름>.  <스택> = --in-stack | --new-worktree,  <시작> = plan | build,  <도구> = claude | cursor
 # 자세한 것은 각 스크립트의 --help
 ```
 

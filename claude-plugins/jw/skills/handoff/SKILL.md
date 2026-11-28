@@ -108,14 +108,17 @@ Write 가 성공했다는 결과를 본 **다음 응답에서** 5 를 실행한�
 
 ```
 ${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff move  --from <지금 도구> [--base <ref>] [--in-stack|--new-worktree] -- <브랜치>
-${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff fork  --from <지금 도구> --agent <여는 도구> [--note <파일>] [--base <ref>] [--in-stack|--new-worktree] -- <브랜치>
-${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff fresh --from <지금 도구> --agent <여는 도구> --brief <파일> --start <plan|build> [--base <ref>] [--in-stack|--new-worktree] -- <브랜치>
-${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff here  --from <지금 도구> --brief <파일> --start <plan|build> [--name <이전 대화 이름>]
+${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff fork  --from <지금 도구> --agent <여는 도구> --name <세션 이름> [--note <파일>] [--base <ref>] [--in-stack|--new-worktree] -- <브랜치>
+${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff fresh --from <지금 도구> --agent <여는 도구> --name <세션 이름> --brief <파일> --start <plan|build> [--base <ref>] [--in-stack|--new-worktree] -- <브랜치>
+${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff here  --from <지금 도구> --brief <파일> --start <plan|build> --name <확인받은 이전 대화 이름>
 ```
 
 - **move**: 출력의 `enter:` 대로 `EnterWorktree` 를 그 `path` 로 부른다. ".claude/worktrees 아래가 아니다" 로 거절되면
   `retry:` 대로 `ExitWorktree` (action `keep`) 뒤에 같은 `EnterWorktree` 를 다시 부른다. 그래도 안 되면 `cd:` 줄을
-  사용자에게 보여 주고 입력을 부탁한다 (`/cd` 는 내가 부를 수 없다).
+  사용자에게 보여 주고 입력을 부탁한다 (`/cd` 는 내가 부를 수 없다). 끝내 들어가지 못했고 `back:` 줄이 있으면 그대로 해서
+  원래 워크트리로 돌아간다 (메인 체크아웃에 남아 작업하지 않는다).
+- `--name` 에는 2 가 준 이름을 그대로 넘긴다 (`fork`·`fresh` 는 `session:`, `here` 는 `name:`). 생략하면 스크립트가 시각을 새로 찍어
+  확인받은 이름과 달라질 수 있다.
 - **fork**: 첫 메시지는 스크립트가 쓴다 (포크된 세션이라는 것, 작업 디렉토리). 덧붙일 것이 있으면 (합의한 범위·결정·
   하지 않기로 한 것·남은 질문·첫 할 일·추가 지시) 2 의 `brief:` 경로에 짧게 써서 `--note` 로 넘긴다.
   세션 ID 는 스크립트가 `$CLAUDE_CODE_SESSION_ID` 에서 읽는다.
