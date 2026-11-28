@@ -283,15 +283,15 @@ PR 을 여럿 줬으면 맨 위에 PR 별 요약표를 두고 PR 마다 위 형�
 | checkout | 지금 그 워크트리 안 | 안내 |
 |---|---|---|
 | `self` | 예 | "`/jw:pr-review-apply` 로 계획대로 고치고 답글·해결까지 한다. 일부만 하려면 수정 단위(A, B…)나 지적 번호를 붙인다." |
-| `self` | 아니오 | 그 워크트리의 파일은 이 세션에서 고치지 않는다. `/jw:handoff <PR 브랜치> fork` 로 이 분석을 이어받은 세션을 그 워크트리에 열고 거기서 `/jw:pr-review-apply` |
+| `self` | 아니오 | 그 워크트리의 파일은 이 세션에서 고치지 않는다. `/jw:handoff fork <PR 브랜치>` 로 이 분석을 이어받은 세션을 그 워크트리에 열고 거기서 `/jw:pr-review-apply`. 이 세션째 옮겨 가도 되면 `/jw:handoff move <PR 브랜치>` |
 | `stack` | 예 | `self`·예 와 같다. pr-review-apply 가 체크아웃을 바꾸지 않고 fixup 커밋 + autosquash 로 고친다 |
-| `stack` | 아니오 | `/jw:handoff <PR 브랜치> fork --in-stack` 으로 스택 워크트리에 세션을 연다. `--in-stack` 없이 부르면 스크립트가 멈춘다 (새 워크트리를 만들면 스택이 갈라진다) |
+| `stack` | 아니오 | `/jw:handoff fork <PR 브랜치> --in-stack` 으로 스택 워크트리에 세션을 연다 (옮겨 가려면 `move`). `--in-stack` 없이 부르면 스크립트가 멈춘다 (새 워크트리를 만들면 스택이 갈라진다) |
 | `none` | | 위 handoff 명령이 그 브랜치의 워크트리를 만든다고 안내한다 |
 
-fork 를 권하는 까닭: 이 분석이 넘겨받은 세션에 있어야 pr-review-apply 가 분석을 다시 하지 않는다. `fork` 가 안 되는
-조합이면 handoff 가 `fresh` 로 바꾼다. 그때는 지시서에 이 결과 전체(항목별 판정·근거·답글 초안, 수정 계획, 대응표)를 줄이지
-않고 넣고, 지적마다 `thread_id` 를 적는다. Claude Code 에서 `self`·아니오 면 넘기지 않고 이 세션을 그 워크트리로 옮겨도
-된다 (`${CLAUDE_PLUGIN_ROOT}/bin/branch-worktree ensure <PR 브랜치>` 가 출력하는 `worktree:` 경로로 `/cd`).
+fork 나 move 를 권하는 까닭: 이 분석이 고치는 세션에 있어야 pr-review-apply 가 분석을 다시 하지 않는다. fork 는 이 세션을
+남기고 (다른 PR 을 계속 볼 때), move 는 이 세션이 그 워크트리로 옮겨 간다. 둘 다 안 되는 조합(Cursor 세션, 도구를 바꿔 넘기기)이면
+handoff 가 확인 단계에서 `fresh` 로 대신한다. 그때는 지시서에 이 결과 전체(항목별 판정·근거·답글 초안, 수정 계획, 대응표)를 줄이지
+않고 넣고, 지적마다 `thread_id` 를 적는다.
 
 PR 을 여럿 줬으면 PR 마다 위 표대로 어디서 고칠지 적는다. pr-review-apply 는 지금 워크트리의 PR 하나만
 고치므로 (그 PR 의 수정 계획을 쓴다), 이 세션에서는 지금 워크트리 안인 PR 만 고치고 다른 워크트리의 PR 은 PR 마다 handoff 를
