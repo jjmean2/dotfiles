@@ -1,7 +1,7 @@
 #!/bin/bash
 # test/run — jw 플러그인의 스크립트를 가짜 도구와 임시 저장소로 확인한다. 실제 claude·agent·gh 는 부르지 않는다.
 #
-#   test/run [worktree|handoff|tmux|fetch]…     인자가 없으면 전부
+#   test/run [worktree|handoff|modes|tmux|fetch]…     인자가 없으면 전부
 #
 # 스크립트는 env -i 와 /bin/bash (macOS 의 3.2) 로 돌린다. tmux 절은 격리된 서버(-L)를 띄우고, tmux 가 없으면 건너뛴다.
 # fetch 절은 jq 가 있어야 한다. 실패한 항목이 있으면 종료 코드 1.
@@ -71,6 +71,14 @@ t_worktree() {
   run "$R" -- "$BW" find at-main
   expect "find: 기본 브랜치의 워크트리만 품은 브랜치는 none" 'kind: none'
   expect "find: main 과 here 를 알려 준다" "main: $R/repo"
+  expect "find: none 이면 ensure 가 만들 경로" "would-create: $(wtdir "$R" at-main)"
+  expect "find: 로컬 브랜치가 있으면 exists: local" 'exists: local'
+  run "$R" -- "$BW" find brand/new
+  expect "find: 없는 브랜치는 exists: no" 'exists: no'
+  expect "find: 그때 쓸 베이스" 'base: main'
+  check "find 는 워크트리를 만들지 않는다" test ! -e "$(wtdir "$R" brand-new)"
+  run "$R" WORKTREE_HANDOFF_CREATE=tmux-dev -- "$BW" find brand/new
+  expect "find: create=tmux-dev 인데 tmux-dev 에 묻지 못하면 예상이라고 붙인다" "would-create: $(wtdir "$R" brand-new) (예상)"
   run "$R" -- "$BW" find main
   expect "find: 메인 체크아웃도 self 다" 'kind: self'
 
@@ -193,7 +201,7 @@ t_handoff() {
   mkroot "$R"
 
   # --- claude ---
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open none -- feat/a
+  run "$R" -- "$HO" fresh --brief ../msg.txt --open none -- feat/a
   expect_rc "claude fresh: 성공" 0
   expect "claude fresh: worktree 줄" "worktree: $(wtdir "$R" feat-a)"
   expect "claude fresh: 세션 이름은 <브랜치>@<MMDD-HHMM>" 'session:  feat/a@'
@@ -208,10 +216,22 @@ t_handoff() {
   out=$(cat "$R/log/claude.log")
   expect "가짜 claude: 워크트리에서 실행" "cwd=$(wtdir "$R" feat-a)"
   expect "가짜 claude: 런처 인자가 앞에" 'arg1=<<--extra>>'
-  want=$(printf 'arg5=<<%s>>' "$(cat "$R/msg.txt")")
-  expect "가짜 claude: 첫 메시지가 글자 그대로 한 인자" "$want"
+  expect "가짜 claude: 첫 메시지는 스크립트가 붙인 머리말로 시작한다" 'arg5=<<# 작업 지시서'
+  expect "  머리말: 작업 디렉토리와 브랜치" "- 작업 디렉토리: $(wtdir "$R" feat-a) (브랜치 feat/a)"
+  expect "  머리말: 메인 체크아웃은 고치지 않는다" "- 메인 체크아웃($R/repo)의 파일은 읽기만"
+  expect "  머리말: 시작은 기본이 구현부터" '- 시작: 구현부터'
+  want=$(printf '%s>>' "$(cat "$R/msg.txt")")
+  expect "가짜 claude: 지시서 본문이 글자 그대로 같은 인자의 끝에" "$want"
 
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt -- feat/bg
+  run "$R" -- "$HO" fresh --brief ../msg.txt --start plan --open none -- feat/pl
+  L=$(launcher "$R" feat-pl); out=$(cat "$L")
+  expect "--start plan: claude 를 plan mode 로 띄운다" "exec claude \"\$@\" --permission-mode plan -n 'feat/pl@"
+  out=$(cat "${L%.sh}")
+  expect "--start plan: 머리말에 설계부터" '- 시작: 설계부터'
+  run "$R" -- "$HO" fresh --brief ../msg.txt --start bogus --open none -- feat/pl2
+  expect "--start: 모르는 값은 거부" '--start 는 plan | build 중 하나입니다'
+
+  run "$R" -- "$HO" fresh --brief ../msg.txt -- feat/bg
   expect "claude: tmux 밖이면 bg" 'open:     background'
   expect "claude bg: attach 줄" "attach:   claude attach 'feat/bg@"
   expect_not "claude bg: run 줄 없음" 'run:'
@@ -233,51 +253,63 @@ t_handoff() {
   expect "fork: 세션 ID 가 없으면 거부" '세션 ID 를 주세요'
   run "$R" -- "$HO" fork --session 'bad id;' --open none -- feat/fk3
   expect "fork: 세션 ID 형식이 아니면 거부" '세션 ID 형식이 아닙니다'
+  run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork --note ../msg.txt --open none -- feat/fkn
+  out=$(cat "$(launcher "$R" feat-fkn | sed 's/\.sh$//')")
+  expect "fork --note: 포크된 세션이라는 문장이 먼저" '너는 원본 대화에서 포크된 구현 세션이다'
+  expect "fork --note: 그 뒤에 받은 내용" '마지막 줄'
+  expect_not "fork --note: 기본 문구는 뺀다" '짧게 요약한 뒤 시작해'
+  run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork --brief ../msg.txt --open none -- feat/fkx
+  expect "fork: --brief 는 받지 않는다" 'fork 에는 --brief 를 쓸 수 없습니다'
+  run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork --from cursor --open none -- feat/fkx
+  expect "fork: 다른 도구의 대화는 포크할 수 없다" '대화 기록은 다른 도구로 옮길 수 없습니다'
+  check "  거절된 fork 는 워크트리를 만들지 않았다" test ! -d "$(wtdir "$R" feat-fkx)"
   run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork -- feat/fkbg
   expect "fork bg: 분리해서 띄운다" 'open:     background, 2초 뒤 시작'
   sleep 3.5; out=$(cat "$R/log/claude.log")
   expect "fork bg: 2초 뒤 가짜 claude 가 --bg 와 포크 옵션을 받았다" 'arg3=<<sid-9>>'
 
   printf 'from stdin\n' >"$R/stdin.txt"
-  STDIN=$R/stdin.txt; run "$R" -- "$HO" fresh --prompt-file - --open none -- feat/stdin; STDIN=""
+  STDIN=$R/stdin.txt; run "$R" -- "$HO" fresh --brief - --open none -- feat/stdin; STDIN=""
   expect_rc "첫 메시지를 표준 입력에서" 0
   check "  그 내용이 첫 메시지 파일로 남았다" grep -qx 'from stdin' "$(launcher "$R" feat-stdin | sed 's/\.sh$//')"
 
   # --- 거절: 아무것도 남기지 않는다 ---
   n0=$(worktrees "$R"); s0=$(state_files "$R")
   run "$R" -- "$HO" fresh --open none -- feat/no
-  expect "fresh: 첫 메시지가 없으면 거부" 'fresh 에는 첫 메시지가 필요합니다'
+  expect "fresh: 지시서가 없으면 거부" 'fresh 에는 지시서가 필요합니다'
   printf '  \n\n' >"$R/blank.txt"
-  run "$R" -- "$HO" fresh --prompt-file ../blank.txt --open none -- feat/no
-  expect "fresh: 공백뿐인 첫 메시지는 거부" '첫 메시지가 비어 있습니다'
-  run "$R" -- "$HO" fresh --prompt-file ../nope.txt --open none -- feat/no
-  expect "첫 메시지 파일이 없으면 거부" '프롬프트 파일을 읽을 수 없습니다'
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open tmux -- feat/no
+  run "$R" -- "$HO" fresh --brief ../blank.txt --open none -- feat/no
+  expect "fresh: 공백뿐인 지시서는 거부" '지시서가 비어 있습니다'
+  run "$R" -- "$HO" fresh --brief ../nope.txt --open none -- feat/no
+  expect "지시서 파일이 없으면 거부" '파일을 읽을 수 없습니다'
+  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open none -- feat/no
+  expect "옛 옵션 --prompt-file 은 없다" 'unknown option: --prompt-file'
+  run "$R" -- "$HO" fresh --brief ../msg.txt --open tmux -- feat/no
   expect "--open tmux: tmux 밖이면 거부" 'tmux 안에서만 됩니다'
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --agent auto -- feat/no
+  run "$R" -- "$HO" fresh --brief ../msg.txt --agent auto -- feat/no
   expect_rc "--agent: 모르는 도구는 거부" 1
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open bogus -- feat/no
+  run "$R" -- "$HO" fresh --brief ../msg.txt --open bogus -- feat/no
   expect_rc "--open: 모르는 방식은 거부" 1
   run "$R" -- "$HO" path feat/no
   expect_rc "path 동작은 없다 (branch-worktree ensure 를 쓴다)" 1
-  run "$R" PATH=/usr/bin:/bin -- "$HO" fresh --prompt-file ../msg.txt -- feat/no
+  run "$R" PATH=/usr/bin:/bin -- "$HO" fresh --brief ../msg.txt -- feat/no
   expect "claude 가 없으면 거부" 'claude 가 PATH 에 없습니다'
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --agent cursor --open bg -- feat/no
+  run "$R" -- "$HO" fresh --brief ../msg.txt --agent cursor --open bg -- feat/no
   expect "cursor --open bg: 거부" 'cursor 세션은 bg 로 띄울 수 없습니다 (agent persist'
   run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork --agent cursor -- feat/no
   expect "cursor fork: 거부" 'Cursor CLI 에는 대화를 포크하는 옵션이 없습니다'
-  run "$R" TMUX=fake PATH=/usr/bin:/bin -- "$HO" fresh --prompt-file ../msg.txt --agent cursor --open tmux -- feat/no
+  run "$R" TMUX=fake PATH=/usr/bin:/bin -- "$HO" fresh --brief ../msg.txt --agent cursor --open tmux -- feat/no
   expect "cursor: CLI 가 없으면 거부" 'Cursor CLI(agent) 가 PATH 에 없습니다'
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open none -- main
+  run "$R" -- "$HO" fresh --brief ../msg.txt --open none -- main
   expect "메인 체크아웃은 branch-worktree 가 거부하고 그 오류가 그대로 나온다" 'branch-worktree: main 는 메인 체크아웃에'
   expect_rc "  종료 코드도 그대로" 1
-  CWD=$(wtdir "$R" feat-a); run "$R" -- "$HO" fresh --prompt-file "$R/msg.txt" --open none -- feat/a; CWD=""
+  CWD=$(wtdir "$R" feat-a); run "$R" -- "$HO" fresh --brief "$R/msg.txt" --open none -- feat/a; CWD=""
   expect "이 세션이 있는 체크아웃으로는 넘기지 않는다" '지금 이 세션이 있는 체크아웃입니다'
   check "거절된 호출은 워크트리를 만들지 않았다" test "$(worktrees "$R")" = "$n0"
   check "거절된 호출은 첫 메시지·런처를 남기지 않았다" test "$(state_files "$R")" = "$s0"
 
   # --- cursor ---
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --agent cursor -- feat/cu
+  run "$R" -- "$HO" fresh --brief ../msg.txt --agent cursor -- feat/cu
   expect_rc "cursor fresh: 성공" 0
   expect "cursor: tmux 밖이면 none" 'open:     none'
   expect "cursor: session 줄" 'session:  Cursor CLI (이름 없음)'
@@ -288,21 +320,25 @@ t_handoff() {
   ( cd / && env -i HOME="$R/home" PATH="$R/bin:/usr/bin:/bin" STUB_LOG_DIR="$R/log" sh "$L" --extra )
   out=$(cat "$R/log/agent.log")
   expect "가짜 agent: -- 가 첫 메시지 앞에" 'arg2=<<-->>'
-  want=$(printf 'arg3=<<%s>>' "$(cat "$R/msg.txt")")
-  expect "가짜 agent: 첫 메시지가 글자 그대로 한 인자" "$want"
-  run "$R" WORKTREE_HANDOFF_OPEN=bg -- "$HO" fresh --prompt-file ../msg.txt --agent cursor -- feat/cu2
+  expect "가짜 agent: 첫 메시지는 머리말로 시작한다" 'arg3=<<# 작업 지시서'
+  want=$(printf '%s>>' "$(cat "$R/msg.txt")")
+  expect "가짜 agent: 지시서 본문이 글자 그대로 같은 인자의 끝에" "$want"
+  run "$R" -- "$HO" fresh --brief ../msg.txt --agent cursor --start plan -- feat/cup
+  out=$(cat "$(launcher "$R" feat-cup)")
+  expect "--start plan: cursor 는 --plan" 'exec agent "$@" --plan -- "$(cat '
+  run "$R" WORKTREE_HANDOFF_OPEN=bg -- "$HO" fresh --brief ../msg.txt --agent cursor -- feat/cu2
   expect "cursor, 설정의 open=bg: 알리고" '설정의 open=bg 는 cursor 세션에 쓸 수 없어'
   expect "cursor, 설정의 open=bg: auto 로 띄운다" 'open:     none'
-  run "$R" CURSOR_AGENT=1 -- "$HO" fresh --prompt-file ../msg.txt --open none -- feat/env
+  run "$R" CURSOR_AGENT=1 -- "$HO" fresh --brief ../msg.txt --open none -- feat/env
   expect "부른 곳을 환경 변수로 짐작하지 않는다" "claude --resume 'feat/env@"
   mkdir -p "$R/config/worktree-handoff"; printf 'agent=cursor\n' >"$R/config/worktree-handoff/config"
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt -- feat/cf
+  run "$R" -- "$HO" fresh --brief ../msg.txt -- feat/cf
   expect "설정 파일의 agent" 'session:  Cursor CLI'
-  run "$R" WORKTREE_HANDOFF_AGENT=claude -- "$HO" fresh --prompt-file ../msg.txt --open none -- feat/cf2
+  run "$R" WORKTREE_HANDOFF_AGENT=claude -- "$HO" fresh --brief ../msg.txt --open none -- feat/cf2
   expect "환경 변수가 설정 파일보다 먼저" 'session:  feat/cf2@'
   /bin/rm -f "$R/config/worktree-handoff/config"
   local O=$T/ho-old; mkroot "$O" cursor-agent
-  run "$O" -- "$HO" fresh --prompt-file ../msg.txt --agent cursor -- feat/o
+  run "$O" -- "$HO" fresh --brief ../msg.txt --agent cursor -- feat/o
   expect "cursor: agent 가 없으면 옛 이름 cursor-agent" 'cursor-agent resume'
 
   # --- 스택 워크트리 ---
@@ -310,25 +346,25 @@ t_handoff() {
   g "$(wtdir "$R" feat-a)" branch low
   g "$(wtdir "$R" feat-a)" commit -q --allow-empty -m c2
   s0=$(state_files "$R")
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open none -- low
+  run "$R" -- "$HO" fresh --brief ../msg.txt --open none -- low
   expect_rc "스택 워크트리에 든 브랜치: 멈춘다" 1
   check "  멈출 때 읽어 둔 첫 메시지를 지운다" test "$(state_files "$R")" = "$s0"
   run "$R" CLAUDE_CODE_SESSION_ID=sid-9 -- "$HO" fork --open none --in-stack -- low
   expect "--in-stack: 스택 워크트리를 쓴다" "branch:   low (스택 워크트리, 체크아웃: feat/a)"
   out=$(cat "$(launcher "$R" low | sed 's/\.sh$//')")
   expect "--in-stack: 포크의 기본 첫 메시지에 고치는 방법" 'rebase -i --autosquash --update-refs --keep-base'
-  CWD=$(wtdir "$R" feat-a); run "$R" -- "$HO" fresh --prompt-file "$R/msg.txt" --open none --in-stack -- low; CWD=""
+  CWD=$(wtdir "$R" feat-a); run "$R" -- "$HO" fresh --brief "$R/msg.txt" --open none --in-stack -- low; CWD=""
   expect "--in-stack: 그 워크트리가 이 세션의 체크아웃이면 넘기지 않는다" '스택 워크트리가 지금 이 세션이 있는 체크아웃입니다'
 
   # --- 띄우다 실패해도 안내는 나온다 ---
   printf '#!/bin/sh\necho "tmux: boom" >&2\nexit 1\n' >"$R/bin/tmux"; chmod +x "$R/bin/tmux"
-  run "$R" TMUX=fake -- "$HO" fresh --prompt-file ../msg.txt -- feat/tf
+  run "$R" TMUX=fake -- "$HO" fresh --brief ../msg.txt -- feat/tf
   expect_rc "tmux 가 실패하면 종료 코드 1" 1
   expect "tmux 실패: worktree 줄은 나온다" "worktree: $(wtdir "$R" feat-tf)"
   expect "tmux 실패: run 줄로 이어 갈 수 있다" 'run:      sh '
   /bin/rm -f "$R/bin/tmux"
   printf '#!/bin/sh\necho "not trusted" >&2\nexit 3\n' >"$R/bin/claude"
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt -- feat/bf
+  run "$R" -- "$HO" fresh --brief ../msg.txt -- feat/bf
   expect_rc "bg 가 실패하면 종료 코드 1" 1
   expect "bg 실패: 도구의 오류를 보여 준다" 'claude: not trusted'
   expect "bg 실패: run 줄" 'run:      sh '
@@ -336,8 +372,155 @@ t_handoff() {
 
   # --- 상태 디렉토리 ---
   old=$R/state/worktree-handoff/prompt/old.AAAAAA; : >"$old"; touch -t 202001010000 "$old"
-  run "$R" -- "$HO" fresh --prompt-file ../msg.txt --open none -- feat/gc
+  run "$R" -- "$HO" fresh --brief ../msg.txt --open none -- feat/gc
   check "7일 지난 첫 메시지·런처는 지운다" test ! -e "$old"
+}
+
+# === worktree-handoff plan · move · here =======================================
+t_modes() {
+  local R=$T/md A b n0 s0
+  mkroot "$R"
+  n0=$(worktrees "$R"); s0=$(state_files "$R")
+
+  # --- plan: 읽기만 한다 ---
+  run "$R" CLAUDE_CODE_SESSION_ID=sid-1 -- "$HO" plan --agent claude --tmp "$R/log" feat/p
+  expect_rc "plan: 성공" 0
+  expect "plan: 지금 체크아웃과 브랜치" "here:     $R/repo"
+  expect "plan: 만들 경로와 브랜치가 어디서 오는지" "worktree: $(wtdir "$R" feat-p)   (새로 만든다: main 에서 새 브랜치)"
+  expect "plan claude: move ok" 'move:     ok'
+  expect "plan claude: fork ok" 'fork:     ok'
+  expect "plan claude: fresh ok" 'fresh:    ok'
+  expect "plan: tmux 밖의 claude 는 bg" 'open:     bg'
+  expect "plan: 세션 이름" 'session:  feat/p@'
+  expect "plan: 지시서 본문 경로는 --tmp 아래" "brief:    $R/log/handoff-feat-p-"
+  expect_not "plan: 깨끗하면 dirty 줄 없음" 'dirty:'
+  run "$R" -- "$HO" plan --agent claude feat/p
+  expect "plan claude: 세션 ID 가 없으면 fork 대신 fresh" 'fork:     no → fresh (세션 ID'
+  expect "plan: --tmp 가 없으면 TMPDIR" "brief:    $R/tmp/handoff-feat-p-"
+  run "$R" -- "$HO" plan --agent cursor feat/p
+  expect "plan cursor: move 대신 fresh" 'move:     no → fresh (Cursor 는 채팅을 폴더별로'
+  expect "plan cursor: fork 대신 fresh" 'fork:     no → fresh (Cursor CLI 에는'
+  expect "plan cursor: fresh ok" 'fresh:    ok'
+  expect "plan cursor: tmux 밖이면 none" 'open:     none'
+  run "$R" CLAUDE_CODE_SESSION_ID=sid-1 -- "$HO" plan --from claude --agent cursor feat/p
+  expect "plan, 도구를 바꿔 넘길 때: 지금 세션은 옮길 수 있다" 'move:     ok'
+  expect "plan, 도구를 바꿔 넘길 때: fork 는 fresh 로" 'fork:     no → fresh (대화 기록은 다른 도구로'
+  run "$R" -- "$HO" plan --agent claude --base v1 feat/p
+  expect "plan: --base 를 보여 준다" '새로 만든다: v1 에서 새 브랜치'
+  g "$R/repo" branch has-local
+  run "$R" -- "$HO" plan --agent claude has-local
+  expect "plan: 있는 로컬 브랜치" '새로 만든다: 있는 로컬 브랜치'
+  : >"$R/repo/untracked.txt"
+  run "$R" -- "$HO" plan --agent claude feat/p
+  expect "plan: 커밋하지 않은 변경 수" 'dirty:    1 '
+  /bin/rm -f "$R/repo/untracked.txt"
+  run "$R" PATH=/usr/bin:/bin TMUX=fake -- "$HO" plan --agent claude feat/p
+  expect "plan: 도구가 없으면 알린다" 'warn:     claude 가 PATH 에 없습니다'
+  run "$R" -- "$HO" plan --agent claude main
+  expect "plan: 대상이 지금 체크아웃이면 here 로" 'fresh:    no → here'
+  expect "plan: 그때 here ok" 'here:     ok'
+  expect "plan: 이전 대화에 붙일 이름" 'name:     main@'
+  run "$R" -- "$HO" plan --agent claude --here
+  expect "plan --here: here ok" 'here:     ok'
+  expect "plan --here: 지시서 본문 경로" "brief:    $R/tmp/handoff-main-"
+  expect_not "plan --here: 묻지 않은 방식은 내지 않는다" 'fresh:'
+  run "$R" -- "$HO" plan --from cursor --here
+  expect "plan --here: 지금 세션의 도구(--from)만 본다" 'here:     ok'
+  run "$R" -- "$HO" plan --from claude --agent cursor --here
+  expect "plan --here: 다른 도구의 세션은 같은 트리에 띄우지 않는다" 'here:     no ('
+  run "$R" -- "$HO" plan --agent claude
+  expect "plan: 브랜치나 --here 가 있어야 한다" '브랜치 이름이나 --here 를 주세요'
+  run "$R" -- "$HO" plan --agent claude --here feat/p
+  expect "plan: 둘 다 주면 거부" '함께 쓸 수 없습니다'
+  run "$R" -- "$HO" plan --agent claude --brief ../msg.txt feat/p
+  expect "plan: --brief 는 받지 않는다" 'plan 에는 --brief 를 쓸 수 없습니다'
+  check "plan 은 워크트리를 만들지 않았다" test "$(worktrees "$R")" = "$n0"
+  check "plan 은 상태 디렉토리에 아무것도 남기지 않았다" test "$(state_files "$R")" = "$s0"
+  check "plan 은 지시서 파일을 만들지 않았다" test "$(find "$R/tmp" "$R/log" -type f | wc -l | tr -d " ")" = 0
+
+  # --- move: 워크트리를 확보하고 들어가는 방법만 알려 준다 ---
+  run "$R" -- "$HO" move --agent claude feat/m
+  expect_rc "move: 성공" 0
+  A=$(wtdir "$R" feat-m)
+  expect "move: worktree 줄" "worktree: $A"
+  check "move: 그 자리에 워크트리가 생겼다" test -d "$A"
+  expect "move claude: EnterWorktree 에 줄 경로" "enter:    EnterWorktree path=$A"
+  expect "move claude: 거절되면 ExitWorktree 뒤 다시" 'ExitWorktree action=keep'
+  expect "move claude: 마지막은 사용자가 치는 /cd" "cd:       /cd '$A'"
+  expect_not "move: 깨끗하면 변경 알림 없음" '따라가지 않는다'
+  check "move 는 상태 디렉토리에 아무것도 남기지 않는다" test "$(state_files "$R")" = "$s0"
+  check "move 는 도구를 띄우지 않는다" test ! -e "$R/log/claude.log"
+  run "$R" -- "$HO" move --agent cursor feat/m2
+  expect "move cursor: 거부" 'Cursor 는 채팅을 폴더별로 저장해서'
+  check "  워크트리를 만들지 않았다" test ! -d "$(wtdir "$R" feat-m2)"
+  run "$R" -- "$HO" move --from claude --agent cursor feat/m
+  expect_rc "move: 옮기는 것은 지금 세션의 도구(--from)다" 0
+  run "$R" -- "$HO" move --agent claude --brief ../msg.txt feat/m3
+  expect "move: --brief 는 받지 않는다" 'move 에는 --brief 를 쓸 수 없습니다'
+  : >"$R/repo/untracked.txt"; run "$R" -- "$HO" move --agent claude feat/m; /bin/rm -f "$R/repo/untracked.txt"
+  expect "move: 커밋하지 않은 변경은 따라가지 않는다고 알린다" '커밋하지 않은 변경 1개는 따라가지 않는다'
+  CWD=$A; run "$R" -- "$HO" move --agent claude feat/m; CWD=""
+  expect "move: 이미 그 워크트리면 거부" '지금 이 세션이 있는 체크아웃입니다'
+  CWD=$A; run "$R" -- "$HO" plan --agent claude main; CWD=""
+  expect "plan: 메인 체크아웃에 있는 브랜치는 넘길 수 없다" 'move:     no (main 는 메인 체크아웃에'
+  g "$A" commit -q --allow-empty -m c1; g "$A" branch low; g "$A" commit -q --allow-empty -m c2
+  run "$R" -- "$HO" plan --agent claude low
+  expect "plan: 스택 워크트리에 든 브랜치는 고르게 한다" 'stack:    골라야 한다. --in-stack'
+  run "$R" -- "$HO" move --agent claude --in-stack low
+  expect "move --in-stack: 스택 워크트리로" "branch:   low (스택 워크트리, 체크아웃: feat/m)"
+  expect "move --in-stack: 고치는 방법을 알린다" 'note:     이 워크트리에는 feat/m 가 체크아웃돼 있고'
+  CWD=$A; run "$R" -- "$HO" plan --agent claude low; CWD=""
+  expect "plan: 지금 체크아웃이 그 스택 워크트리면 here 로" 'fresh:    no → here'
+
+  # --- here: 지시서를 완성하고 입력할 줄을 알려 준다 ---
+  n0=$(worktrees "$R")
+  printf 'x\n' >"$A/new.txt"
+  CWD=$A; run "$R" -- "$HO" here --agent claude --brief "$R/msg.txt" --start plan
+  expect_rc "here: 성공" 0
+  b=$(val brief)
+  expect "here: 지시서 완성본은 상태 디렉토리에" "brief:    $R/state/worktree-handoff/prompt/here-feat-m."
+  check "here: 이름이 .md 로 끝난다" test "${b%.md}" != "$b"
+  expect "here claude: /clear 에 이전 대화 이름" 'type:     /clear feat-m@'
+  expect "here claude: 지시서를 @ 로 읽힌다" "type:     @$b 를 읽고 시작해"
+  expect "here claude: 설계부터면 plan mode 로 바꾸라고 알린다" 'Shift+Tab'
+  expect "here claude: 돌아가는 방법" 'back:     /resume feat-m@'
+  out=$(cat "$b")
+  expect "here 지시서: 작업 디렉토리와 브랜치" "- 작업 디렉토리: $A (브랜치 feat/m)"
+  expect "here 지시서: 메인 체크아웃은 고치지 않는다" "- 메인 체크아웃($R/repo)의 파일은 읽기만"
+  expect "here 지시서: 설계부터" '- 시작: 설계부터'
+  expect "here 지시서: 커밋하지 않은 변경 목록" '      ?? new.txt'
+  want=$(cat "$R/msg.txt")
+  expect "here 지시서: 본문이 글자 그대로" "$want"
+  run "$R" -- "$HO" here --agent claude --brief "$R/msg.txt" --name before-redesign
+  expect "here: --name 으로 이전 대화 이름" 'type:     /clear before-redesign'
+  expect_not "here: 구현부터면 plan mode 안내 없음" 'Shift+Tab'
+  run "$R" -- "$HO" here --agent claude --brief "$R/msg.txt" --name 'two words'
+  expect "here: 이름에 공백은 거부" '공백을 쓸 수 없습니다'
+  run "$R" -- "$HO" here --agent cursor --brief "$R/msg.txt" --start plan
+  expect_not "here cursor: /clear 에 이름을 붙이지 않는다" '/clear feat-m'
+  expect "here cursor: 설계부터면 /plan 으로 시작" 'type:     /plan '
+  run "$R" -- "$HO" here --from cursor --brief "$R/msg.txt"
+  expect "here cursor: 지시서 경로를 읽힌다 (--from 만 줘도 된다)" '.md 파일을 읽고 시작해'
+  s0=$(state_files "$R")
+  run "$R" -- "$HO" here --from claude --agent cursor --brief "$R/msg.txt"
+  expect "here: 다른 도구의 세션은 같은 트리에 띄우지 않는다" '한 트리를 두 세션이 고칩니다'
+  run "$R" -- "$HO" here --agent claude
+  expect "here: 지시서가 없으면 거부" 'here 에는 지시서가 필요합니다'
+  run "$R" -- "$HO" here --agent claude --brief "$R/blank.txt"
+  expect_rc "here: 없는 지시서 파일은 거부" 1
+  run "$R" -- "$HO" here --agent claude --brief "$R/msg.txt" feat/x
+  expect "here: 브랜치는 받지 않는다" '브랜치를 받지 않습니다'
+  run "$R" -- "$HO" here --agent claude --brief "$R/msg.txt" --open none
+  expect "here: --open 은 받지 않는다" 'here 에는 --open 를 쓸 수 없습니다'
+  check "거절된 here 는 아무것도 남기지 않았다" test "$(state_files "$R")" = "$s0"
+  CWD=""
+  check "here 는 워크트리를 만들지 않았다" test "$(worktrees "$R")" = "$n0"
+  check "here 는 도구를 띄우지 않는다" test ! -e "$R/log/claude.log" -a ! -e "$R/log/agent.log"
+  run "$R" -- "$HO" here --agent claude --brief ../msg.txt
+  out=$(cat "$(val brief)")
+  expect_not "here 지시서: 메인 체크아웃에서는 메인 줄이 없다" '메인 체크아웃('
+  expect "here 지시서: 깨끗하면 그렇다고 적는다" '커밋하지 않은 변경은 없다'
+  expect "here 지시서: 기본은 구현부터" '- 시작: 구현부터'
 }
 
 # === tmux (격리된 서버) =========================================================
@@ -358,7 +541,7 @@ t_tmux() {
     local br=$1 logname=$2; shift 2
     wtp=$(wtdir "$M" "${br//\//-}"); i=0
     /bin/rm -f "$M/done"
-    tm send-keys -t main:0.0 "/bin/bash '$HO' fresh --prompt-file ../msg.txt $* -- '$br' >'$M/out.txt' 2>&1; echo \$? >'$M/done'" Enter
+    tm send-keys -t main:0.0 "/bin/bash '$HO' fresh --brief ../msg.txt $* -- '$br' >'$M/out.txt' 2>&1; echo \$? >'$M/done'" Enter
     while [ ! -s "$M/done" ] && [ $i -lt 50 ]; do sleep 0.2; i=$((i + 1)); done
     i=0; while ! grep -qF "cwd=$wtp" "$M/log/$logname.log" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.2; i=$((i + 1)); done
     sleep 0.3
@@ -391,8 +574,8 @@ t_tmux() {
   expect_rc "tmux 안의 cursor: 성공" 0
   out=$(cat "$M/log/agent.log")
   expect "tmux: 가짜 agent 가 -- 다음에 첫 메시지를 받았다" 'arg1=<<-->>'
-  want=$(printf 'arg2=<<%s>>' "$(cat "$M/msg.txt")")
-  expect "tmux: 첫 메시지가 글자 그대로" "$want"
+  want=$(printf '%s>>' "$(cat "$M/msg.txt")")
+  expect "tmux: 지시서 본문이 글자 그대로" "$want"
 
   inside 'fix/#H' claude
   out=$(tm list-windows -t main -F '#{window_name}|#{pane_start_path}')
@@ -548,11 +731,11 @@ GH
   expect_rc "--range: 위치는 1 부터" 1
 }
 
-[ $# -gt 0 ] || set -- worktree handoff tmux fetch
+[ $# -gt 0 ] || set -- worktree handoff modes tmux fetch
 for s in "$@"; do
   case $s in
-    worktree|handoff|tmux|fetch) echo "== $s"; "t_$s" ;;
-    *) echo "모르는 절: $s (worktree | handoff | tmux | fetch)" >&2; exit 2 ;;
+    worktree|handoff|modes|tmux|fetch) echo "== $s"; "t_$s" ;;
+    *) echo "모르는 절: $s (worktree | handoff | modes | tmux | fetch)" >&2; exit 2 ;;
   esac
 done
 echo

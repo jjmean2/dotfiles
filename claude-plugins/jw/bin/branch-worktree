@@ -16,6 +16,10 @@
 #   candidates:  stack 일 때 그 커밋을 품은 워크트리 전부 (탭으로 구분)
 #   missing:     브랜치가 등록돼 있지만 디렉토리가 사라진 워크트리 (git worktree prune 대상)
 #   main: here:  메인 체크아웃과 지금 체크아웃
+#   none·stack 이면 ensure 가 새로 만들 때의 모습도 알려 준다 (만들지는 않는다):
+#     would-create: 만들 경로. create=tmux-dev 인데 tmux-dev 에 묻지 못했으면 git 자리를 내고 뒤에 " (예상)" 을 붙인다
+#     exists:       local (로컬 브랜치가 있다) | remote (원격 하나에만 있어 추적 브랜치가 된다) | no (베이스에서 새로)
+#     base:         exists 가 no 일 때 --base 없이 쓰는 베이스
 #
 # 스택 워크트리
 #   워크트리 하나에서 브랜치를 바꿔 가며 PR 을 쌓으면 하위 브랜치는 어디에도 체크아웃돼 있지 않다. 그 브랜치로 새 워크트리를
@@ -144,6 +148,47 @@ cmd_find() {
   [ -z "$MISSING" ] || echo "missing: $MISSING"
   echo "main: $MAIN"
   echo "here: $HERE"
+  if [ "$KIND" != self ]; then
+    local td p=""
+    settings
+    if [ "$CREATE" = tmux-dev ] && td=$(tmux_dev_bin) && [ -n "$td" ]; then
+      p=$(cd "$MAIN" && "$td" worktree --path "$branch" 2>/dev/null) || p=""
+    fi
+    if [ -n "$p" ]; then echo "would-create: $p"
+    elif [ "$CREATE" = tmux-dev ]; then echo "would-create: $(git_path "$branch") (예상)"
+    else echo "would-create: $(git_path "$branch")"
+    fi
+    case $(branch_source "$branch") in
+      local) echo "exists: local" ;;
+      remote) echo "exists: remote" ;;
+      *) echo "exists: no"; echo "base: $(default_base)" ;;
+    esac
+  fi
+}
+
+# --- 만들 자리와 방법 ------------------------------------------------------------
+# settings — 설정에서 ROOT·CREATE 를 정한다
+settings() {
+  ROOT=${WORKTREE_HANDOFF_ROOT:-$(conf root)}
+  ROOT=$(expand_home "${ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/worktree-handoff/worktrees}")
+  # 상대 경로는 기준이 모호해서(호출 위치? 메인 체크아웃?) 받지 않는다
+  case $ROOT in /*) ;; *) die "root 는 절대 경로나 ~ 로 시작해야 합니다: $ROOT" ;; esac
+  CREATE=${WORKTREE_HANDOFF_CREATE:-$(conf create)}; CREATE=${CREATE:-git}
+  case $CREATE in git|tmux-dev) ;; *) die "create 는 git | tmux-dev 중 하나입니다: $CREATE" ;; esac
+}
+git_path() { echo "$ROOT/$(basename "$MAIN")/${1//\//-}"; }   # git 으로 만들 때의 자리
+tmux_dev_bin() {   # tmux-dev 실행 파일 (없으면 빈 줄)
+  local td
+  td=$(command -v tmux-dev 2>/dev/null || true)
+  [ -n "$td" ] || [ ! -x "$HOME/.config/tmux/plugins/tmux-dev/bin/tmux-dev" ] || td=$HOME/.config/tmux/plugins/tmux-dev/bin/tmux-dev
+  echo "$td"
+}
+# branch_source <브랜치> — 새 워크트리의 브랜치가 어디서 오는가: local | remote (원격 하나에만 있다) | new
+branch_source() {
+  if git show-ref --verify --quiet "refs/heads/$1"; then echo local
+  elif [ "$(git for-each-ref --format='%(refname)' "refs/remotes/*/$1" | wc -l)" -eq 1 ]; then echo remote
+  else echo new
+  fi
 }
 
 # --- 확보하기 ------------------------------------------------------------------
@@ -163,14 +208,7 @@ cmd_ensure() {
   [ -n "$branch" ] || die "브랜치 이름을 주세요"
   git check-ref-format --branch "$branch" >/dev/null 2>&1 || die "브랜치 이름으로 쓸 수 없습니다: $branch"
 
-  local root create
-  root=${WORKTREE_HANDOFF_ROOT:-$(conf root)}
-  root=$(expand_home "${root:-${XDG_DATA_HOME:-$HOME/.local/share}/worktree-handoff/worktrees}")
-  # 상대 경로는 기준이 모호해서(호출 위치? 메인 체크아웃?) 받지 않는다
-  case $root in /*) ;; *) die "root 는 절대 경로나 ~ 로 시작해야 합니다: $root" ;; esac
-  create=${WORKTREE_HANDOFF_CREATE:-$(conf create)}; create=${create:-git}
-  case $create in git|tmux-dev) ;; *) die "create 는 git | tmux-dev 중 하나입니다: $create" ;; esac
-
+  settings
   repo
   # 첫 항목이 bare 면 "메인 체크아웃"이 없다 (bare + 워크트리 구성)
   [ -z "$(git worktree list --porcelain | awk '/^$/{exit} /^bare$/{print}')" ] || die "bare 저장소는 지원하지 않습니다"
@@ -199,7 +237,7 @@ cmd_ensure() {
       esac ;;
     none) [ "$stack_mode" != --in-stack ] || die "--in-stack: $branch 를 품은 스택 워크트리가 없습니다" ;;
   esac
-  [ -n "$wt" ] || wt=$(make "$branch" "$base" "$root" "$create")
+  [ -n "$wt" ] || wt=$(make "$branch" "$base")
 
   echo "worktree: $wt"
   echo "branch: $branch"
@@ -207,12 +245,12 @@ cmd_ensure() {
   echo "main: $MAIN"
 }
 
-# make <브랜치> <베이스> <root> <create> — 워크트리를 만들고 경로를 출력한다. 이 스크립트에서 저장소를 바꾸는 유일한 곳
+# make <브랜치> <베이스> — 워크트리를 만들고 경로를 출력한다 (자리와 방법은 settings 의 ROOT·CREATE).
+# 이 스크립트에서 저장소를 바꾸는 유일한 곳
 make() {
-  local branch=$1 base=$2 root=$3 create=$4 wt="" td remotes
-  if [ "$create" = tmux-dev ]; then
-    td=$(command -v tmux-dev 2>/dev/null || true)
-    [ -n "$td" ] || [ ! -x "$HOME/.config/tmux/plugins/tmux-dev/bin/tmux-dev" ] || td=$HOME/.config/tmux/plugins/tmux-dev/bin/tmux-dev
+  local branch=$1 base=$2 wt="" td
+  if [ "$CREATE" = tmux-dev ]; then
+    td=$(tmux_dev_bin)
     if [ -z "$td" ]; then
       note "tmux-dev 가 없어 git 으로 만듭니다"
     elif ! command -v jq >/dev/null; then
@@ -225,18 +263,18 @@ make() {
     fi
   fi
   if [ -z "$wt" ]; then
-    wt="$root/$(basename "$MAIN")/${branch//\//-}"
+    wt=$(git_path "$branch")
     [ ! -e "$wt" ] || die "$wt 가 이미 있습니다 (같은 이름의 다른 저장소이거나 남은 디렉토리). 지우거나 다른 브랜치 이름을 쓰세요"
     mkdir -p "$(dirname "$wt")"
-    remotes=$(git for-each-ref --format='%(refname)' "refs/remotes/*/$branch" | wc -l)
     # 메인 체크아웃에서 만든다: 베이스가 HEAD 일 때 메인의 HEAD 를 뜻하게
-    if git show-ref --verify --quiet "refs/heads/$branch"; then
-      git -C "$MAIN" worktree add "$wt" "$branch" >&2
-    elif [ -z "$base" ] && [ "$remotes" -eq 1 ]; then
-      git -C "$MAIN" worktree add "$wt" "$branch" >&2          # 원격 하나에만 있으면 git 이 추적 브랜치를 만든다
-    else
-      git -C "$MAIN" worktree add -b "$branch" "$wt" "${base:-$(default_base)}" >&2
-    fi
+    case $(branch_source "$branch") in
+      local) git -C "$MAIN" worktree add "$wt" "$branch" >&2 ;;
+      remote)   # --base 없이 원격 하나에만 있으면 git 이 추적 브랜치를 만든다
+        if [ -z "$base" ]; then git -C "$MAIN" worktree add "$wt" "$branch" >&2
+        else git -C "$MAIN" worktree add -b "$branch" "$wt" "$base" >&2
+        fi ;;
+      *) git -C "$MAIN" worktree add -b "$branch" "$wt" "${base:-$(default_base)}" >&2 ;;
+    esac
   fi
   echo "$wt"
 }
