@@ -1,7 +1,7 @@
 {
   "name": "jw",
-  "version": "0.12.1",
-  "description": "개인 작업 흐름 스킬 모음: 대화를 브랜치 워크트리의 새 세션(Claude·Cursor)으로 넘기기(포크·지시서), PR 리뷰 댓글 분석·반영",
+  "version": "0.13.0",
+  "description": "개인 작업 흐름 스킬 모음: 대화를 브랜치 워크트리의 새 세션(Claude·Cursor)으로 넘기기(포크·지시서), 같은 워크트리에서 대화 비우고 다시 시작하기, PR 리뷰 댓글 분석·반영",
   "author": {
     "name": "jjmean2"
   },
