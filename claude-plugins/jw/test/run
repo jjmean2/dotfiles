@@ -228,6 +228,8 @@ t_handoff() {
   expect "--start plan: claude 를 plan mode 로 띄운다" "exec claude \"\$@\" --permission-mode plan -n 'feat/pl@"
   out=$(cat "${L%.sh}")
   expect "--start plan: 머리말에 설계부터" '- 시작: 설계부터'
+  run "$R" -- "$HO" fresh --brief ../msg.txt --name 'feat/nm@0101-0000' --open none -- feat/nm
+  expect "--name: 확인받은 세션 이름을 그대로 쓴다" "session:  feat/nm@0101-0000"
   run "$R" -- "$HO" fresh --brief ../msg.txt --start bogus --open none -- feat/pl2
   expect "--start: 모르는 값은 거부" '--start 는 plan | build 중 하나입니다'
 
@@ -459,8 +461,13 @@ t_modes() {
   expect "move: --brief 는 받지 않는다" 'move 에는 --brief 를 쓸 수 없습니다'
   : >"$R/repo/untracked.txt"; run "$R" -- "$HO" move --agent claude feat/m; /bin/rm -f "$R/repo/untracked.txt"
   expect "move: 커밋하지 않은 변경은 따라가지 않는다고 알린다" '커밋하지 않은 변경 1개는 따라가지 않는다'
+  expect_not "move: 메인 체크아웃에서는 돌아갈 곳을 알리지 않는다" 'back:'
   CWD=$A; run "$R" -- "$HO" move --agent claude feat/m; CWD=""
   expect "move: 이미 그 워크트리면 거부" '지금 이 세션이 있는 체크아웃입니다'
+  CWD=$A; run "$R" -- "$HO" move --agent claude feat/mb; CWD=""
+  expect "move: 워크트리에서 부르면 돌아갈 길을 알린다" "back:     끝내 들어가지 못했으면 EnterWorktree path=$A"
+  CWD=$A; run "$R" -- "$HO" plan --agent claude feat/mc; CWD=""
+  expect "plan: 워크트리에서 부르면 move 에 한 걸음이 더 든다고 알린다" 'move:     ok (지금 워크트리에서 나갔다가 들어간다'
   CWD=$A; run "$R" -- "$HO" plan --agent claude main; CWD=""
   expect "plan: 메인 체크아웃에 있는 브랜치는 넘길 수 없다" 'move:     no (main 는 메인 체크아웃에'
   g "$A" commit -q --allow-empty -m c1; g "$A" branch low; g "$A" commit -q --allow-empty -m c2
