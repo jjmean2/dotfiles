@@ -71,12 +71,14 @@ Claude Code 의 `WorktreeCreate` 훅은 `claude -w`, EnterWorktree, 백그라운
 
 ## 메인에서 설계하다가 넘기기: jw 플러그인의 handoff
 
-메인 체크아웃에서 범위를 정한 대화를 들고 워크트리로 가려면 "따로 세션에서 하자"고 말하거나 `/jw:handoff [<브랜치>]`.
-모델이 대화를 포크할지(fork) 작업 지시서만 넘길지(fresh) 정해 확인을 받은 뒤 워크트리에 새 세션을 띄우고, 메인 세션은 남는다.
-tmux 안에서 부르면 그 워크트리의 윈도우를 `-d` 로 열고 거기서 세션을 띄운다(밖이면 `claude --bg`).
-지금 세션을 옮기는 일은 사용자 규칙(`~/.claude/rules/worktree-workflow.md`)에 따라 모델이 `EnterWorktree` 로 하고,
-handoff 의 워크트리 위치로 옮기려면 `branch-worktree ensure <브랜치>` 가 출력하는 `worktree:` 경로로 `/cd`. 워크트리 위치는 기본으로 handoff 자신의 XDG 디렉토리이고,
+메인 체크아웃에서 범위를 정한 대화를 들고 워크트리로 가려면 "따로 세션에서 하자"고 말하거나 `/jw:handoff [방식] [<브랜치>]`.
+방식은 넷이다: 지금 세션을 그 워크트리로 옮기기(move), 대화를 포크한 세션 띄우기(fork), 작업 지시서로 시작하는 세션
+띄우기(fresh), 그리고 이미 워크트리 안이면 대화만 비우고 지시서로 다시 시작하기(here). 모델이 방식을 정해 확인을 받는다.
+fork·fresh 는 tmux 안에서 부르면 그 워크트리의 윈도우를 `-d` 로 열고 거기서 세션을 띄우고(밖이면 `claude --bg`), 메인 세션은 남는다.
+move 는 모델이 `EnterWorktree` 에 그 워크트리 경로를 줘서 옮긴다 (패널의 현재 경로가 워크트리가 되므로 위 "윈도우는 패널의 경로로
+찾는다"가 그대로 적용된다). 워크트리 위치는 기본으로 handoff 자신의 XDG 디렉토리이고,
 tmux-dev 규칙으로 만들려면 `~/.config/worktree-handoff/config` 에 `create=tmux-dev`.
+창을 여는 것은 handoff 가 직접 한다 (`new-window -d -c <워크트리>`). tmux-dev 에는 창을 열고 명령까지 실행하는 비대화형 진입점이 없다.
 dotfiles 저장소의 `claude-plugins/jw/README.md` 참고 (이 파일은 홈에 배포되므로 상대 링크를 쓰지 않는다).
 
 ## 백그라운드 변형

@@ -4,7 +4,7 @@
 
 | 스킬 | 하는 일 |
 |---|---|
-| `/jw:handoff [<브랜치>] [fork\|fresh\|here] [--agent claude\|cursor] [--base <ref>] [--in-stack\|--new-worktree] [추가 지시]` | 대화를 **포크**하거나 작업 지시서를 쓴 **새 세션**(Claude 또는 Cursor)을 브랜치 워크트리에 연다. `here` 는 지시서만 쓰고 지금 워크트리에서 대화를 비우고 다시 시작하게 한다. 모델도 대화를 보고 부르며, 실행 전에 확인을 받는다 |
+| `/jw:handoff [move\|fork\|fresh\|here] [<브랜치>] [--agent claude\|cursor] [--base <ref>] [--in-stack\|--new-worktree] [--start plan\|build] [추가 지시]` | 대화로 정한 작업을 이어 갈 자리와 맥락을 정해 넘긴다: 지금 세션을 브랜치 워크트리로 **옮기기**, 대화를 **포크**하거나 작업 지시서를 쓴 **새 세션**(Claude 또는 Cursor)을 브랜치 워크트리에 열기, 지금 워크트리에서 대화만 비우고 지시서로 **다시 시작**하기. 모델도 대화를 보고 부르며, 실행 전에 확인을 받는다 |
 | `/jw:pr-review-handle [PR…] [--all] [--stack [--range]] [--max] [-- 추가 지시]` | PR 에 달린 리뷰(Copilot·사람)를 설명하고, 코드와 대조해 판정하고, 원인을 따져 수정 계획(개별 수정, 근거가 있을 때만 공통 원인·구조 개선)과 배경 원리를 설명한다 |
 | `/jw:pr-review-apply [수정 단위\|지적…] [--no-push] [--no-reply]` | pr-review-handle 의 수정 계획을 구현·커밋·푸시하고, 스레드마다 답글을 달고 해결 처리한다. 사용자만 부른다 |
 
@@ -12,70 +12,131 @@
 
 ```
 스킬 handoff ──▶ worktree-handoff ──▶ branch-worktree ensure      워크트리 확보 (git 만 다룬다. 도구를 모른다)
-                 세션 띄우기                ▲
+                 판정 · 지시서 · 세션 띄우기   ▲
 스킬 pr-review-* ──▶ pr-review-fetch ──────┘ branch-worktree find  그 브랜치를 고칠 워크트리가 어디인가
                  └─▶ pr-review-reply
 ```
 
 - **`branch-worktree`**: 브랜치의 워크트리를 찾고(`find`, 읽기만) 확보한다(`ensure`). 스택 워크트리 판정이 여기 한 곳에 있다.
   저장소를 바꾸는 것은 `ensure` 가 워크트리를 만드는 한 곳뿐이다.
-- **`worktree-handoff`**: 세션 띄우기. 도구마다 다른 것(실행 줄, fork·bg 가능 여부, 다시 여는 명령)은 스크립트 위쪽의
+- **`worktree-handoff`**: 방식마다 되는지 판정하고(`plan`, 읽기만), 지시서에 머리말을 붙이고, 세션을 띄우거나 들어가는 방법을
+  알려 준다. 도구마다 다른 것(실행 줄, move·fork·bg 가능 여부, plan mode 옵션, 대화를 비우는 명령)은 스크립트 위쪽의
   "도구 어댑터" 절에 도구별 함수 하나씩으로 모여 있고, 그 아래 본문은 도구 이름을 모른다.
-  하는 순서는 확인 → 첫 메시지 읽기 → 워크트리 확보 → 런처 쓰기 → 띄우기 → 안내다. 확인은 아무것도 바꾸지 않고,
-  워크트리를 확보하기 전에 실패하면 남기는 것이 없다.
+  세션을 띄우는 순서는 확인 → 첫 메시지 읽기 → 워크트리 확보 → 첫 메시지 완성 → 런처 쓰기 → 띄우기 → 안내다.
+  확인은 아무것도 바꾸지 않고, 워크트리를 확보하기 전에 실패하면 남기는 것이 없다.
 - **`test/run`**: 가짜 `claude`·`agent`·`gh` 와 임시 저장소, 격리된 tmux 서버로 위 스크립트를 확인한다.
-  실제 도구는 부르지 않는다. 스크립트를 고치면 돌린다: `claude-plugins/jw/test/run` (일부만: `test/run worktree handoff`).
+  실제 도구는 부르지 않는다. 스크립트를 고치면 돌린다: `claude-plugins/jw/test/run` (일부만: `test/run worktree handoff modes`).
 
 ## handoff
 
 ### 개념
 
-Claude 나 Cursor 와 대화하다가 작업 방향이 정해지면 그 작업의 브랜치와 워크트리를 만들고, 그 워크트리에서 일할 세션을 준비한다.
+Claude 나 Cursor 와 대화하다가 작업 방향이 정해지면, 그 작업을 **어디서, 어떤 맥락으로** 이어 갈지 정해 넘긴다.
 
-```
-워크트리 확보 ──▶ 세션 ─────────────────▶ 띄우기 ──────────▶ 안내 출력
-(branch-worktree)  방식: fork | fresh       bg | tmux | none    attach / run / resume
-                   도구: claude | cursor
-```
+| 방식 | 어디서 | 맥락 | 원본 세션 | `claude` | `cursor` |
+|---|---|---|---|---|---|
+| `move` | 다른 워크트리 | 그대로 | 그 워크트리로 옮겨 간다 | 된다 | 안 된다 → `fresh` |
+| `fork` | 다른 워크트리 | 대화를 복사 | 남아서 설계·질의를 계속한다 | 된다 | 안 된다 → `fresh` |
+| `fresh` | 다른 워크트리 | 지시서 한 장 | 남아서 계속한다 | 된다 | 된다 |
+| `here` | 지금 워크트리 | 지시서 한 장 | 기록으로만 남는다 | 된다 | 된다 |
 
-- **fork**: 대화를 포크한다. 시행착오·기각한 안까지 넘겨야 할 때.
-- **fresh**: 결론만 담은 지시서로 깨끗한 맥락에서 시작한다. 원본 대화가 길어 컨텍스트가 아까울 때도.
+한 작업 트리를 동시에 고치는 세션은 하나다. 그래서 `move` 는 세션이 옮겨 가고, `fork`·`fresh` 는 다른 워크트리에 띄우고,
+`here` 는 새 프로세스 없이 대화만 비운다.
 
-원본 세션은 남아 설계와 질의를 계속한다. 스크립트는 세션을 띄우고 들어가는 명령을
-출력하는 데까지만 한다. 그 세션에 들어가는 것은 사용자가 한다.
+절차와 맡는 쪽:
 
-- **here**: 이미 이 작업의 워크트리에 있을 때. 새 워크트리도 새 세션 프로세스도 없이, 스킬이 fresh 와 같은 지시서를
-  `${XDG_STATE_HOME:-~/.local/state}/worktree-handoff/prompt/here-*.md` 에 쓰고 입력할 두 줄을 알려 준다.
-  사용자가 `/clear <이전 대화 이름>` 으로 대화를 비운 뒤 `@<지시서>` 로 시작한다. 이전 대화는 `/resume <이름>` 으로 다시 연다.
-  스크립트는 쓰지 않는다 (모델은 `/clear` 를 칠 수 없다). 한 트리를 동시에 고치는 세션이 늘 하나라서 워크트리 규칙과 맞는다.
+| 단계 | 하는 일 | 맡는 쪽 |
+|---|---|---|
+| 정하기 | 방식, 브랜치, 여는 도구, 시작(설계부터·구현부터) | 모델 (스킬) |
+| 판정 | `worktree-handoff plan`: 대상 워크트리, 방식마다 되는지와 안 되면 대신 쓸 방식, 띄울 방식, 지시서 본문 경로 | 스크립트 |
+| 확인 | 판정 결과를 보여 주고 답을 기다린다. 안 되는 방식은 대신 쓸 방식을 소개한다 | 모델 → 사용자 |
+| 지시서 본문 (`fresh`·`here`) | 목표, 범위, 결정과 이유, 하지 않기로 한 것, 완료 조건, 남은 질문, 첫 할 일 | 모델 |
+| 실행 | 워크트리 확보, 지시서 머리말, 런처, 띄우기 (방식마다 아래) | 스크립트 |
+| 들어가기 | 새 창·`attach`·`run` 줄, 또는 `/clear` 뒤 지시서 읽히기 | 사용자 |
+
+방식마다 마지막 걸음이 다르다.
+
+- **move**: 스크립트는 워크트리를 확보하고 경로를 낸다. 옮기는 것은 모델이 `EnterWorktree` 에 그 `path` 를 줘서 한다.
+  워크트리 세션(이미 `EnterWorktree` 로 들어온 세션)에서는 `.claude/worktrees/` 밖의 경로가 거절되므로 `ExitWorktree`(keep) 뒤에
+  다시 부른다 (Claude Code 2.1.332 에서 확인). 그래도 안 되면 출력의 `cd:` 줄(`/cd '<경로>'`)을 사용자가 입력한다.
+  메인 체크아웃에서 `.claude/worktrees/` 밖으로 들어갈 때는 승인 창이 뜰 수 있다.
+- **fork**: 대화를 복사한 세션을 띄운다 (`claude --resume <id> --fork-session`). 첫 메시지는 스크립트가 쓴다
+  (포크된 세션이라는 것, 작업 디렉토리). `--note` 의 내용은 그 뒤에 붙는다.
+- **fresh**: 지시서로 시작하는 세션을 띄운다. `--start plan` 이면 plan mode 로 띄우고 지시서 머리말에 "설계안을 확인받은 뒤 구현"을 적는다.
+- **here**: 스크립트가 지시서 완성본을 `${XDG_STATE_HOME:-~/.local/state}/worktree-handoff/prompt/here-*.md` 에 두고 입력할 줄을 낸다.
+  사용자가 `/clear <이전 대화 이름>` 으로 대화를 비운 뒤 `@<지시서> 를 읽고 시작해` 를 보낸다 (설계부터면 앞에 `/plan `).
+  이전 대화는 `/resume <이름>` 으로 다시 연다. 모델이 대화를 비우는 방법은 확인된 것이 없다.
+  Claude Code 2.1.332 에서 확인한 것: `/clear <이름>` 은 새 세션을 시작하고 이전 세션에 그 이름을 붙인다. `@` 로 언급한 파일은
+  작업 디렉토리 밖이어도 읽힌다. `/plan <프롬프트>` 는 plan mode 를 켜고 그 프롬프트를 보낸다 (Shift+Tab 은 설정에 따라 순환 순서가
+  달라 한 번에 plan mode 가 되지 않는다).
+
+커밋하지 않은 변경은 `move`·`fork`·`fresh` 어느 쪽도 가져가지 않는다 (`plan` 이 개수를 알려 준다). `here` 는 같은 트리라 그대로 이어받고,
+지시서 머리말에 목록이 들어간다.
 
 tmux 는 필요 없다. tmux 안에서 부르면 워크트리의 윈도우를 열어 그 안에서 세션을 띄워 주는 것뿐이다.
 
-### 세션을 여는 도구 (`--agent`, fork·fresh)
+아래는 `plan` 의 출력이다. Cursor 세션에서 물으면 `move` 와 `fork` 줄이 `no → fresh (까닭)` 으로 나온다.
 
-새 세션은 Claude Code(`claude`, 기본)나 Cursor CLI(`cursor`)로 연다. 도구마다 다른 것은 이 표가 전부다.
+```
+from:     claude
+agent:    claude
+here:     ~/dev/dotfiles
+here-branch: main
+dirty:    2   (지금 체크아웃의 커밋하지 않은 변경. move·fork·fresh 는 가져가지 않는다)
+main:     ~/dev/dotfiles
+branch:   feat/x
+worktree: ~/.local/share/worktree-handoff/worktrees/dotfiles/feat-x   (새로 만든다: main 에서 새 브랜치)
+move:     ok
+fork:     ok
+fresh:    ok
+open:     tmux   (fork·fresh 를 띄우는 방식)
+session:  feat/x@1128-2039
+brief:    <tmp>/handoff-feat-x-1128-203954.md   (fresh·here 의 지시서 본문을 여기에 쓴다)
+```
+
+### 지시서
+
+`fresh` 와 `here` 는 지시서 한 장으로 시작한다. 모델은 판단이 드는 **본문**만 쓰고, 워크트리를 확보해야 알 수 있거나 늘 같은
+문장은 스크립트가 **머리말**로 붙인다.
+
+| 머리말 (스크립트) | 본문 (모델) |
+|---|---|
+| 작업 디렉토리와 브랜치 | 목표와 배경 |
+| 메인 체크아웃은 읽기만 한다 | 범위: 할 것, 하지 않을 것 |
+| 스택 워크트리면 고치는 방법 (fixup + rebase) | 설계 결정과 이유, 하지 않기로 한 것과 이유 |
+| 시작: 설계부터 · 구현부터 | 관련 파일, 완료 조건과 확인 명령 |
+| `here`: 커밋하지 않은 변경 목록 | 남은 질문, 첫 할 일 |
+
+### 도구 (`--from`, `--agent`)
+
+`--from` 은 지금 세션의 도구, `--agent` 는 새 세션을 여는 도구다 (Claude Code `claude`, Cursor CLI `cursor`). `--from` 이 없으면
+`--agent` 와 같다고 보고, `--agent` 가 없으면 설정의 `agent`, 그것도 없으면 `claude` 다. 스크립트는 부른 곳이 어느 도구인지 짐작하지
+않는다. 스킬이 둘 다 넘긴다. 도구마다 다른 것은 이 표가 전부다.
 
 | | `claude` | `cursor` |
 |---|---|---|
 | 실행 | `claude -n <이름> -- "<첫 메시지>"` | `agent -- "<첫 메시지>"` (`agent` 가 없으면 옛 이름 `cursor-agent`) |
-| fork | `--resume <id> --fork-session` | 안 된다. CLI 에 대화를 포크하는 옵션이 없다 (대화 안의 `/fork` 뿐) |
+| move | `EnterWorktree(path)` → `ExitWorktree(keep)` 뒤 다시 → `/cd` | 안 된다. 채팅이 폴더별로 저장돼 다른 폴더에서 `--resume` 하면 빈 채팅이 열린다 (2026.11.22 에서 확인) |
+| fork | `--resume <id> --fork-session` | 안 된다. CLI 에 대화를 포크하는 옵션이 없다 (대화 안의 `/fork` 는 같은 폴더에 만든다) |
 | `--open bg` | `claude --bg` | 안 된다. `agent persist` 는 tmux 안에서는 그냥 `agent` 를 실행하고, 밖에서는 터미널이 있어야 한다 |
+| `--start plan` | `--permission-mode plan` | `--plan` |
+| `here` 의 줄 | `/clear <이름>`, `@<지시서> 를 읽고 시작해` (설계부터면 앞에 `/plan `) | `/clear`, `<지시서> 파일을 읽고 시작해` (설계부터면 `/plan <…>`) |
 | 세션 이름 | `<브랜치>@<MMDD-HHMM>` | 붙일 수 없다 |
 | `resume:` 줄 | `claude --resume <이름>` | `agent resume` (그 워크트리의 가장 최근 세션. 고르려면 `agent ls`) |
 
-스킬에서는 확인 단계의 `도구:` 줄에서 고른다. 기본은 스킬을 부른 세션의 도구이고, 확인받은 도구를 `--agent` 로 넘긴다.
-스크립트는 부른 곳이 어느 도구인지 짐작하지 않는다. `--agent` 가 없으면 설정의 `agent`, 그것도 없으면 `claude` 다.
+안 되는 방식은 `plan` 이 대신 쓸 방식과 함께 알려 주고, 스킬이 확인 단계에서 소개한다.
 
-부른 곳과 여는 도구에 따라 되는 조합은 이렇다. 대화 기록은 다른 도구로 옮길 수 없어서 도구를 바꾸면 fresh 만 된다.
-
-| 지금 세션 → 여는 도구 | 방식 | tmux 밖에서 띄우면 |
+| 상황 | 안 되는 방식 | 대신 |
 |---|---|---|
-| Claude Code → `claude` | fork · fresh | `claude --bg` |
-| Cursor → `claude` | fresh | `claude --bg` |
-| 어디서든 → `cursor` | fresh | 띄우지 않고 `run:` 줄 |
+| 지금 세션이 Cursor | `move`, `fork` | `fresh` (시행착오까지 지시서에 담는다) |
+| 다른 도구로 연다 (`--from` ≠ `--agent`) | `fork` (대화 기록은 도구를 건너가지 못한다) | `fresh` |
+| 대상 브랜치가 지금 체크아웃 | `move`, `fork`, `fresh` | `here` |
+| `here` 인데 다른 도구로 열라고 함 | `here` (한 트리에 두 세션) | 새 워크트리의 `fresh` |
 
-안 되는 조합(`cursor` 의 fork 와 `--open bg`)은 스크립트가 워크트리를 만들기 전에 거절한다. 설정에서 온 `open=bg` 는 알림을 내고
-`auto` 로 띄운다.
+`plan` 을 거치지 않고 부르면 안 되는 조합은 워크트리를 만들기 전에 거절된다. 설정에서 온 `open=bg` 는 알림을 내고 `auto` 로 띄운다.
+
+Cursor 의 채팅 저장 폴더(`~/.cursor/chats/<md5(폴더)>/<id>/`)를 대상 폴더 쪽으로 복사하면 거기서 대화를 이어 갈 수 있다는 것은
+확인했지만 (끝난 채팅으로 시험), 문서에 없는 저장 형식에 기대고 두 채팅의 ID 가 같아져서 넣지 않았다.
 
 ### 세션을 띄우는 방식 (`--open`, fork·fresh)
 
@@ -105,8 +166,8 @@ resume:   cd '…/feat-x' && claude --resume 'feat/x@1111-1530'
 
 ### 워크트리
 
-워크트리는 `branch-worktree ensure` 가 확보한다. handoff 는 그 결과를 받아 쓰고, 그 워크트리가 지금 세션이 있는
-체크아웃이면 넘기지 않는다 (한 작업 트리는 한 세션만 고친다).
+`move`·`fork`·`fresh` 의 워크트리는 `branch-worktree ensure` 가 확보한다. handoff 는 그 결과를 받아 쓰고, 그 워크트리가 지금
+세션이 있는 체크아웃이면 넘기지 않는다 (한 작업 트리는 한 세션만 고친다. 거기서 다시 시작하려면 `here`).
 
 | 상황 | 워크트리 |
 |---|---|
@@ -142,25 +203,25 @@ git commit --fixup=<a 의 커밋>
 git -c sequence.editor=: rebase -i --autosquash --update-refs --keep-base main
 ```
 
-### 지금 세션을 옮기기
+### 스킬 없이 워크트리로 들어가기
 
-지금 세션을 워크트리로 옮기는 일은 규칙에 따라 모델이 `EnterWorktree` 로 한다 (`.claude/worktrees/` 아래).
-이 플러그인의 워크트리 위치로 옮기고 싶으면 스크립트를 직접 쓴다.
-
-`branch-worktree ensure <브랜치>` 가 워크트리를 확보하고 `worktree: <경로>` 를 출력한다. 사용자가 `/cd <경로>` 를 입력하면
-세션 기록(`~/.claude/projects/` 아래)·설정·훅·스킬·CLAUDE.md 가 새 디렉토리 기준으로 바뀐다. 세션 ID 는 그대로이고,
-이후 `claude --resume` 목록에는 그 워크트리에서 보인다. 모델은 `/cd` 를 부를 수 없다.
+메인 체크아웃에서 작업을 시작하며 워크트리로 들어가는 단순한 경우는 스킬 없이 규칙에 따라 모델이 `EnterWorktree` 로 한다
+(`.claude/worktrees/<이름>` 에 `worktree-<이름>` 브랜치). 브랜치 이름·베이스·스택·이미 있는 브랜치를 지정하려면 `move` 를 쓴다.
+워크트리는 이 플러그인의 자리(`root`)에 생긴다. 어디에 만들든 `git worktree list` 로 보인다.
 
 ### 스킬이 하는 일
 
 - 언제 넘길지·스택을 어떻게 쌓을지 같은 원칙은 chezmoi 가 까는 사용자 규칙
   [`~/.claude/rules/worktree-workflow.md`](../../home/dot_claude/rules/worktree-workflow.md) 에 있다. 규칙은 매 세션
   읽히고, 스킬 본문은 넘길 때만 읽힌다.
-- 모델이 먼저 제안할 수 있지만, 실행 전에는 브랜치·베이스·방식·도구·넘길 내용을 보여 주고 답을 기다린다.
-- `start_session` 도구가 있는 Claude 데스크톱 앱에서는 이 스킬 대신 그 도구를 쓴다 (원본 세션과 연결되고 보고가 돌아온다).
-  그 도구는 Claude 세션만 열므로, Cursor 세션으로 넘길 때는 이 스킬을 쓴다.
-- 첫 메시지는 heredoc 대신 임시 파일로 넘긴다. 워크트리 세션의 Bash 가드가 heredoc 이 섞인 명령을 거절하기 때문이다.
+- 모델이 먼저 제안할 수 있지만, 실행 전에는 방식·브랜치·베이스·도구·시작·넘길 내용을 보여 주고 답을 기다린다.
+- 되는 방식인지, 무엇으로 대신할지, 파일을 어디에 쓸지는 스킬 본문이 아니라 `plan` 이 정한다.
+- `start_session` 도구가 있는 Claude 데스크톱 앱에서는 `fork`·`fresh` 를 그 도구로 한다 (원본 세션과 연결되고 보고가 돌아온다).
+  그 도구는 Claude 세션만 열므로, `move`·`here` 와 Cursor 세션으로 넘길 때는 이 스킬을 쓴다.
+- 지시서 본문은 heredoc 대신 파일로 넘긴다. 워크트리 세션의 Bash 가드가 heredoc 이 섞인 명령을 거절하기 때문이다.
+  경로는 `plan` 이 `--tmp`(스킬이 scratchpad 를 준다. 없으면 `$TMPDIR`) 아래에 호출마다 새 이름으로 짓는다.
 - fork 의 세션 ID 는 스크립트가 `$CLAUDE_CODE_SESSION_ID` (Claude Code 가 Bash 셸에 넣어 줌)에서 읽는다.
+- 스크립트는 `${CLAUDE_PLUGIN_ROOT}/bin/worktree-handoff` 로 부른다. 플러그인의 `bin/` 을 PATH 에 넣어 주는 것은 Claude Code 뿐이다.
 
 ### 설정
 
@@ -184,15 +245,19 @@ open=bg
 ```sh
 branch-worktree find   [--tip <커밋>]                             <브랜치>
 branch-worktree ensure [--base <ref>] [--in-stack|--new-worktree] <브랜치>
-worktree-handoff fork  --session <세션 ID> [--prompt-file <파일|->] [--base <ref>] [--open <방식>]                  [<스택>] <브랜치>
-worktree-handoff fresh --prompt-file <파일|->                     [--base <ref>] [--open <방식>] [--agent <도구>] [<스택>] <브랜치>
-# <스택> = --in-stack | --new-worktree,  <도구> = claude | cursor.  자세한 것은 각 스크립트의 --help
+worktree-handoff plan  [--tmp <디렉토리>] [--base <ref>] [--open <방식>] (<브랜치> | --here)
+worktree-handoff move                                    [--base <ref>]                  [<스택>] <브랜치>
+worktree-handoff fork  [--session <id>] [--note <파일|->]  [--base <ref>] [--open <방식>] [<스택>] <브랜치>
+worktree-handoff fresh --brief <파일|-> [--start <시작>]   [--base <ref>] [--open <방식>] [<스택>] <브랜치>
+worktree-handoff here  --brief <파일|-> [--start <시작>]   [--name <이전 대화 이름>]
+# 모두: --from <도구> --agent <도구>.  <스택> = --in-stack | --new-worktree,  <시작> = plan | build,  <도구> = claude | cursor
+# 자세한 것은 각 스크립트의 --help
 ```
 
-세션 ID 는 Claude 안의 `/status` 에서 확인한다. Claude 의 Bash 도구에서 부르면 `--session` 없이 `$CLAUDE_CODE_SESSION_ID` 를 쓴다. fork 에서 `--prompt-file` 이 없으면 기본 첫 메시지를 쓴다.
-fresh 는 첫 메시지가 꼭 있어야 하고, 비어 있으면(공백뿐이어도) 워크트리를 만들기 전에 멈춘다.
-첫 메시지 파일과 런처(`.sh`)·로그(`.log`)는 `${XDG_STATE_HOME:-~/.local/state}/worktree-handoff/prompt/` 에 호출마다
-새로 생기고 7일 뒤 지워진다.
+세션 ID 는 Claude 안의 `/status` 에서 확인한다. Claude 의 Bash 도구에서 부르면 `--session` 없이 `$CLAUDE_CODE_SESSION_ID` 를 쓴다.
+`fresh`·`here` 는 지시서가 꼭 있어야 하고, 비어 있으면(공백뿐이어도) 아무것도 만들기 전에 멈춘다.
+첫 메시지 파일과 런처(`.sh`)·로그(`.log`), `here` 의 지시서 완성본(`here-*.md`)은
+`${XDG_STATE_HOME:-~/.local/state}/worktree-handoff/prompt/` 에 호출마다 새로 생기고 7일 뒤 지워진다.
 
 ### 알아 둘 것
 
@@ -300,8 +365,13 @@ Cursor(데스크톱·CLI)는 설치된 Claude 플러그인을 `~/.claude/plugins
 `bin/` 을 PATH 에 넣어 주는 것은 Claude Code 뿐이라, 맨이름으로 부르면 Cursor 에서는 찾지 못한다. Claude Code 와 Cursor 모두
 플러그인 스킬 본문에서 이 변수를 설치 경로로 바꾼다. Claude Code 는 `allowed-tools` 에서도 바꾸므로 권한 프롬프트 없이 돈다.
 
-실제 Cursor 세션에서 돌려 보지는 않았다. 번들 코드(CLI 2026.11.13, 데스크톱 3.31.11)와 가짜 `agent` 로 확인했다.
-확인하지 못한 것:
+Cursor 세션에서는 `move` 와 `fork` 가 안 된다. `plan` 이 `fresh` 로 대신하라고 알려 주고 스킬이 확인 단계에서 소개한다.
+`here` 는 `/clear` 뒤 지시서 경로를 읽히는 줄을 낸다.
+
+스킬을 실제 Cursor 세션에서 돌려 보지는 않았다. 번들 코드(CLI 2026.11.13, 데스크톱 3.31.11)와 가짜 `agent` 로 확인했고,
+채팅이 폴더별이라는 것과 슬래시 명령 목록은 CLI 2026.11.22 에서 봤다. 확인하지 못한 것:
+
+- `/clear` 뒤 `<지시서> 파일을 읽고 시작해` 와 `/plan <…>` 이 뜻대로 도는지, `@` 로 파일을 언급할 수 있는지
 
 - Cursor 의 셸 도구가 `TMUX`·`TMUX_PANE` 을 스크립트까지 넘겨 주는지. 없으면 tmux 안에서도 윈도우를 열지 못하고 tmux 밖처럼
   띄운다. Cursor 에이전트에게 `env | grep '^TMUX'` 를 시켜 보면 안다
@@ -314,9 +384,12 @@ Cursor(데스크톱·CLI)는 설치된 Claude 플러그인을 `~/.claude/plugins
 
 ## 필요한 것
 
-- handoff: `claude` (Cursor 세션이면 Cursor CLI `agent`), git. `create=tmux-dev` 면
-  [tmux-dev](../../docs/tmux-dev/design/claude-code.md) 와 jq, `--open tmux` 면 tmux.
-- pr-review-handle·pr-review-apply: git, `gh` (`gh auth login` 한 번), jq.
+| | 꼭 있어야 하는 것 | 있으면 쓰는 것 |
+|---|---|---|
+| handoff | git, bash, grep·sed·awk 같은 기본 도구, 여는 도구의 CLI (`claude` 또는 Cursor CLI `agent`) | tmux (새 세션을 윈도우로 연다), `claude --bg` (tmux 밖에서 백그라운드로), [tmux-dev](../../docs/tmux-dev/design/claude-code.md) 와 jq (`create=tmux-dev`) |
+| pr-review-handle·pr-review-apply | git, `gh` (`gh auth login` 한 번), jq | |
+
+스크립트는 macOS 의 `/bin/bash` 3.2 에서도 돈다 (`test/run` 이 그것으로 돌린다). `move` 와 `here` 는 도구의 CLI 도 띄우지 않는다.
 
 ## 설치
 
@@ -338,7 +411,7 @@ ln -s "$(pwd)"/claude-plugins/jw/bin/{branch-worktree,worktree-handoff,pr-review
 
 ## 바뀐 것
 
-- **0.13.0**: handoff 에 `here` 방식. 이미 작업 워크트리에서 길게 설계한 뒤 그 결론으로 다시 시작할 때, 새 워크트리·새 세션 없이 지시서를 상태 디렉토리에 쓰고 `/clear <이전 대화 이름>` · `@<지시서>` 두 줄을 알려 준다. 새 대화를 설계(plan mode)부터 할지 구현부터 할지 확인 단계에서 정한다. 스크립트는 바뀌지 않았다.
+- **0.13.0**: handoff 를 다시 짰다. 방식이 `move`(지금 세션을 워크트리로 옮기기) · `fork` · `fresh` · `here`(지금 워크트리에서 대화만 비우고 다시 시작) 넷이 됐다. `worktree-handoff plan` 이 방식마다 되는지와 안 되면 대신 쓸 방식을 판정하고, 스킬은 그것으로 확인 블록을 만든다 (Cursor 는 `move`·`fork` 가 안 되어 `fresh` 로 대신한다). 지시서의 기계적인 머리말은 스크립트가 붙이고 모델은 본문만 쓴다. `fresh`·`here` 는 `--start plan` 으로 새 대화를 설계부터 시작시킨다. 지금 세션의 도구(`--from`)와 여는 도구(`--agent`)를 따로 받는다. `--prompt-file` 은 `--brief`(fresh·here) 와 `--note`(fork) 로 바뀌었다. `branch-worktree find` 는 만들 경로(`would-create`)를 낸다.
 - **0.12.1**: handoff 가 tmux 에서 그 워크트리의 윈도우가 이미 있어도 찾지 못하고 매번 새 윈도우를 열던 것을 고쳤다. tmux 는 `-F` 출력의 칸 구분자(US)를 `\037` 네 글자로 바꿔 내보낸다 (tmux-dev 에서 고친 것과 같은 문제). `test/run` 은 tmux 패널을 로그인 셸로 띄우지 않고 (셸 프로필이 PATH 를 바꿔 진짜 `claude` 가 뜨지 않게), en_US.UTF-8 이 없으면 C.UTF-8 로 돈다.
 - **0.12.0**: pr-review-handle 이 PR 을 여럿 받는다 (`{multi, prs}`). 리뷰를 모을 PR 이 `--max`(기본 5)보다 많으면 모으지 않고 목록만 낸다 (종료 코드 3). `--stack --range` 로 스택 일부만 본다. PR 인자의 `#12` 는 `12` 로 본다. 스킬은 `$ARGUMENTS` 를 명령에 그대로 붙이지 않고 대상 · 옵션 · 추가 지시로 나눠 따옴표로 감싸 부른다 (전에는 `#12` 가 셸 주석이 되어 조용히 지금 브랜치의 PR 을 봤다).
 - **0.11.2**: handoff 가 만든 윈도우에 옵션 `@worktree` 를 붙이지 않는다. 0.11.1 부터 읽는 곳이 없다 (tmux-dev 도 같이 뗐다).
